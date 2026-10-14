@@ -1,0 +1,3 @@
+# One TypeScript core and one React UI, shelled in Tauri 2
+
+Dropping CRDTs removed the reason for a Rust core, so storage, encryption, sync, indexing and the agent endpoint are TypeScript, shared by the Windows and Android apps and the Server peer (Node/Bun). The UI is one React codebase with separate navigation shells for mobile and desktop; the web build picks a shell by screen size and input type. Tauri 2 wraps Windows and Android. Considered and rejected: a pure PWA (Android reminders and storage eviction are unreliable) and Capacitor + Electron (two shells for two platforms). Android on Tauri is the least mature part; if it blocks M2, Capacitor can replace only the Android shell since the UI and core are plain TypeScript.
