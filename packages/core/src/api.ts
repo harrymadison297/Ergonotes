@@ -24,6 +24,8 @@ export interface VaultStatus {
   remembered: boolean;
   /** true when this build can only reach a vault through a server (web) */
   remote: boolean;
+  /** server only: this browser session is signed in */
+  authenticated?: boolean;
 }
 
 export interface ItemSummary {
@@ -105,6 +107,7 @@ export interface CalendarData {
   daily: ItemSummary[];
 }
 
+export interface FileBlob { name: string; mime: string; data: string }
 export interface ImportFile { path: string; content: string }
 export interface ExportResult { filename: string; mime: string; content: string }
 
@@ -156,6 +159,9 @@ export interface VaultApi {
   sync(opts?: { full?: boolean }): Promise<SyncReport>;
   flush(): Promise<void>;
 
+  addFile(input: FileBlob): Promise<{ id: string }>;
+  getFile(id: string): Promise<FileBlob | null>;
+
   importMarkdown(files: ImportFile[], parent?: string | null): Promise<{ notes: number; folders: number }>;
   exportNote(id: string, format: 'md' | 'html'): Promise<ExportResult>;
 }
@@ -166,5 +172,5 @@ export const VAULT_METHODS = [
   'setPinned', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'linkTargets', 'tags', 'tasks', 'toggleTask',
   'calendar', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
   'resolveConflict', 'history', 'versionText', 'restoreVersion', 'getSettings', 'setSettings', 'setStore',
-  'sync', 'flush', 'importMarkdown', 'exportNote',
+  'sync', 'flush', 'addFile', 'getFile', 'importMarkdown', 'exportNote',
 ] as const satisfies readonly (keyof VaultApi)[];

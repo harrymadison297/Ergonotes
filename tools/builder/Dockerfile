@@ -18,4 +18,9 @@ RUN mkdir -p /opt/android-sdk/cmdline-tools && cd /tmp \
  && yes | sdkmanager --licenses >/dev/null \
  && sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;27.0.12077973" "emulator" "system-images;android-34;google_apis;x86_64" \
  && chmod -R a+rwX /opt/android-sdk
+
+# Debian's NSIS 3.08 lacks Include/Win/RestartManager.nsh, which Tauri's installer template needs.
+RUN cd /tmp && curl -fsSL -o nsis.zip "https://sourceforge.net/projects/nsis/files/NSIS%203/3.11/nsis-3.11.zip/download" \
+ && unzip -p nsis.zip nsis-3.11/Include/Win/RestartManager.nsh > /usr/share/nsis/Include/Win/RestartManager.nsh \
+ && rm nsis.zip && test -s /usr/share/nsis/Include/Win/RestartManager.nsh
 WORKDIR /work

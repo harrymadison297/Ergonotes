@@ -3,7 +3,7 @@
 import MarkdownIt from 'markdown-it';
 import MiniSearch from 'minisearch';
 import type {
-  CalendarData, ConflictChoice, ConflictDetail, ExportResult, HeadInfo, ImportFile, ItemSummary, NoteDoc,
+  CalendarData, ConflictChoice, ConflictDetail, ExportResult, FileBlob, HeadInfo, ImportFile, ItemSummary, NoteDoc,
   Settings, StoreConfig, SyncReport, TaskEntry, VaultApi, VaultState, VaultStatus, VersionInfo,
 } from './api.ts';
 import {
@@ -92,6 +92,7 @@ export class Vault implements VaultApi {
   private masterKey: Uint8Array | null = null;
   private vaultFile: VaultFile | null = null;
   private views = new Map<string, View>();
+  private files = new Map<string, { name: string; mime: string; body: string }>();
   private search_ = new MiniSearch<{ id: string; title: string; body: string; tags: string }>({
     fields: ['title', 'body', 'tags'],
     storeFields: [],
@@ -164,6 +165,7 @@ export class Vault implements VaultApi {
     this.replica = await Replica.open(this.persist, this.deviceId, this.deviceName);
     this.unsub = this.replica.onChange(items => { this.refresh(items); this.emit({ type: 'items', ids: items }); this.noteLocalChange(); });
     this.views.clear();
+    this.files.clear();
     for (const id of this.replica.items()) this.refresh([id], true);
     this.emit({ type: 'status' });
   }
@@ -204,6 +206,12 @@ export class Vault implements VaultApi {
     const key = await unwrapMasterKey(password, this.vaultFile);
     if (o.remember) await this.setMeta('rememberedKey', toB64(key));
     await this.activate(key);
+  }
+
+  /** Check a password without changing any state (used by the server to sign a browser in). */
+  async verifyPassword(password: string): Promise<void> {
+    if (!this.vaultFile) throw new Error('No vault on this device');
+    await unwrapMasterKey(password, this.vaultFile);
   }
 
   async lock(): Promise<void> {
@@ -272,8 +280,9 @@ export class Vault implements VaultApi {
       const text = r.text(id);
       const prev = this.views.get(id);
       if (prev) { try { this.search_.discard(id); } catch { /* not indexed */ } }
-      if (text === null) { this.views.delete(id); continue; }
+      if (text === null) { this.views.delete(id); this.files.delete(id); continue; }
       const { fm, body } = splitDoc(text);
+      if (fm.type === 'file') { this.files.set(id, { name: String(fm.name ?? 'file'), mime: String(fm.mime ?? 'application/octet-stream'), body }); this.views.delete(id); continue; }
       const type = fm.type === 'folder' ? 'folder' : 'note';
       const tags = Array.isArray(fm.tags) ? fm.tags.map(String) : [];
       const view: View = {
@@ -862,6 +871,25 @@ export class Vault implements VaultApi {
     this.pushTimer = null;
   }
 
+  // ---------- attachments ----------
+  /** Stored as an immutable `file` item (base64 body) so it syncs and encrypts like everything else. */
+  async addFile(input: FileBlob): Promise<{ id: string }> {
+    const r = this.ready();
+    if (input.data.length > 34_000_000) throw new Error('That file is larger than 25 MB.');
+    const id = newId();
+    const fm: Frontmatter = { id, type: 'file', name: input.name, mime: input.mime, size: Math.floor((input.data.length * 3) / 4), created: this.iso() };
+    const body = input.data.replace(/(.{76})/g, '$1\n');
+    await r.commit(id, joinDoc(fm, body), this.now());
+    this.refresh([id]);
+    return { id };
+  }
+
+  async getFile(id: string): Promise<FileBlob | null> {
+    this.ready();
+    const f = this.files.get(id);
+    return f ? { name: f.name, mime: f.mime, data: f.body.replace(/\s+/g, '') } : null;
+  }
+
   // ---------- import / export ----------
   async importMarkdown(files: ImportFile[], parent: string | null = null): Promise<{ notes: number; folders: number }> {
     this.ready();
@@ -917,7 +945,11 @@ export class Vault implements VaultApi {
     const v = this.views.get(id);
     if (!v) throw new Error('Note not found');
     const safe = v.title.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'note';
-    const plainBody = v.body.replace(WIKILINK_RE, (_m, _id, t: string) => `[[${t}]]`);
+    const inlineFiles = (b: string) => b.replace(/\(ergo-file:([0-9a-f-]{36})\)/g, (m, fid: string) => {
+      const f = this.files.get(fid);
+      return f ? `(data:${f.mime};base64,${f.body.replace(/\s+/g, '')})` : m;
+    });
+    const plainBody = inlineFiles(v.body).replace(WIKILINK_RE, (_m, _id, t: string) => `[[${t}]]`);
     if (format === 'md') {
       const fm: Frontmatter = { title: v.title, tags: v.tags.length ? v.tags : undefined, created: v.created, updated: v.updated };
       return { filename: `${safe}.md`, mime: 'text/markdown', content: joinDoc(fm, plainBody) };

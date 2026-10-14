@@ -5,7 +5,8 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./node": "./src/node.ts"
+    "./node": "./src/node.ts",
+    "./browser": "./src/browser.ts"
   },
   "dependencies": {
     "@noble/hashes": "1.8.0",

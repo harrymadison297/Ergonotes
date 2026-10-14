@@ -1,0 +1,217 @@
+import { useEffect, useRef, useState } from 'react';
+import {
+  AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, Cloud, FilePlus2, FileText, Folder as FolderIcon, Home as HomeIcon, Keyboard, LayoutTemplate,
+  Plus, Search, Settings as SettingsIcon, Tag as TagIcon, Trash2,
+} from 'lucide-react';
+import { useApp } from '../state/app';
+import { href } from '../state/router';
+import { classNames, isoDay } from '../state/util';
+import { CalendarView } from '../views/Calendar';
+import { ConflictsView } from '../views/Conflicts';
+import { FoldersView } from '../views/Folders';
+import { Home } from '../views/Home';
+import { NotesView, TrashView } from '../views/Notes';
+import { TasksView } from '../views/Tasks';
+import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, SettingsDialog, ShortcutsDialog, TemplatesDialog } from './Dialogs';
+import { Sidebar, useNewMenu } from './Sidebar';
+import { Toasts } from './ui';
+
+function RouteView() {
+  const { route } = useApp();
+  switch (route.name) {
+    case 'home': return <Home />;
+    case 'notes': return <NotesView noteId={route.note} />;
+    case 'tasks': return <TasksView noteId={route.note} />;
+    case 'calendar': return <CalendarView noteId={route.note} />;
+    case 'folders': return <FoldersView />;
+    case 'trash': return <TrashView noteId={route.note} />;
+    case 'conflicts': return <ConflictsView noteId={route.note} />;
+    case 'more': return <MoreView />;
+  }
+}
+
+function DialogHost() {
+  const app = useApp();
+  const d = app.dialog;
+  const close = () => app.setDialog(null);
+  if (!d) return null;
+  switch (d.kind) {
+    case 'settings': return <SettingsDialog tab={d.tab} onClose={close} />;
+    case 'shortcuts': return <ShortcutsDialog onClose={close} />;
+    case 'templates': return <TemplatesDialog onClose={close} />;
+    case 'move': return <MoveDialog id={d.id} onClose={close} />;
+    case 'conflict': return <ConflictDialog id={d.id} onClose={close} />;
+    case 'history': return <HistoryDialog id={d.id} onClose={close} />;
+    case 'import': return <ImportDialog onClose={close} />;
+    case 'newFolder': return (
+      <NameDialog title="New folder" cta="Create" onClose={close}
+        onSubmit={async v => { await app.run(app.api.createFolder({ title: v, parent: d.parent })); await app.refresh(); }} />
+    );
+    case 'rename': return (
+      <NameDialog title="Rename" cta="Rename" initial={app.byId.get(d.id)?.title} onClose={close}
+        onSubmit={async v => { await app.run(app.api.rename(d.id, v)); await app.refresh(); }} />
+    );
+  }
+}
+
+function useGlobalShortcuts() {
+  const app = useApp();
+  const pending = useRef<string | null>(null);
+  useEffect(() => {
+    const onKey = async (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      const typing = el.matches('input, textarea, select, [contenteditable="true"]') || el.isContentEditable;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); document.getElementById('global-search')?.focus(); return; }
+      if ((mod && e.key.toLowerCase() === 'n') || (e.altKey && e.key.toLowerCase() === 'n')) { e.preventDefault(); void app.newNote(); return; }
+      if (mod && e.altKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        const d = await app.run(app.api.dailyNote(isoDay()));
+        if (d) { await app.refresh(); app.go({ name: 'notes', note: d.id, folder: d.parent ?? undefined }); }
+        return;
+      }
+      if (mod && e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        const r = await app.run(app.api.sync());
+        app.toast(r?.error ?? 'Synced', r?.error ? 'error' : 'info');
+        return;
+      }
+      if (typing || mod || e.altKey) return;
+      if (e.key === '?') { app.setDialog({ kind: 'shortcuts' }); return; }
+      if (pending.current === 'g') {
+        pending.current = null;
+        const m: Record<string, Parameters<typeof app.go>[0]> = { h: { name: 'home' }, n: { name: 'notes' }, t: { name: 'tasks' }, c: { name: 'calendar' } };
+        if (m[e.key]) app.go(m[e.key]);
+        return;
+      }
+      if (e.key === 'g') { pending.current = 'g'; setTimeout(() => { pending.current = null; }, 900); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [app]);
+}
+
+/** Local reminder notifications for tasks with @remind(...). */
+function useReminders() {
+  const app = useApp();
+  const fired = useRef(new Set<string>());
+  useEffect(() => {
+    const tick = async () => {
+      const now = Date.now();
+      for (const t of app.tasks) {
+        if (t.done || !t.remind) continue;
+        const at = Date.parse(t.remind.length <= 10 ? t.remind + 'T09:00' : t.remind);
+        const key = `${t.noteId}:${t.index}:${t.remind}`;
+        if (Number.isNaN(at) || at > now || now - at > 6 * 3600e3 || fired.current.has(key)) continue;
+        fired.current.add(key);
+        app.toast(`Reminder: ${t.text}`);
+        try {
+          if ('__TAURI_INTERNALS__' in window) {
+            const n = await import(/* @vite-ignore */ '@tauri-apps/plugin-notification');
+            if (await n.isPermissionGranted() || (await n.requestPermission()) === 'granted') n.sendNotification({ title: 'Reminder', body: t.text });
+          } else if ('Notification' in window && Notification.permission === 'granted') new Notification('Reminder', { body: t.text });
+        } catch { /* notifications unavailable */ }
+      }
+    };
+    const id = setInterval(() => void tick(), 20_000);
+    void tick();
+    return () => clearInterval(id);
+  }, [app.tasks, app]);
+}
+
+function MoreView() {
+  const app = useApp();
+  const rows: { icon: JSX.Element; label: string; to?: string; onClick?: () => void; badge?: number }[] = [
+    { icon: <HomeIcon size={20} />, label: 'Home', to: href({ name: 'home' }) },
+    { icon: <CalendarDays size={20} />, label: 'Calendar', to: href({ name: 'calendar' }) },
+    { icon: <LayoutTemplate size={20} />, label: 'New from template', onClick: () => app.setDialog({ kind: 'templates' }) },
+    { icon: <AlertTriangle size={20} />, label: 'Conflicts', to: href({ name: 'conflicts' }), badge: app.conflicts.length },
+    { icon: <Trash2 size={20} />, label: 'Trash', to: href({ name: 'trash' }) },
+    { icon: <Cloud size={20} />, label: 'Sync now', onClick: async () => { const r = await app.run(app.api.sync()); app.toast(r?.error ?? 'Synced', r?.error ? 'error' : 'info'); } },
+    { icon: <SettingsIcon size={20} />, label: 'Settings', onClick: () => app.setDialog({ kind: 'settings' }) },
+    { icon: <Keyboard size={20} />, label: 'Keyboard shortcuts', onClick: () => app.setDialog({ kind: 'shortcuts' }) },
+  ];
+  return (
+    <div className="m-content m-more">
+      <div className="page-head"><h1>More</h1></div>
+      {rows.map(r => r.to
+        ? <a key={r.label} href={r.to}>{r.icon}<span style={{ flex: 1 }}>{r.label}</span>{!!r.badge && <span className="badge">{r.badge}</span>}<ChevronRight size={18} /></a>
+        : <button key={r.label} onClick={r.onClick}>{r.icon}<span style={{ flex: 1 }}>{r.label}</span><ChevronRight size={18} /></button>)}
+      {app.tags.length > 0 && (
+        <div style={{ padding: 16 }}>
+          <h3 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--text-3)' }}><TagIcon size={14} /> Tags</h3>
+          <div className="tag-cloud">{app.tags.map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })}>{t.tag}<small>{t.count}</small></a>)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MobileShell() {
+  const app = useApp();
+  const { route, go } = app;
+  const [q, setQ] = useState('');
+  const newMenu = useNewMenu();
+  const noteOpen = 'note' in route && !!route.note;
+  const tab = route.name === 'notes' || route.name === 'home' ? 'notes' : route.name === 'folders' ? 'folders' : route.name === 'tasks' ? 'tasks' : 'more';
+  return (
+    <div className="mobile">
+      <div className="m-top">
+        <form className="search-box" role="search" onSubmit={e => { e.preventDefault(); go({ name: 'notes', q: q.trim() || undefined }); }}>
+          <Search size={16} /><input aria-label="Search notes" placeholder="Search notes and tasks" value={q} onChange={e => setQ(e.target.value)} />
+        </form>
+        <button className="icon-btn" aria-label="Settings" onClick={() => app.setDialog({ kind: 'settings' })}><SettingsIcon size={20} /></button>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {route.name === 'home' ? <MobileHome /> : <RouteView />}
+      </div>
+      {!noteOpen && (route.name === 'notes' || route.name === 'home' || route.name === 'folders' || route.name === 'tasks') && (
+        <button className="fab" aria-label="New note" onClick={() => void app.newNote()}><FilePlus2 size={24} /></button>
+      )}
+      <nav className="bottom-nav" aria-label="Main">
+        <button onClick={e => newMenu.open(e)}><Plus size={22} />Create</button>
+        <a className={classNames(tab === 'notes' && 'active')} href={href({ name: 'notes' })}><FileText size={22} />Notes</a>
+        <a className={classNames(tab === 'folders' && 'active')} href={href({ name: 'folders' })}><FolderIcon size={22} />Folders</a>
+        <a className={classNames(tab === 'tasks' && 'active')} href={href({ name: 'tasks' })}><CheckCircle2 size={22} />Tasks</a>
+        <a className={classNames(tab === 'more' && 'active')} href={href({ name: 'more' })}><span style={{ position: 'relative' }}>···{app.conflicts.length > 0 && <i style={{ position: 'absolute', top: -2, right: -8, width: 8, height: 8, borderRadius: 4, background: 'var(--red)' }} />}</span>More</a>
+      </nav>
+      {newMenu.node}
+    </div>
+  );
+}
+
+function MobileHome() {
+  // on a phone the home screen is the notes grid, like the reference app
+  const app = useApp();
+  const notes = app.items.filter(i => i.type === 'note' && !i.inTrash && !i.template).sort((a, b) => b.updated.localeCompare(a.updated));
+  return <div className="m-content">
+    <div style={{ padding: '4px 16px', color: 'var(--text-3)', fontSize: 12.5, textTransform: 'uppercase' }}>{notes.length} notes</div>
+    <div className="m-cards">
+      {notes.map(n => (
+        <a key={n.id} className="card" href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })}>
+          <span className="t">{n.title}</span><span className="s">{n.snippet}</span>
+          <span className="foot"><span>{new Date(n.updated).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span></span>
+        </a>
+      ))}
+    </div>
+  </div>;
+}
+
+export function Shell() {
+  const app = useApp();
+  useGlobalShortcuts();
+  useReminders();
+  if (app.isMobile) {
+    return <><MobileShell /><DialogHost /><Toasts toasts={app.toasts} /></>;
+  }
+  return (
+    <>
+      <div className="app">
+        <Sidebar />
+        <main className="main"><RouteView /></main>
+      </div>
+      <DialogHost />
+      <Toasts toasts={app.toasts} />
+    </>
+  );
+}

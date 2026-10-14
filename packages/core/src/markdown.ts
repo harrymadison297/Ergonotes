@@ -112,6 +112,10 @@ export function setTaskDone(body: string, index: number, done: boolean): string 
 export function plainSnippet(body: string, max = 180): string {
   const s = body
     .replace(/```[\s\S]*?```/g, ' ')
+    .split('\n')
+    .filter(l => !/^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(l) || !/-/.test(l))
+    .map(l => (/^\s*\|.*\|\s*$/.test(l) ? l.replace(/\|/g, ' ') : l))
+    .join('\n')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
     .replace(/\[\[[0-9a-f-]{36}\|([^\]]*)\]\]/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
@@ -125,7 +129,8 @@ export function plainSnippet(body: string, max = 180): string {
 }
 
 export function firstImage(body: string): string | undefined {
-  return /!\[[^\]]*\]\(([^)\s]+)\)/.exec(body)?.[1];
+  const u = /!\[[^\]]*\]\(([^)\s]+)\)/.exec(body)?.[1];
+  return u && !u.startsWith('data:') ? u : undefined;
 }
 
 export function untitled(): string {

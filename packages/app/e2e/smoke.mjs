@@ -1,0 +1,143 @@
+// End-to-end smoke test: drives the real web build served by the Server peer in headless Chromium.
+// usage: node smoke.mjs <baseUrl> <shotsDir>
+import { chromium } from 'playwright';
+import { mkdirSync } from 'node:fs';
+
+const base = process.argv[2] ?? 'http://127.0.0.1:8080';
+const shots = process.argv[3] ?? './shots';
+mkdirSync(shots, { recursive: true });
+const PASSWORD = 'correct horse battery staple';
+let failures = 0;
+const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? '  — ' + extra : ''}`); if (!ok) failures++; };
+
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+const page = await ctx.newPage();
+const errors = [];
+page.on('pageerror', e => errors.push(String(e)));
+page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+
+await page.goto(base);
+await page.getByRole('heading', { name: 'Set up Ergonotes' }).waitFor({ timeout: 15000 });
+check('first run shows setup', true);
+await page.getByLabel('Vault password').fill(PASSWORD);
+await page.getByLabel('Repeat password').fill(PASSWORD);
+await page.getByRole('button', { name: 'Create vault' }).click();
+await page.getByRole('navigation', { name: 'Main' }).waitFor({ timeout: 30000 });
+check('vault created and shell visible', true);
+await page.getByText('Ready to start taking notes?').waitFor();
+check('home screen rendered', true);
+check('default folders listed', (await page.getByRole('link', { name: 'Inbox' }).count()) > 0);
+await page.waitForTimeout(500);
+await page.screenshot({ path: `${shots}/01-home.png` });
+
+// new note
+await page.getByRole('button', { name: /New/ }).first().click();
+await page.getByRole('menuitem', { name: /New note/ }).click();
+await page.getByLabel('Title').waitFor();
+await page.getByLabel('Title').fill('Property listings');
+await page.getByLabel('Title').press('Enter');
+const body = page.locator('.prose');
+await body.click();
+await page.keyboard.type('A curated selection of available listings.');
+await page.keyboard.press('Enter');
+await page.keyboard.type('## 5347 Silver Lake Dr.');
+await page.keyboard.press('Enter');
+await page.keyboard.type('- 3 bed, 2 bath');
+await page.keyboard.press('Enter');
+await page.keyboard.type('1,980 sqft');
+await page.keyboard.press('Enter');
+await page.keyboard.press('Enter');
+await page.keyboard.type('[ ] Call the agent');
+await page.keyboard.press('Enter');
+await page.keyboard.type('Book a viewing');
+await page.waitForTimeout(1200);
+check('note saved', await page.getByText('All changes saved').isVisible());
+const tagInput = page.getByLabel('Add tag');
+await tagInput.fill('Business');
+await tagInput.press('Enter');
+await page.waitForTimeout(400);
+check('tag chip shown', (await page.locator('.editor-foot .chip', { hasText: 'Business' }).count()) === 1);
+await page.screenshot({ path: `${shots}/02-note.png` });
+
+// persisted through the server: reload and reopen
+await page.reload();
+await page.getByRole('navigation', { name: 'Main' }).waitFor();
+await page.getByRole('button', { name: 'Unlock' }).count();
+await page.goto(`${base}/#/notes`);
+await page.getByText('Property listings').first().waitFor({ timeout: 10000 });
+check('note listed after reload', true);
+await page.getByText('Property listings').first().click();
+await page.locator('.prose').waitFor();
+const text = await page.locator('.prose').innerText();
+check('body persisted', text.includes('5347 Silver Lake Dr.') && text.includes('Call the agent'), JSON.stringify(text.slice(0, 80)));
+check('checklist survives the markdown round trip', (await page.locator('.prose ul[data-type="taskList"] li').count()) === 2);
+check('bullet list survives', (await page.locator('.prose ul:not([data-type]) li').count()) === 2);
+
+// tasks
+await page.goto(`${base}/#/tasks`);
+await page.getByText('Call the agent').first().waitFor({ timeout: 10000 });
+check('tasks view lists the checklist item', true);
+await page.screenshot({ path: `${shots}/03-tasks.png` });
+await page.getByRole('checkbox', { name: /Complete Call the agent/ }).click();
+await page.waitForTimeout(500);
+await page.getByRole('tab', { name: 'Completed' }).click();
+check('task completes', (await page.getByText('Call the agent').count()) > 0);
+
+// search
+await page.goto(`${base}/#/notes`);
+await page.getByLabel('Search notes').fill('silver');
+await page.getByLabel('Search notes').press('Enter');
+await page.getByText('Search: silver').waitFor();
+check('search finds the note', (await page.locator('.note-row', { hasText: 'Property listings' }).count()) > 0);
+
+// calendar + folders
+await page.goto(`${base}/#/calendar`);
+await page.getByRole('grid', { name: 'Calendar' }).waitFor();
+await page.screenshot({ path: `${shots}/04-calendar.png` });
+await page.goto(`${base}/#/folders`);
+await page.getByRole('heading', { name: 'Folders' }).waitFor();
+await page.screenshot({ path: `${shots}/05-folders.png` });
+
+// slash command inserts a table
+await page.goto(`${base}/#/notes`);
+await page.locator('.note-row', { hasText: 'Property listings' }).first().click();
+await page.locator('.prose').click();
+await page.keyboard.press('Control+End');
+await page.keyboard.press('Enter');
+await page.keyboard.press('Enter');
+await page.keyboard.type('/table');
+await page.waitForTimeout(300);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(400);
+check('slash command inserts a table', (await page.locator('.prose table').count()) === 1);
+await page.waitForTimeout(1200);
+await page.reload();
+await page.locator('.prose').waitFor();
+check('table and tasks survive a reload', (await page.locator('.prose table').count()) === 1 && (await page.locator('.prose ul[data-type="taskList"] li').count()) === 2);
+await page.screenshot({ path: `${shots}/06-note-table.png` });
+
+// mobile
+const m = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+const mp = await m.newPage();
+await mp.goto(base);
+await mp.getByLabel('Password').fill(PASSWORD);
+await mp.getByRole('button', { name: 'Sign in' }).click();
+await mp.getByRole('navigation', { name: 'Main' }).waitFor({ timeout: 20000 });
+await mp.waitForTimeout(600);
+await mp.screenshot({ path: `${shots}/07-mobile-notes.png` });
+check('mobile bottom navigation present', (await mp.locator('.bottom-nav').count()) === 1);
+await mp.goto(`${base}/#/tasks`);
+await mp.waitForTimeout(500);
+await mp.screenshot({ path: `${shots}/08-mobile-tasks.png` });
+await mp.goto(`${base}/#/notes`);
+await mp.locator('.note-row', { hasText: 'Property listings' }).first().click();
+await mp.waitForTimeout(700);
+await mp.screenshot({ path: `${shots}/09-mobile-note.png` });
+check('mobile note editor opens', (await mp.locator('.m-note .prose').count()) === 1);
+
+const real = errors.filter(e => !/favicon|ResizeObserver/.test(e));
+check('no console errors', real.length === 0, real.slice(0, 3).join(' | '));
+await browser.close();
+console.log(failures ? `${failures} check(s) failed` : 'all checks passed');
+process.exit(failures ? 1 : 0);
