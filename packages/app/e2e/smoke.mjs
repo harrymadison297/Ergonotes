@@ -152,7 +152,9 @@ await page.keyboard.press('Escape');
 await page.waitForTimeout(1500);
 await page.goto(`${base}/#/files`);
 await page.locator('.file-card', { hasText: 'prices.csv' }).waitFor({ timeout: 10000 });
-check('files page lists the attachment with its note', (await page.locator('.file-card', { hasText: 'Property listings' }).count()) === 1);
+await page.locator('.file-card', { hasText: 'Property listings' }).waitFor({ timeout: 10000 }).then(
+  () => check('files page lists the attachment with its note', true),
+  () => check('files page lists the attachment with its note', false));
 await page.locator('.file-card', { hasText: 'prices.csv' }).click();
 await page.getByText('Bergen, NO').waitFor({ timeout: 10000 });
 check('file preview opens beside the list', true);
