@@ -1,5 +1,6 @@
 import { lazy, Suspense, useRef } from 'react';
-import { Dialog } from './ui';
+import { Download } from 'lucide-react';
+import { download } from '../state/util';
 import '@excalidraw/excalidraw/index.css';
 
 const Excalidraw = lazy(async () => {
@@ -26,11 +27,31 @@ export function DrawingDialog({ initial, onSave, onClose }: { initial: string; o
     onSave(JSON.stringify({ type: 'excalidraw', version: 2, elements, appState, files: s.files }));
   };
 
+  const exportAs = async (kind: 'svg' | 'png') => {
+    const s = latest.current;
+    if (!s) return;
+    const mod = await import('@excalidraw/excalidraw');
+    const elements = (s.elements as { isDeleted?: boolean }[]).filter(e => !e.isDeleted) as never;
+    const common = { elements, files: s.files as never, appState: { ...(s.appState as object), exportBackground: true } as never };
+    if (kind === 'svg') {
+      const svg = await mod.exportToSvg(common);
+      download('drawing.svg', 'image/svg+xml', new XMLSerializer().serializeToString(svg));
+    } else {
+      const blob = await mod.exportToBlob({ ...common, mimeType: 'image/png' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'drawing.png'; document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+  };
+
   return (
     <div className="scrim" style={{ padding: 0 }}>
       <div className="dialog wide" style={{ width: '100vw', height: '100dvh', maxHeight: 'none', borderRadius: 0 }} role="dialog" aria-modal="true" aria-label="Drawing">
         <header>
           <h2>Drawing</h2>
+          <button className="btn" onClick={() => void exportAs('svg')}><Download size={14} /> SVG</button>
+          <button className="btn" onClick={() => void exportAs('png')}><Download size={14} /> PNG</button>
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={save}>Done</button>
         </header>
@@ -47,4 +68,3 @@ export function DrawingDialog({ initial, onSave, onClose }: { initial: string; o
     </div>
   );
 }
-void Dialog;

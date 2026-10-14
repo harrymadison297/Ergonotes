@@ -41,7 +41,8 @@ export type DialogState =
   | { kind: 'history'; id: string }
   | { kind: 'newFolder'; parent: string | null }
   | { kind: 'rename'; id: string }
-  | { kind: 'import' };
+  | { kind: 'import' }
+  | { kind: 'file'; id: string };
 
 const Ctx = createContext<AppCtx | null>(null);
 export const useApp = (): AppCtx => {

@@ -12,7 +12,7 @@ import TableHeader from '@tiptap/extension-table-header';
 import { Markdown } from 'tiptap-markdown';
 import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
-  Link2, List, ListOrdered, MoreHorizontal, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, X, Image as ImageIcon, Minus, LayoutTemplate,
+  Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, X, Image as ImageIcon, Minus, LayoutTemplate,
 } from 'lucide-react';
 import type { NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
@@ -76,7 +76,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       StarterKit.configure({ heading: { levels: [1, 2, 3] }, listItem: false, bulletList: false }),
       MarkdownBulletList,
       ListItem.extend({ content: 'paragraph (bulletList | orderedList)*' }),
-      Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
+      Link.configure({ openOnClick: false, autolink: true, protocols: [{ scheme: 'ergo-file', optionalSlashes: true }], HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
       Placeholder.configure({ placeholder: 'Start writing…  type / for commands, [[ to link a note' }),
       MarkdownTaskList, TaskItem.extend({ content: 'paragraph taskList?' }).configure({ nested: true }),
       Table.configure({ resizable: false }), TableRow, TableHeader, TableCell,
@@ -162,10 +162,12 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
 
   const attach = async (files: FileList | File[]) => {
     for (const f of Array.from(files)) {
-      if (!f.type.startsWith('image/')) { app.toast(`“${f.name}” is not an image`, 'error'); continue; }
       const data = await fileToBase64(f);
-      const r = await app.run(api.addFile({ name: f.name, mime: f.type, data }));
-      if (r) editor?.chain().focus().setImage({ src: `ergo-file:${r.id}`, alt: f.name }).run();
+      const mime = f.type || 'application/octet-stream';
+      const r = await app.run(api.addFile({ name: f.name, mime, data }));
+      if (!r) continue;
+      if (mime.startsWith('image/')) editor?.chain().focus().setImage({ src: `ergo-file:${r.id}`, alt: f.name }).run();
+      else editor?.chain().focus().insertContent({ type: 'text', text: f.name, marks: [{ type: 'link', attrs: { href: `ergo-file:${r.id}` } }] }).insertContent(' ').run();
     }
   };
 
@@ -192,7 +194,9 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     const dom = editor.view.dom;
     const onClick = (e: MouseEvent) => {
       const t = (e.target as HTMLElement).closest('[data-wikilink]');
-      if (t) { e.preventDefault(); app.go({ name: 'notes', note: t.getAttribute('data-wikilink') ?? undefined }); }
+      if (t) { e.preventDefault(); app.go({ name: 'notes', note: t.getAttribute('data-wikilink') ?? undefined }); return; }
+      const a = (e.target as HTMLElement).closest('a[href^="ergo-file:"]');
+      if (a) { e.preventDefault(); app.setDialog({ kind: 'file', id: (a.getAttribute('href') ?? '').slice('ergo-file:'.length) }); }
     };
     dom.addEventListener('click', onClick);
     return () => dom.removeEventListener('click', onClick);
@@ -239,7 +243,8 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     { label: 'Checklist', icon: <CheckSquare size={16} />, onClick: () => editor.chain().focus().toggleTaskList().run() },
     { label: 'Table', icon: <Table2 size={16} />, onClick: () => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
     { label: 'Drawing', icon: <Pencil size={16} />, onClick: insertDrawing },
-    { label: 'Image', icon: <ImageIcon size={16} />, onClick: () => fileInput.current?.click() },
+    { label: 'Image', icon: <ImageIcon size={16} />, onClick: () => { if (fileInput.current) { fileInput.current.accept = 'image/*'; fileInput.current.click(); } } },
+    { label: 'File (xlsx, csv, pptx, pdf…)', icon: <Paperclip size={16} />, onClick: () => { if (fileInput.current) { fileInput.current.accept = ''; fileInput.current.click(); } } },
     { label: 'Link to a note', icon: <Link2 size={16} />, onClick: () => editor.chain().focus().insertContent('[[').run() },
     { label: 'Divider', icon: <Minus size={16} />, onClick: () => editor.chain().focus().setHorizontalRule().run() },
     { label: 'Code block', icon: <Code size={16} />, onClick: () => editor.chain().focus().toggleCodeBlock().run() },
@@ -350,7 +355,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         <span role="status" aria-live="polite">{saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Could not save' : 'All changes saved'}</span>
       </div>
 
-      <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={e => { if (e.target.files) void attach(e.target.files); e.target.value = ''; }} />
+      <input ref={fileInput} type="file" multiple hidden onChange={e => { if (e.target.files) void attach(e.target.files); e.target.value = ''; }} />
 
       {drawing && (
         <DrawingDialog initial={drawing.data} onClose={() => {

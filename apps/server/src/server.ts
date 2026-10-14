@@ -7,6 +7,7 @@ import { extname, join, normalize, sep } from 'node:path';
 import { Vault, VAULT_METHODS, type StoreConfig, type VaultStatus } from '@ergonotes/core';
 import { FilePersist, FolderStore } from '@ergonotes/core/node';
 import { Mirror } from './mirror.ts';
+import { handleRpc, TokenStore } from './mcp.ts';
 
 export interface ServerOptions {
   port: number;
@@ -51,6 +52,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
       return new FolderStore(cfg.path);
     },
   });
+  const tokens = new TokenStore(join(o.dataDir, 'api-tokens.json'));
   const mirror = o.mirrorDir === null ? null : new Mirror(vault, o.mirrorDir ?? join(o.dataDir, 'markdown'));
   const sessions = new Map<string, number>();
   const attempts = new Map<string, number[]>();
@@ -217,6 +219,30 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
       }
       res.setHeader('x-frame-options', 'DENY');
       res.setHeader('referrer-policy', 'no-referrer');
+      if (url.pathname === '/mcp') {
+        const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1];
+        if (!bearer || !(await tokens.check(bearer))) return json(res, 401, { error: 'A valid API token is required' }, { 'www-authenticate': 'Bearer' });
+        if (req.method !== 'POST') return json(res, 405, { error: 'POST JSON-RPC messages to this endpoint' });
+        let body: unknown;
+        try { body = JSON.parse(await readBody(req, 4 * 1024 * 1024)); } catch { return json(res, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }); }
+        const batch = Array.isArray(body);
+        const out = (await Promise.all((batch ? (body as unknown[]) : [body]).map(m => handleRpc(vault, m as Record<string, unknown>)))).filter(Boolean);
+        if (out.length === 0) { res.writeHead(202); return res.end(); }
+        return json(res, 200, batch ? out : out[0]);
+      }
+      if (url.pathname === '/api/tokens') {
+        if (!authed(req)) return json(res, 401, { error: 'Sign in first' });
+        if (req.method === 'GET') return json(res, 200, await tokens.list());
+        if (req.method === 'POST') {
+          if (!/^application\/json/.test(req.headers['content-type'] ?? '')) return json(res, 415, { error: 'JSON only' });
+          const origin = req.headers.origin;
+          if (origin && new URL(origin).host !== req.headers.host) return json(res, 403, { error: 'Cross-origin request refused' });
+          const b = JSON.parse((await readBody(req)) || '{}') as { name?: string; revoke?: string };
+          if (b.revoke) { await tokens.revoke(b.revoke); return json(res, 200, { ok: true }); }
+          return json(res, 200, await tokens.create(b.name ?? 'Agent'));
+        }
+        return json(res, 405, { error: 'Method not allowed' });
+      }
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
       return await serveStatic(req, res, url);
     } catch (e) {

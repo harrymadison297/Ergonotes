@@ -117,6 +117,39 @@ await page.locator('.prose').waitFor();
 check('table and tasks survive a reload', (await page.locator('.prose table').count()) === 1 && (await page.locator('.prose ul[data-type="taskList"] li').count()) === 2);
 await page.screenshot({ path: `${shots}/06-note-table.png` });
 
+// attachments: a CSV is stored as a file item and previewed as a table
+await page.goto(`${base}/#/notes`);
+await page.locator('.note-row', { hasText: 'Property listings' }).first().click();
+await page.locator('.prose').click();
+await page.keyboard.press('Control+End');
+await page.keyboard.press('Enter');
+await page.setInputFiles('input[type=file]', { name: 'prices.csv', mimeType: 'text/csv', buffer: Buffer.from('city,price\nOslo,100\n"Bergen, NO",90\n') });
+await page.getByRole('link', { name: 'prices.csv' }).waitFor({ timeout: 10000 });
+await page.getByRole('link', { name: 'prices.csv' }).click();
+await page.getByRole('dialog', { name: 'prices.csv' }).waitFor();
+check('csv attachment previews as a table', (await page.getByRole('dialog').getByText('Bergen, NO').count()) === 1);
+await page.screenshot({ path: `${shots}/10-csv-preview.png` });
+await page.keyboard.press('Escape');
+
+// wiki link picker
+await page.locator('.prose').click();
+await page.keyboard.press('Control+End');
+await page.keyboard.press('Enter');
+await page.keyboard.type('See [[Welcome');
+await page.waitForTimeout(500);
+await page.keyboard.press('Enter');
+await page.waitForTimeout(500);
+check('wiki link inserted from the picker', (await page.locator('.prose .wikilink').count()) === 1);
+
+// drawing block: opens the board and keeps an (empty) drawing block when done
+await page.getByRole('button', { name: /Insert/ }).click();
+await page.getByRole('menuitem', { name: 'Drawing' }).click();
+await page.getByRole('dialog', { name: 'Drawing' }).waitFor({ timeout: 30000 });
+await page.getByRole('button', { name: 'Done' }).click();
+await page.waitForTimeout(500);
+check('drawing block present', (await page.locator('.excalidraw-block').count()) === 1);
+await page.waitForTimeout(1500);
+
 // mobile
 const m = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
 const mp = await m.newPage();
@@ -131,7 +164,7 @@ await mp.goto(`${base}/#/tasks`);
 await mp.waitForTimeout(500);
 await mp.screenshot({ path: `${shots}/08-mobile-tasks.png` });
 await mp.goto(`${base}/#/notes`);
-await mp.locator('.note-row', { hasText: 'Property listings' }).first().click();
+await mp.locator('.m-cards .card', { hasText: 'Property listings' }).first().click();
 await mp.waitForTimeout(700);
 await mp.screenshot({ path: `${shots}/09-mobile-note.png` });
 check('mobile note editor opens', (await mp.locator('.m-note .prose').count()) === 1);

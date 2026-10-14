@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Download, FileUp, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save } from 'lucide-react';
+import { Bot, Check, Copy, Download, FileUp, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { applyHunks, joinDoc, lineDiff, splitDoc, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, relTime } from '../state/util';
@@ -293,7 +293,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
   return (
     <Dialog title="Settings" wide onClose={onClose}>
       <div className="tabs" role="tablist" style={{ margin: '0 -8px 14px' }}>
-        {[['general', 'General'], ['sync', 'Sync & storage'], ['security', 'Security'], ['data', 'Data']].map(([k, l]) =>
+        {[['general', 'General'], ['sync', 'Sync & storage'], ...(remote ? [['agents', 'AI & agents']] : []), ['security', 'Security'], ['data', 'Data']].map(([k, l]) =>
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}
       </div>
       {tab === 'general' && (
@@ -332,6 +332,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
           </div>
         </div>
       )}
+      {tab === 'agents' && remote && <AgentsPanel />}
       {tab === 'security' && (
         <div style={{ maxWidth: 480 }}>
           <h3 style={{ marginTop: 0 }}>Change vault password</h3>
@@ -355,5 +356,45 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
         </div>
       )}
     </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------- AI & agents (MCP tokens, server mode)
+function AgentsPanel() {
+  const app = useApp();
+  const [tokens, setTokens] = useState<{ id: string; name: string; created: string; lastUsed: string | null }[]>([]);
+  const [name, setName] = useState('Claude');
+  const [fresh, setFresh] = useState<string | null>(null);
+  const endpoint = new URL('./mcp', location.href).toString();
+  const load = async () => { const r = await fetch('./api/tokens', { credentials: 'same-origin' }); if (r.ok) setTokens(await r.json()); };
+  useEffect(() => { void load(); }, []);
+  const post = async (body: unknown) => (await fetch('./api/tokens', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
+  const snippet = JSON.stringify({ mcpServers: { ergonotes: { type: 'http', url: endpoint, headers: { Authorization: `Bearer ${fresh ?? '<token>'}` } } } }, null, 2);
+  return (
+    <div style={{ maxWidth: 620 }}>
+      <p style={{ marginTop: 0, color: 'var(--text-2)' }}>
+        Let an AI assistant search, read and write your notes through the Model Context Protocol. Anything you give a token access to can read every note on this server, so create one per agent and revoke it when you stop using it.
+      </p>
+      <div className="field"><label>MCP endpoint</label><input className="input" readOnly value={endpoint} onFocus={e => e.currentTarget.select()} /></div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        <input className="input" aria-label="Token name" value={name} onChange={e => setName(e.target.value)} />
+        <button className="btn primary" onClick={async () => { const r = await post({ name }); setFresh(r.token); await load(); }}><Bot size={16} /> Create token</button>
+      </div>
+      {fresh && (
+        <div className="banner info" style={{ borderRadius: 6, display: 'block', marginBottom: 14 }} role="status">
+          <b>Copy this token now; it is shown only once.</b>
+          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: '6px 0' }}>{fresh}</pre>
+          <details><summary>Client configuration</summary><pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{snippet}</pre></details>
+          <button className="btn" onClick={async () => { await navigator.clipboard?.writeText(fresh); app.toast('Token copied'); }}><Copy size={14} /> Copy</button>
+        </div>
+      )}
+      <table className="table"><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th /></tr></thead><tbody>
+        {tokens.map(t => (
+          <tr key={t.id}><td className="name">{t.name}</td><td>{new Date(t.created).toLocaleDateString()}</td><td>{t.lastUsed ? relTime(t.lastUsed) : 'never'}</td>
+            <td style={{ textAlign: 'right' }}><button className="icon-btn" aria-label={`Revoke ${t.name}`} onClick={async () => { await post({ revoke: t.id }); await load(); }}><Trash2 size={16} /></button></td></tr>
+        ))}
+        {tokens.length === 0 && <tr><td colSpan={4} style={{ color: 'var(--text-3)' }}>No tokens yet.</td></tr>}
+      </tbody></table>
+    </div>
   );
 }

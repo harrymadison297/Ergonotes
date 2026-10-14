@@ -35,7 +35,9 @@
     "@tauri-apps/plugin-notification": "^2.0.0",
     "@tiptap/extension-list-item": "^2.11.0",
     "@tiptap/extension-bullet-list": "^2.11.0",
-    "markdown-it-task-lists": "^2.1.1"
+    "markdown-it-task-lists": "^2.1.1",
+    "fflate": "^0.8.2",
+    "read-excel-file": "^5.8.8"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

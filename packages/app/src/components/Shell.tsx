@@ -12,6 +12,7 @@ import { FoldersView } from '../views/Folders';
 import { Home } from '../views/Home';
 import { NotesView, TrashView } from '../views/Notes';
 import { TasksView } from '../views/Tasks';
+import { FilePreviewDialog } from './FilePreview';
 import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, SettingsDialog, ShortcutsDialog, TemplatesDialog } from './Dialogs';
 import { Sidebar, useNewMenu } from './Sidebar';
 import { Toasts } from './ui';
@@ -43,6 +44,7 @@ function DialogHost() {
     case 'conflict': return <ConflictDialog id={d.id} onClose={close} />;
     case 'history': return <HistoryDialog id={d.id} onClose={close} />;
     case 'import': return <ImportDialog onClose={close} />;
+    case 'file': return <FilePreviewDialog id={d.id} onClose={close} />;
     case 'newFolder': return (
       <NameDialog title="New folder" cta="Create" onClose={close}
         onSubmit={async v => { await app.run(app.api.createFolder({ title: v, parent: d.parent })); await app.refresh(); }} />

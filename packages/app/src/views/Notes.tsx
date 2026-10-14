@@ -4,7 +4,7 @@ import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { NoteEditor } from '../components/NoteEditor';
-import { NoteRow, useMenu } from '../components/ui';
+import { NoteCard, NoteRow, useMenu } from '../components/ui';
 import { classNames } from '../state/util';
 
 type Sort = 'updated' | 'created' | 'title';
@@ -91,9 +91,19 @@ export function NotesView({ noteId }: { noteId?: string }) {
   );
 
   if (app.isMobile) {
+    const mobileList = (
+      <div className="m-content">
+        <div className="m-list-head"><span>{heading} · {shown.length} note{shown.length === 1 ? '' : 's'}</span><span className="grow" />
+          <button className="icon-btn" aria-label="Sort notes" onClick={e => sortMenu.open(e, sortEntries(), 'right')}><ArrowDownUp size={18} /></button></div>
+        {sortMenu.node}
+        {shown.length === 0
+          ? <div className="empty"><FileText size={32} /><h3>{q ? 'No notes match' : 'No notes here yet'}</h3><p>{q ? 'Try different words.' : 'Tap the green button to write one.'}</p></div>
+          : <div className="m-cards">{shown.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', ...base, note: n.id })} />)}</div>}
+      </div>
+    );
     return (
       <>
-        <div className="m-content">{listPane}</div>
+        {mobileList}
         {noteId && <div className="m-note"><NoteEditor key={noteId} id={noteId} onBack={() => app.go({ name: 'notes', ...base })} /></div>}
       </>
     );
