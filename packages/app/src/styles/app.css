@@ -351,12 +351,12 @@ a.tag-pill:hover { background: color-mix(in srgb, var(--c, var(--slate-500)) 26%
 .prose .task-meta.overdue { background: var(--danger-bg); color: var(--danger); }
 .prose .wikilink { background: var(--green-tint); color: var(--green-ink); padding: 0 5px; border-radius: 4px; cursor: pointer; text-decoration: none; }
 .prose .wikilink.missing { background: var(--danger-bg); color: var(--danger); }
-.excalidraw-block { border: 1px solid var(--border); border-radius: 8px; padding: 8px; background: var(--bg-soft); position: relative; cursor: pointer; text-align: center; min-height: 100px; }
-.excalidraw-block:hover { border-color: var(--border-strong); }
+.excalidraw-block { position: relative; cursor: pointer; text-align: center; }
 .excalidraw-block svg { max-width: 100%; height: auto; max-height: 460px; }
-.excalidraw-block .hint { position: absolute; right: 10px; top: 8px; font-size: var(--fs-xs); color: var(--text-2); background: var(--bg); padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); }
-.excalidraw-block.empty { display: grid; place-items: center; color: var(--text-2); }
-.ProseMirror-selectednode.excalidraw-block, .excalidraw-block.ProseMirror-selectednode { border-color: var(--green); box-shadow: 0 0 0 2px var(--green-tint); }
+.excalidraw-block .hint { position: absolute; right: 8px; top: 8px; padding: 2px 8px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); color: var(--text-2); font-size: var(--fs-xs); opacity: 0; pointer-events: none; transition: opacity .12s; }
+.excalidraw-block:hover .hint, .excalidraw-block.ProseMirror-selectednode .hint, html.kbd .excalidraw-block:focus-within .hint { opacity: 1; }
+.excalidraw-block.empty { color: var(--text-2); }
+.excalidraw-block.empty .hint { display: none; }
 
 /* ---------- diff ---------- */
 .diff { font-family: var(--mono); font-size: var(--fs-s); border: 1px solid var(--border); border-radius: 6px; overflow: auto; max-height: 52vh; }

@@ -184,9 +184,11 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const insertDrawing = useCallback(() => {
     if (!editor) return;
     editor.chain().focus().insertContent({ type: 'excalidraw', attrs: { data: '' } }).run();
-    // the node we just inserted is the selected node; open it
-    const pos = editor.state.selection.from - 1;
-    setDrawing({ pos: Math.max(0, pos), data: '' });
+    // open the empty drawing we just inserted: the last one at or before the cursor
+    const { from } = editor.state.selection;
+    let pos = -1;
+    editor.state.doc.descendants((n, p) => { if (n.type.name === 'excalidraw' && !n.attrs.data && p <= from) pos = p; });
+    setDrawing({ pos: pos >= 0 ? pos : Math.max(0, from - 1), data: '' });
   }, [editor]);
 
   useEffect(() => {
