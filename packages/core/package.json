@@ -1,0 +1,18 @@
+{
+  "name": "@ergonotes/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts"
+  },
+  "dependencies": {
+    "@noble/hashes": "1.8.0",
+    "hash-wasm": "^4.12.0",
+    "markdown-it": "^14.1.0",
+    "minisearch": "^7.1.0",
+    "node-diff3": "^3.1.2",
+    "yaml": "^2.8.0"
+  }
+}

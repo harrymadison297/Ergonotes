@@ -1,0 +1,21 @@
+{
+  "name": "ergonotes",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build:app": "npm -w @ergonotes/app run build",
+    "start:server": "node apps/server/src/main.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0",
+    "@types/markdown-it": "^14.1.2"
+  }
+}
