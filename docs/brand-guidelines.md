@@ -47,7 +47,8 @@ is derived from these nine values.
 
 | Token | Value | Use |
 |---|---|---|
-| `--green-hover` | `#2dbe60` mixed 14 % with black | Primary hover/pressed |
+| `--green-fill` | `#2dbe60` mixed 30 % with black (`#1f8543`) | Filled controls with white text: primary buttons, New note pill, today marker |
+| `--green-fill-hover` | `#2dbe60` mixed 38 % with black | Hover/pressed for filled controls |
 | `--green-ink` | `#196935` (`#2dbe60` 55 % + black) | Green **text** and icons on light surfaces |
 | `--green-tint` | `#e6f7ec` | Soft green backgrounds (reminders, "new" states) |
 | `--danger` | `#c8283a` | Errors, destructive actions, conflicts. The only non-palette hue in the chrome |
@@ -60,13 +61,14 @@ is derived from these nine values.
 | `#3b4446` on `#ffffff` | 10.0 : 1 | AAA, body text |
 | `#525e61` on `#ffffff` | 6.7 : 1 | AA, secondary text |
 | `#7b868a` on `#ffffff` | 3.7 : 1 | Large text and non-text UI only |
-| `#000000` on `#2dbe60` | 8.7 : 1 | AAA, **primary button label** |
+| `#ffffff` on `#1f8543` | 4.7 : 1 | AA, **primary button label and icon** |
+| `#000000` on `#2dbe60` | 8.7 : 1 | AAA, only if the bright brand green is used as a fill |
 | `#ffffff` on `#2dbe60` | 2.4 : 1 | **Never** put white on the brand green |
 | `#2dbe60` on `#ffffff` | 2.4 : 1 | **Never** use the brand green for text; use `--green-ink` |
 
 Consequences:
 
-1. Primary buttons are green with a **black** label.
+1. Filled green controls use `--green-fill` with a **white** label or icon. The bright `#2dbe60` stays for thin accents (selection marker, tab underline, drop target) where no text sits on it.
 2. Green text, links and outline icons use `--green-ink`, not `--green`.
 3. Timestamps and counts use `--slate-700`. `--slate-500` is never the only carrier of meaning.
 4. Colour never stands alone: a coloured tag dot always has the tag name beside it, in text or as a tooltip.
@@ -153,7 +155,7 @@ things that float: menus, dialogs, toasts, the search popup.
 
 | Type | Fill | Label | Use |
 |---|---|---|---|
-| Primary | `--green` | `--ink` | The one main action in a view |
+| Primary | `--green-fill` | white | The one main action in a view |
 | Secondary | `--white` + `--slate-300` border | `--slate-900` | Other actions |
 | Ghost | none | `--slate-700` | Toolbars, rows |
 | Danger | none + `--danger` border | `--danger` | Delete, purge |

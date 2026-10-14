@@ -28,10 +28,13 @@
   --border: var(--slate-200);
   --border-strong: var(--slate-300);
   --border-field: var(--slate-500);
-  --green-hover: color-mix(in srgb, var(--green) 86%, #000);
+  /* filled controls: the brand green darkened 30% so white text passes AA (4.7:1) */
+  --green-fill: color-mix(in srgb, var(--green) 70%, #000);
+  --green-fill-hover: color-mix(in srgb, var(--green) 62%, #000);
+  --green-hover: var(--green-fill-hover);
   --green-ink: #196935;
   --green-tint: #e6f7ec;
-  --on-green: var(--ink);
+  --on-green: #ffffff;
   --danger-bg: #fde8eb;
   --tag-alpha: 14%;
 
