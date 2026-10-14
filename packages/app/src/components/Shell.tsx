@@ -166,7 +166,7 @@ function MoreView() {
         : <button key={r.label} onClick={r.onClick}>{r.icon}<span style={{ flex: 1 }}>{r.label}</span><ChevronRight size={18} /></button>)}
       {app.tags.length > 0 && (
         <div style={{ padding: 16 }}>
-          <h3 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--text-2)' }}><TagIcon size={14} /> Tags</h3>
+          <h3 style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text-2)' }}><TagIcon size={14} /> Tags</h3>
           <div className="tag-cloud">{app.tags.map(t => <TagLink key={t.tag} tag={t.tag} count={t.count} href={href({ name: 'notes', tag: t.tag })} />)}</div>
         </div>
       )}

@@ -189,6 +189,24 @@ check('sidebar can be resized by dragging its edge', sbW1 > sbW0 + 60, `${Math.r
 await page.getByRole('separator', { name: 'Resize sidebar' }).dblclick();
 check('double-click resets the width', Math.abs((await page.locator('.sidebar').boundingBox()).width - sbW0) < 2);
 
+// type scale: every rendered text size is a multiple of 4 px
+const oddSizes = async () => page.evaluate(() => {
+  const bad = new Set();
+  for (const el of document.querySelectorAll('body *')) {
+    if (el.closest('svg, .ex-paper, .excalidraw')) continue;
+    if (!el.childNodes.length || ![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
+    const px = parseFloat(getComputedStyle(el).fontSize);
+    if (px % 4 !== 0) bad.add(`${px}px ${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]}`);
+  }
+  return [...bad];
+});
+for (const route of ['#/', '#/notes', '#/tasks', '#/calendar', '#/folders']) {
+  await page.goto(`${base}/${route}`);
+  await page.waitForTimeout(500);
+  const bad = await oddSizes();
+  check(`all text sizes are multiples of 4 on ${route}`, bad.length === 0, bad.slice(0, 5).join(', '));
+}
+
 // pinned and trash with undo
 await page.goto(`${base}/#/notes`);
 await page.locator('.note-row', { hasText: 'Property listings' }).first().click();

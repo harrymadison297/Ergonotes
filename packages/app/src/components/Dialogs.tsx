@@ -203,7 +203,7 @@ export function TemplatesDialog({ onClose }: { onClose: () => void }) {
             const n = await app.run(app.api.createFromTemplate(t.id));
             if (n) { await app.refresh(); onClose(); app.go({ name: 'notes', note: n.id, folder: n.parent ?? undefined }); }
           }}>
-          <b>{t.title}</b><span style={{ color: 'var(--text-2)', fontSize: 12.5 }}>{t.snippet.slice(0, 90)}</span>
+          <b>{t.title}</b><span style={{ color: 'var(--text-2)', fontSize: 12 }}>{t.snippet.slice(0, 90)}</span>
         </button>
       ))}
     </Dialog>

@@ -46,6 +46,12 @@
   --rail-w: 68px;
   --list-w: 352px;
   --toc-w: 240px;
+  /* type scale: every size is a multiple of 4 px */
+  --fs-s: 12px;
+  --fs-m: 16px;
+  --fs-l: 20px;
+  --fs-xl: 24px;
+  --fs-editor: var(--fs-s);
   --font: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;

@@ -114,19 +114,16 @@ Red is excluded: it means "danger".
 
 - **Family**: Inter Variable. Fallback `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`.
 - **Mono** (code, diff): `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`.
-- Body 13 px in chrome, 15 px / 1.65 in the editor. Minimum 12 px everywhere.
+- **Every size is a multiple of 4 px**: 12, 16, 20, 24 (tokens `--fs-s/m/l/xl`). 12 px is both the
+  body size and the minimum. Nothing uses 13, 14, 15 px or fractional sizes.
+- The editor body uses `--fs-editor` (12 px). Set it to `var(--fs-m)` for 16 px reading text.
 
 | Role | Size | Weight |
 |---|---|---|
-| Home greeting | 26 px | 700 |
-| Page title | 24 px | 700 |
-| Note list heading | 20 px | 700 |
-| Dialog title | 17 px | 600 |
-| New note pill | 14 px | 700 |
-| Section heading | 16 px | 600 |
-| Body (chrome) | 13 px | 400 / 500 |
-| Meta, captions | 12–12.5 px | 400 |
-| Editor title | 28 px (24 px on phones) | 700 |
+| Page title, Home greeting, editor title, editor Heading 1 | 24 px (editor title 20 px on phones) | 700 |
+| Note list heading, editor Heading 2, dialog-level headings | 20 px | 700 |
+| Section heading (widgets), dialog title, editor Heading 3, search field | 16 px | 600 |
+| Body, buttons, meta, captions, editor text | 12 px | 400 / 500 |
 
 Sentence case everywhere ("New note", not "New Note"). No all-caps except the small menu group titles (12 px).
 
