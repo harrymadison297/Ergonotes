@@ -157,3 +157,26 @@ describe('MCP endpoint', () => {
     expect((await mcp('ping', {}, t2.body.token)).status).toBe(401);
   });
 });
+
+describe('first-run protection', () => {
+  it('requires the setup token when configured and hides details before sign-in', async () => {
+    const d = await mkdtemp(join(tmpdir(), 'ergonotes-setup-'));
+    const s = await startServer({ port: 0, host: '127.0.0.1', dataDir: d, kdf: { m: 256, t: 1, p: 1 }, mirrorDir: null, setupToken: 'let-me-in' });
+    const u = `http://127.0.0.1:${s.port}`;
+    const post = (args: unknown[]) => fetch(`${u}/api/rpc/createVault`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(args) });
+    expect((await post([PASSWORD])).status).toBe(403);
+    expect((await post([PASSWORD, { setupToken: 'wrong' }])).status).toBe(403);
+    const ok = await post([PASSWORD, { setupToken: 'let-me-in' }]);
+    expect(ok.status).toBe(200);
+    const cookieHeader = ok.headers.get('set-cookie')!.split(';')[0];
+    await fetch(`${u}/api/rpc/setStore`, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookieHeader }, body: JSON.stringify([{ type: 'folder', path: join(d, 'store') }]) });
+    const anon = await (await fetch(`${u}/api/status`)).json();
+    expect(anon.authenticated).toBe(false);
+    expect(anon.store).toBeNull();
+    expect(anon.lastSyncError).toBeNull();
+    const authed = await (await fetch(`${u}/api/status`, { headers: { cookie: cookieHeader } })).json();
+    expect(authed.store?.type).toBe('folder');
+    await s.close();
+    await rm(d, { recursive: true, force: true });
+  });
+});

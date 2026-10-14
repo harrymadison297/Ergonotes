@@ -150,6 +150,18 @@ await page.waitForTimeout(500);
 check('drawing block present', (await page.locator('.excalidraw-block').count()) === 1);
 await page.waitForTimeout(1500);
 
+// an ergonote-* block this build does not know must survive an edit round trip untouched
+const call = (method, ...args) => page.evaluate(async ([m, a]) => (await fetch(`./api/rpc/${m}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(a) })).json(), [method, args]);
+const unk = await call('createNote', { title: 'Unknown block', body: 'before\n\n```ergonote-future\n{"a":1,"b":[1,2,3]}\n```\n\nafter' });
+await page.goto(`${base}/#/notes/${unk.id}`);
+await page.locator('.prose').waitFor();
+await page.locator('.prose').click();
+await page.keyboard.press('Control+End');
+await page.keyboard.type(' edited');
+await page.waitForTimeout(1500);
+const unkBody = (await call('getNote', unk.id)).body;
+check('unknown ergonote block round-trips through an edit', unkBody.includes('```ergonote-future\n{"a":1,"b":[1,2,3]}\n```') && unkBody.includes('after edited'), JSON.stringify(unkBody));
+
 // mobile
 const m = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
 const mp = await m.newPage();

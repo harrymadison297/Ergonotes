@@ -6,3 +6,4 @@ Everything on the Store is encrypted client-side with a randomly generated maste
 
 - The Server peer needs the key to read data: by default it is unlocked at startup and kept in memory only; an opt-in key file allows unattended restarts.
 - Revoking a lost Device is not possible without rotating the master key, which is deferred.
+- A Device may be set to stay unlocked: the master key is then kept in the app's own storage so the password is not asked at every launch. This trades protection against someone with the unlocked device for convenience; the web build never does it. The server peer can also unlock from `ERGONOTES_PASSWORD` for unattended restarts.

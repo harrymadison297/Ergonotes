@@ -90,6 +90,7 @@ a { color: var(--blue); }
 .search-box { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; background: var(--bg-hover); border-radius: var(--radius); color: var(--text-3); margin: 0 4px 10px; border: 1px solid transparent; }
 .search-box:focus-within { background: var(--bg); border-color: var(--blue); }
 .search-box input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; }
+.search-box input:focus-visible { box-shadow: none; }
 .search-box kbd { font: 12px var(--font); color: var(--text-3); }
 .new-btn { display: flex; align-items: center; justify-content: space-between; width: calc(100% - 8px); margin: 0 4px 12px; height: 42px; padding: 0 14px; border-radius: var(--radius); background: var(--green-btn); color: #fff; font-weight: 600; font-size: 15px; }
 .new-btn:hover { background: var(--green-btn-hover); }

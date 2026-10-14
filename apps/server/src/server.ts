@@ -18,6 +18,10 @@ export interface ServerOptions {
   autoUnlockPassword?: string;
   /** allow plain HTTP from non-local hosts (behind a TLS-terminating proxy this is not needed) */
   allowInsecure?: boolean;
+  /** believe X-Forwarded-For / X-Forwarded-Proto (only behind a reverse proxy you control) */
+  trustProxy?: boolean;
+  /** when set, the first-run setup call must present this token (stops a stranger claiming a public server) */
+  setupToken?: string;
   kdf?: { m: number; t: number; p: number };
   mirrorDir?: string | null;
   log?: (msg: string) => void;
@@ -31,7 +35,7 @@ const MIME: Record<string, string> = {
 
 const SESSION_MS = 30 * 24 * 3600e3;
 const RATE_WINDOW_MS = 60_000;
-const RATE_MAX = 8;
+const RATE_MAX = 8; // failed sign-ins per address and window
 
 export interface RunningServer {
   server: Server;
@@ -76,13 +80,16 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     sessions.set(t, Date.now() + SESSION_MS);
     return true;
   };
+  const clientIp = (req: IncomingMessage) =>
+    (o.trustProxy && String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
   const isLocalHost = (req: IncomingMessage) => {
     const host = (req.headers.host ?? '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
     return host === 'localhost' || host === '127.0.0.1' || host === '::1';
   };
-  const isSecure = (req: IncomingMessage) =>
-    o.allowInsecure === true || isLocalHost(req) || req.headers['x-forwarded-proto'] === 'https' || !!(req.socket as unknown as { encrypted?: boolean }).encrypted;
-  const secureCookie = (req: IncomingMessage) => (req.headers['x-forwarded-proto'] === 'https' || (req.socket as unknown as { encrypted?: boolean }).encrypted ? '; Secure' : '');
+  const viaTls = (req: IncomingMessage) =>
+    !!(req.socket as unknown as { encrypted?: boolean }).encrypted || (o.trustProxy === true && req.headers['x-forwarded-proto'] === 'https');
+  const isSecure = (req: IncomingMessage) => o.allowInsecure === true || isLocalHost(req) || viaTls(req);
+  const secureCookie = (req: IncomingMessage) => (viaTls(req) ? '; Secure' : '');
 
   const json = (res: ServerResponse, code: number, body: unknown, headers: Record<string, string> = {}) => {
     const s = JSON.stringify(body ?? null);
@@ -96,17 +103,17 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
-  const rateLimited = (req: IncomingMessage) => {
-    const ip = req.socket.remoteAddress ?? '?';
-    const now = Date.now();
-    const list = (attempts.get(ip) ?? []).filter(t => now - t < RATE_WINDOW_MS);
-    list.push(now);
-    attempts.set(ip, list);
-    return list.length > RATE_MAX;
-  };
+  // only failures count, so a signed-in owner is never locked out by someone else's guesses on a shared address
+  const failures = (req: IncomingMessage) => (attempts.get(clientIp(req)) ?? []).filter(t => Date.now() - t < RATE_WINDOW_MS);
+  const rateLimited = (req: IncomingMessage) => failures(req).length >= RATE_MAX;
+  const recordFailure = (req: IncomingMessage) => attempts.set(clientIp(req), [...failures(req), Date.now()]);
   const statusFor = async (req: IncomingMessage): Promise<VaultStatus> => {
     const st = await vault.status();
-    return { ...st, remote: true, authenticated: authed(req) };
+    const ok = authed(req);
+    // before sign-in only what the sign-in screen needs: no storage label, no sync errors
+    return ok
+      ? { ...st, remote: true, authenticated: true }
+      : { ...st, remote: true, authenticated: false, store: null, lastSyncError: null, lastSyncAt: null, pending: 0, conflicts: 0, deviceName: 'Ergonotes' };
   };
 
   const handleApi = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
@@ -151,6 +158,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
         else if (st.state === 'ready') await vault.verifyPassword(password);
         else return json(res, 409, { error: 'No vault yet' });
       } catch (e) {
+        recordFailure(req);
         return json(res, 401, { error: e instanceof Error ? e.message : 'Wrong password' });
       }
       const token = randomBytes(32).toString('hex');
@@ -159,9 +167,16 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     }
     if ((method === 'createVault' || method === 'joinVault') && st.state === 'no-vault') {
       if (rateLimited(req)) return json(res, 429, { error: 'Too many attempts. Wait a minute.' });
+      // first-run setup is open to whoever reaches the server first: require the setup token when one is configured
+      const opts = (method === 'createVault' ? args[1] : args[2]) as { setupToken?: string; deviceName?: string } | undefined;
+      if (o.setupToken && opts?.setupToken !== o.setupToken) {
+        recordFailure(req);
+        return json(res, 403, { error: 'This server needs its setup token to create the vault.' });
+      }
       try {
-        if (method === 'createVault') await vault.createVault(String(args[0]), { deviceName: 'Server', ...(args[1] as object | undefined), remember: false });
-        else await vault.joinVault(args[0] as StoreConfig, String(args[1]), { deviceName: 'Server', remember: false });
+        const deviceName = typeof opts?.deviceName === 'string' && opts.deviceName ? opts.deviceName : 'Server';
+        if (method === 'createVault') await vault.createVault(String(args[0]), { deviceName, remember: false });
+        else await vault.joinVault(args[0] as StoreConfig, String(args[1]), { deviceName, remember: false });
       } catch (e) {
         return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
       }

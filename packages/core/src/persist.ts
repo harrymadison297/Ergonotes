@@ -13,8 +13,8 @@ export interface Persist {
   /** metadata only; cheap, used before the vault is unlocked */
   loadMeta(): Promise<Record<string, unknown>>;
   putCommit(c: Commit, pushed: boolean): Promise<void>;
-  removeCommits(ids: Commit[]): Promise<void>;
-  markPushed(ids: string[]): Promise<void>;
+  removeCommits(commits: Commit[]): Promise<void>;
+  markPushed(commits: Commit[]): Promise<void>;
   setHead(item: string, id: string): Promise<void>;
   setMeta(key: string, value: unknown): Promise<void>;
 }
@@ -41,7 +41,7 @@ export class MemPersist implements Persist {
   async removeCommits(cs: Commit[]) {
     for (const c of cs) { this.commits.delete(c.id); this.pushed.delete(c.id); }
   }
-  async markPushed(ids: string[]) { for (const i of ids) this.pushed.add(i); }
+  async markPushed(cs: Commit[]) { for (const c of cs) this.pushed.add(c.id); }
   async setHead(item: string, id: string) { this.heads[item] = id; }
   async setMeta(key: string, value: unknown) { this.meta[key] = structuredClone(value); }
 }

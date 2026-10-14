@@ -85,6 +85,7 @@ export function Sidebar() {
   const [q, setQ] = useState('');
   const newMenu = useNewMenu();
   const folderMenu = useMenu();
+  const tagMenu = useMenu();
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const folders = useMemo(() => items.filter(i => i.type === 'folder' && !i.inTrash), [items]);
@@ -170,6 +171,7 @@ export function Sidebar() {
       </button>
       {newMenu.node}
       {folderMenu.node}
+      {tagMenu.node}
 
       <nav className="nav" aria-label="Main">
         <a className={classNames('nav-item', isActive('home') && 'active')} href={href({ name: 'home' })}><span className="nav-chevron" /><Home size={18} /><span className="label">Home</span></a>
@@ -211,8 +213,10 @@ export function Sidebar() {
               return (
                 <div key={n} className={classNames('nav-item', route.name === 'notes' && route.tag === n && 'active')} style={{ paddingLeft: 8 + depth * 14 }}>
                   <button className="nav-chevron" style={{ visibility: hasKids ? 'visible' : 'hidden' }} aria-label="Toggle" onClick={() => toggleTag(n)}>{openTags.has(n) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
-                  <a className="label" href={href({ name: 'notes', tag: n })} style={{ color: 'inherit', textDecoration: 'none' }}>{n.split('/').pop()}</a>
+                  <a className="label" href={href({ name: 'notes', tag: n })} style={{ color: 'inherit', textDecoration: 'none' }}
+                    onContextMenu={e => { e.preventDefault(); tagMenu.open({ currentTarget: e.currentTarget }, [{ label: 'Rename tag…', onClick: () => app.setDialog({ kind: 'renameTag', tag: n }) }]); }}>{n.split('/').pop()}</a>
                   <span className="count">{tagTree.count(n)}</span>
+                  <button className="nav-chevron" aria-label={`Actions for tag ${n}`} onClick={e => tagMenu.open(e, [{ label: 'Rename tag…', onClick: () => app.setDialog({ kind: 'renameTag', tag: n }) }], 'right')}><MoreHorizontal size={14} /></button>
                 </div>
               );
             })}

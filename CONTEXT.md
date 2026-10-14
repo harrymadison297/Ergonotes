@@ -30,6 +30,10 @@ _Avoid_: Element, node, widget
 A Block with no standard Markdown form, stored as a fenced block tagged `ergonote-<kind>`. Unknown kinds must survive a save unchanged.
 _Avoid_: Custom block, plugin block
 
+**Version history**:
+The list of a Note's earlier Commits shown to the person, from which one can be restored as a new Commit.
+_Avoid_: Revision list, snapshots
+
 **Drawing**:
 An Excalidraw sketch. By default it is a Block owned by one Note and can be promoted to its own Item.
 _Avoid_: Diagram, canvas, whiteboard

@@ -60,12 +60,12 @@ export class IdbPersist implements Persist {
     for (const c of cs) tx.objectStore('commits').delete(c.id);
     await done(tx);
   }
-  async markPushed(ids: string[]) {
+  async markPushed(cs: Commit[]) {
     const db = await this.db;
     const tx = db.transaction('commits', 'readwrite');
     const st = tx.objectStore('commits');
-    for (const id of ids) {
-      const row = (await req(st.get(id))) as Row | undefined;
+    for (const c of cs) {
+      const row = (await req(st.get(c.id))) as Row | undefined;
       if (row && !row.pushed) st.put({ c: row.c, pushed: true });
     }
     await done(tx);

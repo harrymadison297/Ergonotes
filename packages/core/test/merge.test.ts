@@ -34,6 +34,22 @@ describe('mergeText', () => {
     }
   });
 
+  it('keeps a tag that one side removed removed (three-way set merge)', () => {
+    const b2 = note({ id: 'a', tags: ['x', 'y'] }, 'body');
+    const ours = note({ id: 'a', tags: ['x'] }, 'body');            // removed y
+    const theirs = note({ id: 'a', tags: ['x', 'y', 'z'] }, 'body'); // added z
+    const r = mergeText(ours, b2, theirs);
+    expect(r.clean).toBe(true);
+    if (r.clean) { expect(r.text).toContain('- x'); expect(r.text).toContain('- z'); expect(r.text).not.toContain('- y'); }
+  });
+
+  it('asks when one side trashes and the other only changes tags', () => {
+    const b2 = note({ id: 'a', tags: ['x'] }, 'body');
+    const ours = note({ id: 'a', tags: ['x'], trashed: '2026-01-01T00:00:00Z' }, 'body');
+    const theirs = note({ id: 'a', tags: ['x', 'y'] }, 'body');
+    expect(mergeText(ours, b2, theirs)).toEqual({ clean: false, why: 'trash-vs-edit' });
+  });
+
   it('conflicts when both sides move the note to different folders', () => {
     const ours = note({ id: 'a', title: 'T', tags: ['x'], parent: 'p1' }, 'one\ntwo\nthree\nfour\nfive');
     const theirs = note({ id: 'a', title: 'T', tags: ['x'], parent: 'p2' }, 'one\ntwo\nthree\nfour\nfive');

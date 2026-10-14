@@ -81,6 +81,7 @@ export type ConflictChoice =
   | { kind: 'local' }
   | { kind: 'other'; commit: string }
   | { kind: 'both' }
+  | { kind: 'combine' }
   | { kind: 'text'; text: string }
   | { kind: 'delete' };
 
@@ -129,6 +130,7 @@ export interface VaultApi {
   rename(id: string, title: string): Promise<void>;
   move(id: string, parent: string | null): Promise<void>;
   setTags(id: string, tags: string[]): Promise<void>;
+  renameTag(from: string, to: string): Promise<number>;
   setPinned(id: string, pinned: boolean): Promise<void>;
   trash(id: string): Promise<void>;
   restore(id: string): Promise<void>;
@@ -169,7 +171,7 @@ export interface VaultApi {
 export const VAULT_METHODS = [
   'status', 'createVault', 'joinVault', 'unlock', 'lock', 'changePassword', 'setDeviceName',
   'listItems', 'getNote', 'createNote', 'saveNote', 'createFolder', 'capture', 'rename', 'move', 'setTags',
-  'setPinned', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'linkTargets', 'tags', 'tasks', 'toggleTask',
+  'renameTag', 'setPinned', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'linkTargets', 'tags', 'tasks', 'toggleTask',
   'calendar', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
   'resolveConflict', 'history', 'versionText', 'restoreVersion', 'getSettings', 'setSettings', 'setStore',
   'sync', 'flush', 'addFile', 'getFile', 'importMarkdown', 'exportNote',

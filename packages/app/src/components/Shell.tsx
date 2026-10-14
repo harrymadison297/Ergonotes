@@ -49,6 +49,10 @@ function DialogHost() {
       <NameDialog title="New folder" cta="Create" onClose={close}
         onSubmit={async v => { await app.run(app.api.createFolder({ title: v, parent: d.parent })); await app.refresh(); }} />
     );
+    case 'renameTag': return (
+      <NameDialog title="Rename tag" cta="Rename" initial={d.tag} onClose={close}
+        onSubmit={async v => { const n = await app.run(app.api.renameTag(d.tag, v)); await app.refresh(); app.toast(`Updated ${n ?? 0} note${n === 1 ? '' : 's'}`); }} />
+    );
     case 'rename': return (
       <NameDialog title="Rename" cta="Rename" initial={app.byId.get(d.id)?.title} onClose={close}
         onSubmit={async v => { await app.run(app.api.rename(d.id, v)); await app.refresh(); }} />
@@ -91,6 +95,23 @@ function useGlobalShortcuts() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [app]);
+}
+
+/** Android: text shared into the app from another app becomes a Capture in the Inbox. */
+function useShareIntent() {
+  const app = useApp();
+  useEffect(() => {
+    const take = async () => {
+      const bridge = (window as unknown as { ErgoShare?: { take(): string } }).ErgoShare;
+      const text = bridge?.take();
+      if (!text) return;
+      const n = await app.run(app.api.capture({ text }));
+      if (n) { await app.refresh(); app.toast('Saved to Inbox'); }
+    };
+    void take();
+    window.addEventListener('ergo-share', take);
+    return () => window.removeEventListener('ergo-share', take);
+  }, [app.api]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /** Local reminder notifications for tasks with @remind(...). */
@@ -203,6 +224,7 @@ export function Shell() {
   const app = useApp();
   useGlobalShortcuts();
   useReminders();
+  useShareIntent();
   if (app.isMobile) {
     return <><MobileShell /><DialogHost /><Toasts toasts={app.toasts} /></>;
   }

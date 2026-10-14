@@ -64,19 +64,12 @@ export class FilePersist implements Persist {
 
   async removeCommits(cs: Commit[]) { for (const c of cs) await rm(this.path(c), { force: true }); }
 
-  async markPushed(ids: string[]) {
-    // the commit files hold the flag; find them via the item directories
-    const want = new Set(ids);
-    for (const item of await readdir(join(this.dir, 'commits')).catch(() => [] as string[])) {
-      for (const id of want) {
-        const p = join(this.dir, 'commits', item, `${id}.json`);
-        try {
-          const o = JSON.parse(await readFile(p, 'utf8')) as { c: Commit; pushed: boolean };
-          if (!o.pushed) await writeAtomic(p, JSON.stringify({ c: o.c, pushed: true }));
-          want.delete(id);
-        } catch { /* not in this item */ }
-      }
-      if (!want.size) break;
+  async markPushed(cs: Commit[]) {
+    for (const c of cs) {
+      try {
+        const o = JSON.parse(await readFile(this.path(c), 'utf8')) as { c: Commit; pushed: boolean };
+        if (!o.pushed) await writeAtomic(this.path(c), JSON.stringify({ c: o.c, pushed: true }));
+      } catch { /* the commit was replaced or removed meanwhile */ }
     }
   }
 

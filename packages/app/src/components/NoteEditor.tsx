@@ -14,7 +14,7 @@ import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
   Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, X, Image as ImageIcon, Minus, LayoutTemplate,
 } from 'lucide-react';
-import type { NoteDoc } from '@ergonotes/core';
+import { mergeText, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, debounce, download } from '../state/util';
 import { currentTaskTokens, ExcalidrawBlock, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SlashCommands, slashItems, StoredImage, Wikilink } from '../editor/extensions';
@@ -41,6 +41,10 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const [tagDraft, setTagDraft] = useState('');
   const [dateDialog, setDateDialog] = useState<'due' | 'remind' | null>(null);
   const dirty = useRef(false);
+  const inflight = useRef<Promise<unknown>>(Promise.resolve());
+  const loadedBody = useRef('');
+  const paused = useRef(false);
+  const [external, setExternal] = useState<{ body: string; title: string; updated: string } | null>(null);
   const loadedFor = useRef<{ id: string; updated: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const exportMenu = useMenu();
@@ -56,15 +60,15 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const editSeq = useRef(0);
   const saveBody = useMemo(() => debounce((nid: string, body: string, seq: number) => {
     setSaveState('saving');
-    api.saveNote(nid, { body }).then(s => {
+    inflight.current = api.saveNote(nid, { body }).then(s => {
       // our own write must not look like an outside change (it would reload and reset the cursor)
-      if (loadedFor.current?.id === nid) loadedFor.current = { id: nid, updated: s.updated };
+      if (loadedFor.current?.id === nid) { loadedFor.current = { id: nid, updated: s.updated }; loadedBody.current = body; }
       if (seq === editSeq.current) { dirty.current = false; setSaveState('saved'); }
     }, () => setSaveState('error'));
   }, 700), [api]);
   const saveTitle = useMemo(() => debounce((nid: string, t: string) => {
     setSaveState('saving');
-    api.saveNote(nid, { title: t }).then(s => {
+    inflight.current = api.saveNote(nid, { title: t }).then(s => {
       if (loadedFor.current?.id === nid) loadedFor.current = { id: nid, updated: s.updated };
       setSaveState('saved');
     }, () => setSaveState('error'));
@@ -97,6 +101,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       dirty.current = true;
       setSaveState('saving');
       editSeq.current++;
+      if (paused.current) return;
       saveBody(idRef.current, (e.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown(), editSeq.current);
       force(n => n + 1);
     },
@@ -112,32 +117,60 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     saveBody.flush(); saveTitle.flush();
     setMissing(false);
     setDoc(null);
+    setExternal(null);
+    paused.current = false;
     void api.getNote(id).then(d => {
       if (!live) return;
       if (!d) { setMissing(true); return; }
       setDoc(d);
       setTitle(d.title);
       loadedFor.current = { id: d.id, updated: d.updated };
+      loadedBody.current = d.body;
       dirty.current = false;
       setSaveState('saved');
       if (editor) editor.commands.setContent(d.body, false);
     });
-    return () => { live = false; saveBody.flush(); saveTitle.flush(); };
+    return () => {
+      live = false;
+      saveBody.flush(); saveTitle.flush();
+      // leaving the note pushes at once (ADR 0006)
+      void inflight.current.then(() => api.flush()).catch(() => { /* offline */ });
+    };
   }, [id, api, editor, saveBody, saveTitle]);
 
-  // pick up changes that arrived by sync while the note is open and untouched
+  // changes that arrived by sync while the note is open
   useEffect(() => {
-    if (!doc || !summary || dirty.current || summary.updated === loadedFor.current?.updated) return;
+    if (!doc || !summary || summary.updated === loadedFor.current?.updated || external) return;
     let live = true;
     void api.getNote(id).then(d => {
-      if (!live || !d || dirty.current) return;
-      loadedFor.current = { id: d.id, updated: d.updated };
-      setDoc(d);
-      if (document.activeElement?.tagName !== 'INPUT') setTitle(d.title);
-      editor?.commands.setContent(d.body, false);
+      if (!live || !d || !editor) return;
+      if (d.updated === loadedFor.current?.updated) return;
+      if (!dirty.current) {
+        loadedFor.current = { id: d.id, updated: d.updated };
+        loadedBody.current = d.body;
+        setDoc(d);
+        if (document.activeElement?.tagName !== 'INPUT') setTitle(d.title);
+        editor.commands.setContent(d.body, false);
+        return;
+      }
+      // the person is typing: merge the remote text into what is on screen instead of losing either side
+      const ours = (editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown();
+      const r = mergeText(ours, loadedBody.current, d.body);
+      if (r.clean) {
+        loadedFor.current = { id: d.id, updated: d.updated };
+        loadedBody.current = d.body;
+        setDoc(d);
+        editor.commands.setContent(r.text, false);
+        editSeq.current++;
+        saveBody(id, r.text, editSeq.current);
+      } else {
+        saveBody.cancel();
+        paused.current = true;
+        setExternal({ body: d.body, title: d.title, updated: d.updated });
+      }
     });
     return () => { live = false; };
-  }, [summary?.updated, doc, summary, api, id, editor]);
+  }, [summary?.updated, doc, summary, api, id, editor, external, saveBody]);
 
   useEffect(() => { editor?.setEditable(!locked); }, [editor, locked]);
 
@@ -214,7 +247,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     { label: 'Web page (.html)', icon: <FileText size={16} />, onClick: async () => { await flushNow(); const r = await app.run(api.exportNote(id, 'html')); if (r) download(r.filename, r.mime, r.content); } },
     { label: 'PDF / Print…', icon: <Download size={16} />, onClick: () => window.print() },
   ];
-  const flushNow = async () => { saveBody.flush(); saveTitle.flush(); await new Promise(r => setTimeout(r, 60)); };
+  const flushNow = async () => { saveBody.flush(); saveTitle.flush(); await inflight.current; };
 
   const moreEntries = (): MenuEntry[] => [
     { label: doc.pinned ? 'Unpin from Shortcuts' : 'Add to Shortcuts', icon: doc.pinned ? <PinOff size={16} /> : <Pin size={16} />, onClick: async () => { await app.run(api.setPinned(id, !doc.pinned)); } },
@@ -266,10 +299,6 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     else editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
   };
 
-  const TB = ({ on, label, onClick, children, disabled }: { on?: boolean; label: string; onClick: () => void; children: React.ReactNode; disabled?: boolean }) => (
-    <button type="button" className={classNames('tb-btn', on && 'on')} aria-label={label} title={label} aria-pressed={on} disabled={disabled || locked} onClick={onClick}>{children}</button>
-  );
-
   return (
     <div className="editor">
       {isTrashed && (
@@ -277,6 +306,13 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
           <Trash2 size={16} /><span className="grow">This note is in the Trash.</span>
           <button className="btn" onClick={async () => { await app.run(api.restore(id)); await app.refresh(); }}><RotateCcw size={14} /> Restore</button>
           <button className="btn danger" onClick={async () => { if (confirm('Delete this note forever? This cannot be undone.')) { await app.run(api.purge(id)); await app.refresh(); app.go({ name: 'trash' }); } }}>Delete forever</button>
+        </div>
+      )}
+      {external && (
+        <div className="banner" role="alert">
+          <GitMerge size={16} /><span className="grow">This note was changed on another device while you were editing, in the same place.</span>
+          <button className="btn" onClick={() => { loadedFor.current = { id, updated: external.updated }; loadedBody.current = external.body; paused.current = false; setExternal(null); editSeq.current++; const md = (editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown(); saveBody(id, md, editSeq.current); }}>Keep my edits</button>
+          <button className="btn" onClick={() => { loadedFor.current = { id, updated: external.updated }; loadedBody.current = external.body; editor.commands.setContent(external.body, false); dirty.current = false; paused.current = false; setExternal(null); setSaveState('saved'); }}>Use theirs</button>
         </div>
       )}
       {doc.conflicted && !isTrashed && (
@@ -304,25 +340,25 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
 
       <div className="toolbar" role="toolbar" aria-label="Formatting">
         <button type="button" className="tb-btn accent" disabled={locked} onClick={e => insertMenu.open(e, insertEntries())}><Plus size={16} /> Insert <ChevronDown size={14} /></button>
-        <TB label="Checklist" on={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={18} /></TB>
-        <TB label={tokens.inTask ? 'Due date' : 'Due date (place the cursor in a task)'} on={!!tokens.due} disabled={!tokens.inTask} onClick={() => setDateDialog('due')}><CalendarDays size={18} /></TB>
-        <TB label="Reminder" on={!!tokens.remind} disabled={!tokens.inTask} onClick={() => setDateDialog('remind')}><Bell size={18} /></TB>
-        <TB label="Flag task" on={tokens.flag} disabled={!tokens.inTask} onClick={() => setTaskToken(editor, 'flag', tokens.flag ? null : '1')}><Flag size={18} /></TB>
+        <TB locked={locked} label="Checklist" on={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={18} /></TB>
+        <TB locked={locked} label={tokens.inTask ? 'Due date' : 'Due date (place the cursor in a task)'} on={!!tokens.due} disabled={!tokens.inTask} onClick={() => setDateDialog('due')}><CalendarDays size={18} /></TB>
+        <TB locked={locked} label="Reminder" on={!!tokens.remind} disabled={!tokens.inTask} onClick={() => setDateDialog('remind')}><Bell size={18} /></TB>
+        <TB locked={locked} label="Flag task" on={tokens.flag} disabled={!tokens.inTask} onClick={() => setTaskToken(editor, 'flag', tokens.flag ? null : '1')}><Flag size={18} /></TB>
         <span className="tb-sep" />
-        <TB label="Undo" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}><Undo2 size={18} /></TB>
-        <TB label="Redo" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}><Redo2 size={18} /></TB>
+        <TB locked={locked} label="Undo" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}><Undo2 size={18} /></TB>
+        <TB locked={locked} label="Redo" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}><Redo2 size={18} /></TB>
         <span className="tb-sep" />
         <button type="button" className="tb-btn" disabled={locked} onClick={e => styleMenu.open(e, styleEntries())}>{styleLabel} <ChevronDown size={14} /></button>
         <span className="tb-sep" />
-        <TB label="Bold" on={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={18} /></TB>
-        <TB label="Italic" on={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={18} /></TB>
-        <TB label="Strikethrough" on={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={18} /></TB>
-        <TB label="Inline code" on={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()}><Code size={18} /></TB>
-        <TB label="Link" on={editor.isActive('link')} onClick={setLink}><Link2 size={18} /></TB>
+        <TB locked={locked} label="Bold" on={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()}><Bold size={18} /></TB>
+        <TB locked={locked} label="Italic" on={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={18} /></TB>
+        <TB locked={locked} label="Strikethrough" on={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={18} /></TB>
+        <TB locked={locked} label="Inline code" on={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()}><Code size={18} /></TB>
+        <TB locked={locked} label="Link" on={editor.isActive('link')} onClick={setLink}><Link2 size={18} /></TB>
         <span className="tb-sep" />
-        <TB label="Bulleted list" on={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={18} /></TB>
-        <TB label="Numbered list" on={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={18} /></TB>
-        <TB label="Quote" on={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={18} /></TB>
+        <TB locked={locked} label="Bulleted list" on={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={18} /></TB>
+        <TB locked={locked} label="Numbered list" on={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={18} /></TB>
+        <TB locked={locked} label="Quote" on={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={18} /></TB>
       </div>
 
       <div className="editor-scroll">
@@ -371,6 +407,12 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       {dateDialog && <TaskDateDialog kind={dateDialog} value={dateDialog === 'due' ? tokens.due : tokens.remind} onClose={() => setDateDialog(null)}
         onSet={v => { setTaskToken(editor, dateDialog, v); setDateDialog(null); }} />}
     </div>
+  );
+}
+
+function TB({ on, label, onClick, children, disabled, locked }: { on?: boolean; label: string; onClick: () => void; children: React.ReactNode; disabled?: boolean; locked: boolean }) {
+  return (
+    <button type="button" className={classNames('tb-btn', on && 'on')} aria-label={label} title={label} aria-pressed={on} disabled={disabled || locked} onClick={onClick}>{children}</button>
   );
 }
 

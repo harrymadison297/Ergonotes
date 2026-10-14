@@ -41,6 +41,7 @@ export type DialogState =
   | { kind: 'history'; id: string }
   | { kind: 'newFolder'; parent: string | null }
   | { kind: 'rename'; id: string }
+  | { kind: 'renameTag'; tag: string }
   | { kind: 'import' }
   | { kind: 'file'; id: string };
 

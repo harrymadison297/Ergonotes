@@ -173,7 +173,7 @@ export class Replica {
   }
 
   // ---------- deterministic automatic merge ----------
-  async reconcile(item: string): Promise<number> {
+  async autoMerge(item: string): Promise<number> {
     let made = 0;
     for (let guard = 0; guard < 64; guard++) {
       const H = this.g.heads(item);
@@ -225,9 +225,10 @@ export class Replica {
     const now = (ctx.now ?? Date.now)();
     if (this.offset.at && now - this.offset.at < OFFSET_TTL_MS) return this.offset.value;
     const key = `probe/${this.deviceId}`;
-    const t0 = Date.now();
+    const clock = ctx.now ?? Date.now;
+    const t0 = clock();
     await ctx.store.put(key, enc(String(t0)));
-    const t1 = Date.now();
+    const t1 = clock();
     const l = await ctx.store.list(key);
     const lm = l.find(x => x.key === key)?.lastModified;
     this.offset = { value: lm === undefined ? 0 : lm - Math.round((t0 + t1) / 2), at: now };
@@ -253,7 +254,7 @@ export class Replica {
       done.push(id);
       report.pushed++;
     }
-    if (done.length) await this.persist.markPushed(done);
+    if (done.length) await this.persist.markPushed(done.map(id => this.g.get(id)!).filter(Boolean));
     this.order = this.order.filter(i => !this.pushed.has(i));
     await this.writeDeviceRecord(ctx, serverNow, report.pushed > 0);
     return report;
@@ -310,15 +311,17 @@ export class Replica {
     // commits
     const needC = wanted.filter((w): w is Extract<Wanted, { kind: 'c' }> => w.kind === 'c');
     const seenC = new Set<string>();
+    const alreadyKnown: Commit[] = [];
     const toFetchC = needC.filter(w => {
       if (seenC.has(w.id)) return false;
       seenC.add(w.id);
       if (this.g.has(w.id)) {
-        if (!this.pushed.has(w.id)) { this.pushed.add(w.id); void this.persist.markPushed([w.id]); }
+        if (!this.pushed.has(w.id)) { this.pushed.add(w.id); alreadyKnown.push(this.g.get(w.id)!); }
         return false;
       }
       return !this.dropped.has(w.id);
     });
+    if (alreadyKnown.length) await this.persist.markPushed(alreadyKnown);
     const got = await mapLimit(toFetchC, 8, async w => {
       const blob = await ctx.store.get(K.commit(w.item, w.id));
       return blob ? await ctx.sealer.openJson<Commit>(blob) : null;
@@ -344,7 +347,6 @@ export class Replica {
     await mapLimit([...bestO.values()], 8, async w => {
       const cur = this.g.get(w.id);
       if (cur && (cur.subsumed?.length ?? 0) >= w.gen) return;
-      if (!cur && !this.pushed.has(w.id)) { /* originals unknown: the overlay is self-contained */ }
       const blob = await ctx.store.get(w.key);
       if (!blob) return;
       const o = await ctx.sealer.openJson<Commit>(blob);
@@ -384,7 +386,7 @@ export class Replica {
     if (removable.length) await this.persist.removeCommits(removable);
 
     for (const item of touched) {
-      report.merged += await this.reconcile(item);
+      report.merged += await this.autoMerge(item);
       if (this.g.heads(item).length > 1) report.conflicts.push(item);
     }
     this.inboxCursor = newestMarker;

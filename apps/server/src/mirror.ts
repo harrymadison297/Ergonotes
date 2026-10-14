@@ -1,8 +1,9 @@
 // One-way export of the current notes as plain Markdown files, so the vault is readable outside the app (ADR 0002).
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Vault } from '@ergonotes/core';
 
+const MARKER = '.ergonotes-mirror';
 const safe = (s: string) => s.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^\.+/, '').trim().slice(0, 120) || 'untitled';
 
 export class Mirror {
@@ -37,8 +38,13 @@ export class Mirror {
         while (cur && !seen.has(cur)) { seen.add(cur); const p = byId.get(cur); if (!p) break; parts.unshift(safe(p.title)); cur = p.parent; }
         return parts.join('/');
       };
+      // only ever wipe a folder this mirror created (marker file), or an empty one
+      const marker = join(this.dir, MARKER);
+      const existing = await readdir(this.dir).catch(() => null);
+      if (existing && existing.length > 0 && !existing.includes(MARKER)) return;
       await rm(this.dir, { recursive: true, force: true });
       await mkdir(this.dir, { recursive: true });
+      await writeFile(marker, 'Written by Ergonotes; the contents of this folder are replaced on every change.\n');
       const used = new Set<string>();
       for (const it of items) {
         if (it.type === 'folder') { await mkdir(join(this.dir, pathOf(it.id), safe(it.title)), { recursive: true }); continue; }

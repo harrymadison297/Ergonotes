@@ -13,6 +13,8 @@ const running = await startServer({
   webDir,
   autoUnlockPassword: env.ERGONOTES_PASSWORD,
   allowInsecure: env.ERGONOTES_ALLOW_INSECURE === '1',
+  trustProxy: env.ERGONOTES_TRUST_PROXY === '1',
+  setupToken: env.ERGONOTES_SETUP_TOKEN || undefined,
   log: m => console.log(`[ergonotes] ${m}`),
 });
 console.log(`[ergonotes] data: ${dataDir}`);

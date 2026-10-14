@@ -25,7 +25,7 @@ export function CalendarView({ noteId }: { noteId?: string }) {
     const m = new Map<string, { kind: 'task' | 'note' | 'daily'; label: string; id: string }[]>();
     const add = (day: string, e: { kind: 'task' | 'note' | 'daily'; label: string; id: string }) => (m.get(day) ?? m.set(day, []).get(day)!).push(e);
     for (const t of data.tasks) { const d = (t.due ?? t.remind ?? '').slice(0, 10); if (d) add(d, { kind: 'task', label: t.text, id: t.noteId }); }
-    for (const n of data.notes) add(n.created.slice(0, 10), { kind: 'note', label: n.title, id: n.id });
+    for (const n of data.notes) add(isoDay(new Date(n.created)), { kind: 'note', label: n.title, id: n.id });
     for (const n of data.daily) add(n.title.slice(0, 10), { kind: 'daily', label: n.title, id: n.id });
     return m;
   }, [data]);

@@ -4,6 +4,7 @@ import { Check, X } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { Bell, Flag } from 'lucide-react';
 import { classNames, dueLabel, relTime } from '../state/util';
+import { FileImg } from './FileImg';
 
 // ---------------------------------------------------------------- menus
 export type MenuEntry =
@@ -65,13 +66,15 @@ function MenuView({ x, y, w, entries, onClose }: { x: number; y: number; w: numb
 // ---------------------------------------------------------------- dialogs
 export function Dialog({ title, onClose, children, footer, wide }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose; // parents re-render often; focus and typed text must not reset when they do
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     ref.current?.querySelector<HTMLElement>('input, textarea, select, button.primary, button')?.focus();
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRef.current(); };
     document.addEventListener('keydown', key);
     return () => { document.removeEventListener('keydown', key); prev?.focus?.(); };
-  }, [onClose]);
+  }, []);
   return createPortal(
     <div className="scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={classNames('dialog', wide && 'wide')} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
@@ -121,7 +124,7 @@ export function NoteRow({ n, active, href, onClick }: { n: ItemSummary; active?:
           <NoteChips n={n} />
         </div>
       </div>
-      {n.thumb && !n.thumb.startsWith('data:') && <img className="thumb" src={n.thumb} alt="" loading="lazy" />}
+      {n.thumb && <FileImg className="thumb" src={n.thumb} alt="" />}
     </a>
   );
 }

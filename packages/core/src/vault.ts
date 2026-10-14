@@ -20,7 +20,7 @@ import { Replica, type SyncContext } from './replica.ts';
 import type { Store } from './store.ts';
 import { S3Store } from './store-s3.ts';
 import { WebDavStore } from './store-webdav.ts';
-import { DAY, dec, enc, fromB64, MIN, newId, toB64 } from './util.ts';
+import { DAY, dec, enc, fromB64, MIN, newId, sha256hex, toB64 } from './util.ts';
 
 export interface VaultOptions {
   persist: Persist;
@@ -93,7 +93,8 @@ export class Vault implements VaultApi {
   private vaultFile: VaultFile | null = null;
   private views = new Map<string, View>();
   private files = new Map<string, { name: string; mime: string; body: string }>();
-  private search_ = new MiniSearch<{ id: string; title: string; body: string; tags: string }>({
+  private fileBySha = new Map<string, string>();
+  private searchIndex = new MiniSearch<{ id: string; title: string; body: string; tags: string }>({
     fields: ['title', 'body', 'tags'],
     storeFields: [],
     searchOptions: { prefix: true, fuzzy: 0.15, boost: { title: 3, tags: 2 } },
@@ -166,7 +167,8 @@ export class Vault implements VaultApi {
     this.unsub = this.replica.onChange(items => { this.refresh(items); this.emit({ type: 'items', ids: items }); this.noteLocalChange(); });
     this.views.clear();
     this.files.clear();
-    for (const id of this.replica.items()) this.refresh([id], true);
+    this.fileBySha.clear();
+    for (const id of this.replica.items()) this.refresh([id]);
     this.emit({ type: 'status' });
   }
 
@@ -221,7 +223,7 @@ export class Vault implements VaultApi {
     this.sealer = null;
     this.masterKey = null;
     this.views.clear();
-    this.search_.removeAll();
+    this.searchIndex.removeAll();
     await this.setMeta('rememberedKey', undefined);
     delete this.meta.rememberedKey;
     this.emit({ type: 'status' });
@@ -255,7 +257,7 @@ export class Vault implements VaultApi {
     for (const t of DEFAULT_TEMPLATES) {
       await this.createNoteRaw({ parent: ids.templates, title: t.title, body: t.body, tags: t.tags, template: true, daily: t.daily });
     }
-    const welcome = await this.createNoteRaw({
+    await this.createNoteRaw({
       parent: ids.inbox,
       title: 'Welcome to Ergonotes',
       body: [
@@ -270,19 +272,23 @@ export class Vault implements VaultApi {
         '',
       ].join('\n'),
     });
-    void welcome;
   }
 
   // ---------- views & index ----------
-  private refresh(ids: string[], quiet = false) {
+  private refresh(ids: string[]) {
     const r = this.ready();
     for (const id of ids) {
       const text = r.text(id);
       const prev = this.views.get(id);
-      if (prev) { try { this.search_.discard(id); } catch { /* not indexed */ } }
+      if (prev) { try { this.searchIndex.discard(id); } catch { /* not indexed */ } }
       if (text === null) { this.views.delete(id); this.files.delete(id); continue; }
       const { fm, body } = splitDoc(text);
-      if (fm.type === 'file') { this.files.set(id, { name: String(fm.name ?? 'file'), mime: String(fm.mime ?? 'application/octet-stream'), body }); this.views.delete(id); continue; }
+      if (fm.type === 'file') {
+        this.files.set(id, { name: String(fm.name ?? 'file'), mime: String(fm.mime ?? 'application/octet-stream'), body });
+        if (typeof fm.sha === 'string') this.fileBySha.set(fm.sha, id);
+        this.views.delete(id);
+        continue;
+      }
       const type = fm.type === 'folder' ? 'folder' : 'note';
       const tags = Array.isArray(fm.tags) ? fm.tags.map(String) : [];
       const view: View = {
@@ -304,9 +310,8 @@ export class Vault implements VaultApi {
         links: extractLinkIds(body),
       };
       this.views.set(id, view);
-      if (type === 'note') this.search_.add({ id, title: view.title, body: plainSnippet(body, 4000), tags: tags.join(' ') });
+      if (type === 'note') this.searchIndex.add({ id, title: view.title, body: plainSnippet(body, 4000), tags: tags.join(' ') });
     }
-    void quiet;
   }
 
   private inTrash(v: View, seen = new Set<string>()): boolean {
@@ -402,7 +407,11 @@ export class Vault implements VaultApi {
   }
 
   async createNote(input: { parent?: string | null; title?: string; body?: string; tags?: string[] }): Promise<ItemSummary> {
-    const parent = input.parent === undefined ? await this.captureFolder() : input.parent;
+    let parent: string | null;
+    if (input.parent === undefined) parent = await this.captureFolder();
+    else if (input.parent === null) parent = null;
+    else if (this.isLiveFolder(input.parent)) parent = input.parent;
+    else throw new Error('That folder does not exist');
     return this.createNoteRaw({ parent, title: input.title ?? '', body: input.body, tags: input.tags });
   }
 
@@ -466,6 +475,20 @@ export class Vault implements VaultApi {
     await this.mutate(id, fm => { if (t.length) fm.tags = t; else delete fm.tags; });
   }
 
+  /** Rename a tag (and its sub-tags) on every note; one new Commit per affected note, run locally. */
+  async renameTag(from: string, to: string): Promise<number> {
+    const target = cleanTag(to);
+    const src = cleanTag(from);
+    if (!target || !src || target === src) return 0;
+    let n = 0;
+    for (const v of [...this.views.values()]) {
+      if (v.type !== 'note') continue;
+      const next = v.tags.map(t => (t === src ? target : t.startsWith(src + '/') ? target + t.slice(src.length) : t));
+      if (next.some((t, i) => t !== v.tags[i])) { await this.setTags(v.id, next); n++; }
+    }
+    return n;
+  }
+
   async setPinned(id: string, pinned: boolean): Promise<void> {
     await this.mutate(id, fm => { if (pinned) fm.pinned = true; else delete fm.pinned; });
   }
@@ -488,8 +511,15 @@ export class Vault implements VaultApi {
   }
 
   private subtree(id: string): string[] {
-    const out = [id];
-    for (const v of this.views.values()) if (v.parent === id) out.push(...this.subtree(v.id));
+    const out: string[] = [];
+    const seen = new Set<string>(); // two devices can move A into B and B into A while apart: tolerate cycles
+    const walk = (x: string) => {
+      if (seen.has(x)) return;
+      seen.add(x);
+      out.push(x);
+      for (const v of this.views.values()) if (v.parent === x) walk(v.id);
+    };
+    walk(id);
     return out;
   }
 
@@ -505,8 +535,8 @@ export class Vault implements VaultApi {
   }
 
   /** Purge items that have been in the Trash for more than 30 days. */
-  private async housekeeping(): Promise<void> {
-    const cutoff = this.now() - TRASH_DAYS * DAY;
+  private async housekeeping(now: number): Promise<void> {
+    const cutoff = now - TRASH_DAYS * DAY;
     for (const v of [...this.views.values()]) {
       if (v.trashed && Date.parse(v.trashed) < cutoff && this.views.has(v.id)) await this.purge(v.id);
     }
@@ -515,6 +545,11 @@ export class Vault implements VaultApi {
   // ---------- organisation ----------
   private folderByRole(role: string): View | undefined {
     return [...this.views.values()].find(v => v.type === 'folder' && v.role === role && !this.inTrash(v));
+  }
+
+  private isLiveFolder(id: string): boolean {
+    const f = this.views.get(id);
+    return !!f && f.type === 'folder' && !this.inTrash(f);
   }
 
   private async captureFolder(): Promise<string> {
@@ -531,7 +566,7 @@ export class Vault implements VaultApi {
     const q = query.trim();
     if (!q) return [];
     const c = this.counts();
-    return this.search_.search(q).map(r => this.views.get(String(r.id))).filter((v): v is View => !!v && !this.inTrash(v)).map(v => this.summary(v, c)).slice(0, 50);
+    return this.searchIndex.search(q).map(r => this.views.get(String(r.id))).filter((v): v is View => !!v && !this.inTrash(v)).map(v => this.summary(v, c)).slice(0, 50);
   }
 
   async linkTargets(query: string): Promise<{ id: string; title: string }[]> {
@@ -572,14 +607,16 @@ export class Vault implements VaultApi {
   async calendar(fromIso: string, toIso: string): Promise<CalendarData> {
     this.ready();
     const c = this.counts();
-    const inRange = (s: string | undefined | null) => !!s && s >= fromIso && s <= toIso;
+    const from = fromIso.slice(0, 10), to = toIso.slice(0, 10);
+    const inRange = (s: string | undefined | null) => !!s && s.slice(0, 10) >= from && s.slice(0, 10) <= to;
+    const localDay = (iso: string) => (iso ? isoDate(new Date(iso)) : '');
     const tasks = (await this.tasks()).filter(t => inRange(t.due) || inRange(t.remind));
     const notes: ItemSummary[] = [];
     const daily: ItemSummary[] = [];
     for (const v of this.views.values()) {
       if (v.type !== 'note' || this.inTrash(v) || v.template) continue;
       if (v.daily && inRange(v.daily)) daily.push(this.summary(v, c));
-      else if (inRange(v.created)) notes.push(this.summary(v, c));
+      else if (inRange(localDay(v.created))) notes.push(this.summary(v, c));
     }
     return { tasks, notes, daily };
   }
@@ -634,12 +671,25 @@ export class Vault implements VaultApi {
   // ---------- conflicts & history ----------
   private conflictIds(): string[] {
     const r = this.replica!;
-    return r.items().filter(i => r.hasConflict(i) && !r.isPurged(i));
+    // a deleted-here / edited-there note is a conflict too: the deleting device must be asked
+    return r.items().filter(i => r.hasConflict(i) && (!r.isPurged(i) || r.otherHeads(i).some(h => r.g.get(h)!.kind !== 'purge')));
+  }
+
+  private conflictTitle(id: string): string {
+    const v = this.views.get(id);
+    if (v) return v.title;
+    const r = this.replica!;
+    for (const h of r.g.heads(id)) {
+      const t = r.g.text(h);
+      const title = t ? splitDoc(t.join('\n')).fm.title : undefined;
+      if (typeof title === 'string' && title) return title;
+    }
+    return 'Deleted note';
   }
 
   async conflicts(): Promise<{ id: string; title: string; heads: number }[]> {
     this.ready();
-    return this.conflictIds().map(id => ({ id, title: this.titleOf(id), heads: this.replica!.g.heads(id).length }));
+    return this.conflictIds().map(id => ({ id, title: this.conflictTitle(id), heads: this.replica!.g.heads(id).length }));
   }
 
   private deviceNameOf(id: string): string {
@@ -661,9 +711,14 @@ export class Vault implements VaultApi {
     if (!r.hasConflict(id)) return null;
     const local = r.headId(id)!;
     const others = r.otherHeads(id);
+    const known = (this.meta.deviceNames as Record<string, string> | undefined) ?? {};
+    if ([local, ...others].some(h => { const a = r.g.get(h)!.author; return a !== this.deviceId && a !== 'auto' && !known[a]; })) {
+      const store = await this.getStore().catch(() => null);
+      if (store) await this.refreshDeviceNames(store).catch(() => { /* names are cosmetic */ });
+    }
     return {
       id,
-      title: this.titleOf(id),
+      title: this.conflictTitle(id),
       local: this.headInfo(local),
       others: others.map(o => this.headInfo(o)),
       base: others.length ? baseText(r.g, local, others[0]) : null,
@@ -685,6 +740,19 @@ export class Vault implements VaultApi {
         break;
       }
       case 'both': {
+        // keep this device's text in the note and put every other version in a note of its own, beside it
+        for (const o of others) {
+          const c = r.g.get(o)!;
+          if (c.kind === 'purge') continue;
+          const { fm, body } = splitDoc((r.g.text(o) ?? []).join('\n'));
+          const title = `${typeof fm.title === 'string' && fm.title ? fm.title : 'Untitled'} (from ${this.deviceNameOf(c.author)})`;
+          const parent = typeof fm.parent === 'string' && this.isLiveFolder(fm.parent) ? fm.parent : await this.captureFolder();
+          await this.createNoteRaw({ parent, title, body, tags: Array.isArray(fm.tags) ? fm.tags.map(String) : undefined });
+        }
+        text = r.g.get(local)!.kind === 'purge' ? null : r.text(id);
+        break;
+      }
+      case 'combine': {
         let acc = r.text(id) ?? '';
         for (const o of others) {
           if (r.g.get(o)!.kind === 'purge') continue;
@@ -733,7 +801,8 @@ export class Vault implements VaultApi {
     const t = await this.versionText(id, commit);
     if (t === null) throw new Error('That version cannot be restored');
     const { fm, body } = splitDoc(t);
-    await this.mutate(id, cur => ({ fm: { ...fm, id, parent: fm.parent ?? cur.parent, trashed: undefined }, body }));
+    const wanted = typeof fm.parent === 'string' && this.isLiveFolder(fm.parent) ? fm.parent : undefined;
+    await this.mutate(id, cur => ({ fm: { ...fm, id, parent: wanted ?? (typeof cur.parent === 'string' && this.isLiveFolder(cur.parent) ? cur.parent : undefined), trashed: undefined }, body }));
   }
 
   // ---------- settings & store ----------
@@ -799,6 +868,9 @@ export class Vault implements VaultApi {
       try {
         const store = await this.getStore();
         const r = this.ready();
+        let now = this.now();
+        if (store) { try { now += await r.storeClockOffset(this.ctx(store)); } catch { /* offline: local clock */ } }
+        await this.housekeeping(now); // uses the Store's clock when known: a wrong device clock must not purge the Trash
         if (!store) return rep;
         const ctx = this.ctx(store);
         const pull = await r.pull(ctx, { full: o.full });
@@ -806,7 +878,6 @@ export class Vault implements VaultApi {
         rep.merged = pull.merged;
         const push = await r.push(ctx);
         rep.pushed = push.pushed;
-        await this.housekeeping();
         const last = (this.meta.lastCompactAt as number | undefined) ?? 0;
         if (this.now() - last > DAY) {
           const c = await r.compact(ctx);
@@ -859,7 +930,11 @@ export class Vault implements VaultApi {
   startAutoSync(): void {
     if (this.pullTimer) return;
     this.pullTimer = setInterval(() => {
-      if (this.replica && !this.syncing) void this.getStore().then(s => s && this.replica!.pull(this.ctx(s))).catch(e => { this.lastSyncError = String(e); });
+      if (!this.replica || this.syncing) return;
+      const last = (this.meta.lastSyncAt as number | undefined) ?? 0;
+      // once an hour run the whole pass (push, trash purge, compaction); in between just look for news
+      if (this.now() - last > 60 * MIN) { void this.sync(); return; }
+      void this.getStore().then(s => s && this.replica!.pull(this.ctx(s))).catch(e => { this.lastSyncError = String(e); });
     }, PULL_EVERY_MS);
     void this.sync();
   }
@@ -876,8 +951,11 @@ export class Vault implements VaultApi {
   async addFile(input: FileBlob): Promise<{ id: string }> {
     const r = this.ready();
     if (input.data.length > 34_000_000) throw new Error('That file is larger than 25 MB.');
+    const sha = sha256hex(input.data);
+    const existing = this.fileBySha.get(sha);
+    if (existing && this.files.has(existing)) return { id: existing }; // stored once per distinct content
     const id = newId();
-    const fm: Frontmatter = { id, type: 'file', name: input.name, mime: input.mime, size: Math.floor((input.data.length * 3) / 4), created: this.iso() };
+    const fm: Frontmatter = { id, type: 'file', name: input.name, mime: input.mime, sha, size: Math.floor((input.data.length * 3) / 4), created: this.iso() };
     const body = input.data.replace(/(.{76})/g, '$1\n');
     await r.commit(id, joinDoc(fm, body), this.now());
     this.refresh([id]);

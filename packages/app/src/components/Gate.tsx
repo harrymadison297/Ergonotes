@@ -21,6 +21,7 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
   const [pw2, setPw2] = useState('');
   const [remember, setRemember] = useState(backend.mode === 'local');
   const [deviceName, setDeviceName] = useState(status.deviceName);
+  const [setupToken, setSetupToken] = useState('');
   const [store, setStore] = useState<StoreFormState>(emptyStore());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,8 +35,8 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
     setBusy(true);
     try {
       if (!noVault) await api.unlock(pw, { remember });
-      else if (mode === 'create') await api.createVault(pw, { deviceName, remember });
-      else await api.joinVault(storeFromForm(store) as StoreConfig, pw, { deviceName, remember });
+      else if (mode === 'create') await api.createVault(pw, { deviceName, remember, ...(remote && setupToken ? { setupToken } : {}) } as Parameters<typeof api.createVault>[1]);
+      else await api.joinVault(storeFromForm(store) as StoreConfig, pw, { deviceName, remember, ...(remote && setupToken ? { setupToken } : {}) } as Parameters<typeof api.joinVault>[2]);
       onReady();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -68,6 +69,12 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
         )}
 
         {noVault && mode === 'join' && !remote && <StoreForm value={store} onChange={setStore} />}
+        {noVault && remote && (
+          <div className="field">
+            <label htmlFor="setup-token">Setup token <span className="hint">(only if this server asks for one)</span></label>
+            <input id="setup-token" className="input" autoComplete="off" value={setupToken} onChange={e => setSetupToken(e.target.value)} />
+          </div>
+        )}
         {noVault && !remote && (
           <div className="field">
             <label htmlFor="devname">This device's name</label>

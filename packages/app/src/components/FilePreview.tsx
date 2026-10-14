@@ -13,6 +13,9 @@ function b64ToBytes(b64: string): Uint8Array {
 
 /** RFC 4180 CSV parser (quotes, escaped quotes, CRLF). */
 export function parseCsv(text: string): string[][] {
+  const head = text.split('\n', 1)[0] ?? '';
+  const count = (c: string) => head.split(c).length - 1;
+  const delim = [',', ';', '\t'].sort((a, b) => count(b) - count(a))[0];
   const rows: string[][] = [];
   let row: string[] = [], cell = '', q = false;
   for (let i = 0; i < text.length; i++) {
@@ -20,7 +23,7 @@ export function parseCsv(text: string): string[][] {
     if (q) {
       if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c;
     } else if (c === '"') q = true;
-    else if (c === ',' || c === ';' || c === '\t') { row.push(cell); cell = ''; }
+    else if (c === delim) { row.push(cell); cell = ''; }
     else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
     else if (c !== '\r') cell += c;
   }

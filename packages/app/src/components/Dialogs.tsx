@@ -15,7 +15,9 @@ export function ConflictDialog({ id, onClose }: { id: string; onClose: () => voi
   const [manual, setManual] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { void app.api.conflictDetail(id).then(d => { setDetail(d); if (!d) onClose(); }); }, [id, app.api, onClose]);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => { void app.api.conflictDetail(id).then(d => { setDetail(d); if (!d) closeRef.current(); }); }, [id, app.api]);
   const other: HeadInfo | undefined = detail?.others[which];
   const local = detail?.local;
   const [props, setProps] = useState<Record<string, boolean>>({});
@@ -50,12 +52,13 @@ export function ConflictDialog({ id, onClose }: { id: string; onClose: () => voi
       footer={<>
         <button className="btn" disabled={busy} onClick={() => void resolve({ kind: 'local' })}>Keep this device’s version</button>
         {other && <button className="btn" disabled={busy} onClick={() => void resolve({ kind: 'other', commit: other.commit })}>Keep {other.deviceName}’s version</button>}
-        <button className="btn" disabled={busy} onClick={() => void resolve({ kind: 'both' })}>Keep both</button>
+        <button className="btn" disabled={busy} onClick={() => void resolve({ kind: 'both' })}>Keep both as separate notes</button>
+        <button className="btn" disabled={busy} onClick={() => void resolve({ kind: 'combine' })}>Combine both texts</button>
         <button className="btn primary" disabled={busy} onClick={() => void resolve({ kind: 'text', text: manual ?? picked })}><Check size={16} /> Save {manual !== null ? 'edited text' : 'selection'}</button>
       </>}>
       <p style={{ marginTop: 0, color: 'var(--text-2)' }}>
         The same note was changed on more than one device. Nothing is lost: pick a whole version, choose change by change, or edit the result by hand.
-        {detail.others.length > 1 && ' There are several newer versions; compare them one at a time.'}
+        {detail.others.length > 1 && ` There are ${detail.others.length + 1} versions in all: saving here replaces all of them, so compare each one first.`}
       </p>
       {detail.others.length > 1 && (
         <div className="seg" role="group" aria-label="Compare with" style={{ marginBottom: 12 }}>

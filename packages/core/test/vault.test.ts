@@ -137,6 +137,83 @@ describe('Vault', () => {
   });
 });
 
+describe('Vault fixes from review', () => {
+  it('keeps the other device text as a separate note when asked to keep both', async () => {
+    const store = new MemStore();
+    shared.set('s3', store);
+    const A = await open('Laptop');
+    await A.createVault(PASSWORD);
+    const n = await A.createNote({ title: 'Plan', body: 'one\n\ntwo' });
+    await A.setStore(cfgFor('s3'));
+    const B = await open('Phone');
+    await B.joinVault(cfgFor('s3'), PASSWORD);
+    await A.saveNote(n.id, { body: 'one\n\nA says two' });
+    await B.saveNote(n.id, { body: 'one\n\nB says two' });
+    await A.sync(); await B.sync(); await A.sync();
+    await B.resolveConflict(n.id, { kind: 'both' });
+    const items = await B.listItems();
+    const copies = items.filter(i => i.title.startsWith('Plan (from'));
+    expect(copies).toHaveLength(1);
+    expect((await B.getNote(copies[0].id))!.body).toContain('A says two');
+    expect((await B.getNote(n.id))!.body).toContain('B says two');
+    expect((await B.getNote(n.id))!.body).not.toContain('A says two');
+    expect(await B.conflicts()).toHaveLength(0);
+  });
+
+  it('stores identical files once and rejects notes in folders that do not exist', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const a = await v.addFile({ name: 'x.png', mime: 'image/png', data: 'aGVsbG8=' });
+    const b = await v.addFile({ name: 'copy.png', mime: 'image/png', data: 'aGVsbG8=' });
+    expect(b.id).toBe(a.id);
+    expect((await v.getFile(a.id))!.data).toBe('aGVsbG8=');
+    await expect(v.createNote({ title: 'x', parent: 'not-a-folder' })).rejects.toThrow(/does not exist/);
+  });
+
+  it('survives a folder cycle created by two devices moving folders into each other', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const a = await v.createFolder({ title: 'A' });
+    const b = await v.createFolder({ title: 'B', parent: a.id });
+    // simulate the merged result of concurrent moves: A inside B as well
+    await v['mutate'](a.id, fm => { fm.parent = b.id; });
+    await expect(v.purge(a.id)).resolves.toBeUndefined();
+  });
+
+  it('renames a tag, including sub-tags, across notes', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const n1 = await v.createNote({ title: 'One', tags: ['work/acme', 'idea'] });
+    const n2 = await v.createNote({ title: 'Two', tags: ['work'] });
+    expect(await v.renameTag('work', 'job')).toBe(2);
+    expect((await v.getNote(n1.id))!.tags).toEqual(['idea', 'job/acme']);
+    expect((await v.getNote(n2.id))!.tags).toEqual(['job']);
+  });
+
+  it('puts notes on the local creation day in the calendar', async () => {
+    const v = await open('A', undefined, () => new Date(2026, 9, 14, 23, 30).getTime());
+    await v.createVault(PASSWORD);
+    const n = await v.createNote({ title: 'Late' });
+    const cal = await v.calendar('2026-10-14T00:00', '2026-10-14T23:59');
+    expect(cal.notes.map(x => x.id)).toContain(n.id);
+  });
+
+  it('does not purge the Trash because a device clock is far in the future', async () => {
+    const store = new MemStore();
+    shared.set('s4', store);
+    let skew = 0;
+    const v = await open('A', undefined, () => Date.now() + skew);
+    await v.createVault(PASSWORD);
+    const n = await v.createNote({ title: 'Keep me' });
+    await v.trash(n.id);
+    await v.setStore(cfgFor('s4'));
+    store.clock = () => Date.now(); // the Store's own clock is right
+    skew = 90 * 86400e3; // this device thinks it is three months later
+    await v.sync();
+    expect((await v.listItems()).some(i => i.id === n.id && i.trashed)).toBe(true);
+  });
+});
+
 describe('two devices', () => {
   it('sync through a shared store and surface a conflict that can be resolved', async () => {
     const store = new MemStore();
@@ -165,7 +242,7 @@ describe('two devices', () => {
     expect((await B.getNote(n.id))!.body).toContain('from phone');
     expect((await A.getNote(n.id))!.body).toContain('from laptop');
 
-    await B.resolveConflict(n.id, { kind: 'both' });
+    await B.resolveConflict(n.id, { kind: 'combine' });
     await B.sync();
     await A.sync();
     expect(await A.conflicts()).toHaveLength(0);

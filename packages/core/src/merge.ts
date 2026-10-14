@@ -35,11 +35,13 @@ function mergeFrontmatter(o: Frontmatter, b: Frontmatter, t: Frontmatter, bodyCh
   { clean: true; fm: Frontmatter } | { clean: false; why: string } {
   const keys = new Set([...Object.keys(o), ...Object.keys(b), ...Object.keys(t)]);
   const out: Frontmatter = {};
-  // trash on one side, content edit on the other: ask the person (ADR 0001 / Q28.5)
-  const trashChangedOurs = !sameJson(o.trashed, b.trashed);
-  const trashChangedTheirs = !sameJson(t.trashed, b.trashed);
-  if ((trashChangedOurs && !sameJson(o.trashed, t.trashed) && bodyChanged.theirs && t.trashed === undefined) ||
-      (trashChangedTheirs && !sameJson(o.trashed, t.trashed) && bodyChanged.ours && o.trashed === undefined)) {
+  // trash on one side, any content edit (text, title, tags, folder...) on the other: ask the person (Q28.5)
+  const edited = (side: Frontmatter, bodyChangedOnSide: boolean) =>
+    bodyChangedOnSide || [...keys].some(k => k !== 'trashed' && k !== 'updated' && !sameJson(side[k], b[k]));
+  const trashedOurs = !sameJson(o.trashed, b.trashed) && o.trashed !== undefined;
+  const trashedTheirs = !sameJson(t.trashed, b.trashed) && t.trashed !== undefined;
+  if ((trashedOurs && edited(t, bodyChanged.theirs) && t.trashed === undefined) ||
+      (trashedTheirs && edited(o, bodyChanged.ours) && o.trashed === undefined)) {
     return { clean: false, why: 'trash-vs-edit' };
   }
   for (const k of keys) {
@@ -47,7 +49,15 @@ function mergeFrontmatter(o: Frontmatter, b: Frontmatter, t: Frontmatter, bodyCh
     if (sameJson(ov, tv)) { out[k] = ov; continue; }
     if (sameJson(ov, bv)) { out[k] = tv; continue; }
     if (sameJson(tv, bv)) { out[k] = ov; continue; }
-    if (k === 'tags') { out[k] = [...new Set([...asArr(ov), ...asArr(tv)])].sort(); continue; }
+    if (k === 'tags') {
+      // three-way set merge: a tag removed on one side stays removed, tags added on either side are kept
+      const base = new Set(asArr(bv)), a = new Set(asArr(ov)), c = new Set(asArr(tv));
+      const merged = new Set<string>();
+      for (const x of a) if (c.has(x) || !base.has(x)) merged.add(x);
+      for (const x of c) if (a.has(x) || !base.has(x)) merged.add(x);
+      out[k] = [...merged].sort();
+      continue;
+    }
     if (k === 'updated') { out[k] = String(ov) > String(tv) ? ov : tv; continue; }
     return { clean: false, why: `frontmatter:${k}` };
   }
