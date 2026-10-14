@@ -310,6 +310,8 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
           <div className="field"><label htmlFor="s-theme">Appearance</label>
             <select id="s-theme" className="input" value={app.settings.theme} onChange={async e => { await app.run(app.api.setSettings({ theme: e.target.value as 'system' | 'light' | 'dark' })); await app.refresh(); }}>
               <option value="system">Match my system</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+          {!app.isMobile && (
+            <>
           <div className="field">
             <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontWeight: 600 }}>
               <input type="checkbox" checked={prefs.toc} onChange={e => setPrefs({ toc: e.target.checked })} style={{ accentColor: 'var(--green-fill)', width: 18, height: 18 }} />
@@ -318,6 +320,8 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
           <div className="field"><span className="label">Layout</span>
             <div><button className="btn" onClick={() => setPrefs({ sidebarW: null, listW: null, tocW: null })}>Reset pane widths</button></div>
             <span className="hint">Drag the edge of the sidebar, the note list or the contents panel to resize it.</span></div>
+            </>
+          )}
           <div className="field"><label htmlFor="s-cap">New captures go to</label>
             <select id="s-cap" className="input" value={app.settings.captureFolder ?? ''} onChange={async e => { await app.run(app.api.setSettings({ captureFolder: e.target.value || null })); await app.refresh(); }}>
               <option value="">Inbox (created when needed)</option>
