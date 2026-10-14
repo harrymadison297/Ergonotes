@@ -16,11 +16,12 @@ run() { # name, command...
 
 echo "### reset shared state"
 docker rm -f ergonotes-minio >/dev/null 2>&1; rm -rf temp/minio-e2e; mkdir -p temp/minio-e2e
-docker run -d --name ergonotes-minio --user "$(id -u):$(id -g)" -p 0.0.0.0:19000:9000 -e MINIO_ROOT_USER=spike -e MINIO_ROOT_PASSWORD=spikepass12345 -v "$R/temp/minio-e2e:/data" quay.io/minio/minio:latest server /data >/dev/null
+docker run -d --name ergonotes-minio --user "$(id -u):$(id -g)" -p 0.0.0.0:19000:9000 -e MINIO_ROOT_USER=spike -e MINIO_ROOT_PASSWORD=spikepass12345 -v "$R/temp/minio-e2e:/data" quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data >/dev/null
 scp -i "$KEY" $SSHO -P 2222 dist/release/ergonotes-server.tgz ergo@127.0.0.1:/tmp/ >/dev/null
 ssh -i "$KEY" $SSHO -p 2222 ergo@127.0.0.1 'sudo systemctl stop ergonotes; sudo rm -rf /var/lib/ergonotes/* /opt/ergonotes/*; sudo tar -xzf /tmp/ergonotes-server.tgz -C /opt/ergonotes; sudo systemctl start ergonotes; sleep 2; echo "server peer in the Linux VM: $(systemctl is-active ergonotes)"'
 (pgrep -f "http.server 18090" >/dev/null) || (cd packages/app/dist && nohup python3 -m http.server 18090 --bind 127.0.0.1 >/dev/null 2>&1 &)
-sleep 3
+# wait until MinIO and the static server answer instead of sleeping a fixed time
+for i in $(seq 1 40); do curl -sf http://127.0.0.1:19000/minio/health/live >/dev/null && curl -sf http://127.0.0.1:18090/ >/dev/null && break; sleep 0.5; done
 
 run "1 unit+integration tests (core, server, MCP)" tools/n npx vitest run
 run "2 browser e2e on the Linux VM server" $PW smoke.mjs http://127.0.0.1:18080 /repo/temp/out/shots-verify-linux

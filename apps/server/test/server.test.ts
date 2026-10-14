@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -29,7 +30,9 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe('server peer', () => {
+// One scenario, run in order: create the vault, sign in, sign out, mirror. Each later test relies on the state the
+// earlier ones left (the vault, the cookie). Everything that needs its own state has its own server below.
+describe.sequential('server peer', () => {
   it('requires a session for everything except status and first-run setup', async () => {
     expect((await rpc('listItems')).status).toBe(401);
     const st = await (await fetch(`${base}/api/status`)).json();
@@ -66,12 +69,6 @@ describe('server peer', () => {
     expect(bad.status).toBe(403);
     const text = await fetch(`${base}/api/rpc/listItems`, { method: 'POST', headers: { 'content-type': 'text/plain', cookie }, body: '[]' });
     expect(text.status).toBe(415);
-  });
-
-  it('rate limits password guessing', async () => {
-    let last = 0;
-    for (let i = 0; i < 12; i++) last = (await rpc('unlock', `wrong password number ${i}`)).status;
-    expect(last).toBe(429);
   });
 
   it('mirrors notes to plain markdown files', async () => {
@@ -178,5 +175,88 @@ describe('first-run protection', () => {
     expect(authed.store?.type).toBe('folder');
     await s.close();
     await rm(d, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------- hardening (each test has its own server)
+async function withServer(opts: Partial<Parameters<typeof startServer>[0]>, fn: (s: RunningServer, u: string, d: string) => Promise<void>) {
+  const d = await mkdtemp(join(tmpdir(), 'ergonotes-hard-'));
+  const s = await startServer({ port: 0, host: '127.0.0.1', dataDir: d, kdf: { m: 256, t: 1, p: 1 }, mirrorDir: null, ...opts });
+  try { await fn(s, `http://127.0.0.1:${s.port}`, d); } finally { await s.close(); await rm(d, { recursive: true, force: true }); }
+}
+const postJson = (u: string, path: string, body: string, headers: Record<string, string> = {}) =>
+  fetch(`${u}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body });
+/** A request with a chosen Host header (fetch refuses to set it). */
+const rawGet = (port: number, host: string) => new Promise<{ status: number; text: string }>((resolve, reject) => {
+  const req = request({ host: '127.0.0.1', port, path: '/api/status', headers: { host } }, res => {
+    let text = '';
+    res.on('data', c => { text += c; });
+    res.on('end', () => resolve({ status: res.statusCode ?? 0, text }));
+  });
+  req.on('error', reject);
+  req.end();
+});
+
+describe('sign-in protection', () => {
+  it('rate limits password guessing', async () => {
+    await withServer({}, async (_s, u) => {
+      await postJson(u, '/api/rpc/createVault', JSON.stringify([PASSWORD]));
+      let last = 0;
+      for (let i = 0; i < 12; i++) last = (await postJson(u, '/api/rpc/unlock', JSON.stringify([`wrong password number ${i}`]))).status;
+      expect(last).toBe(429);
+    });
+  });
+
+  it('counts parallel guesses: they cannot all slip in before the first answer', async () => {
+    await withServer({}, async (_s, u) => {
+      await postJson(u, '/api/rpc/createVault', JSON.stringify([PASSWORD]));
+      const answers = await Promise.all(Array.from({ length: 24 }, (_, i) => postJson(u, '/api/rpc/unlock', JSON.stringify([`parallel wrong ${i}`])).then(r => r.status)));
+      expect(answers.filter(x => x === 401).length).toBeLessThanOrEqual(8);
+      expect(answers.filter(x => x === 429).length).toBeGreaterThanOrEqual(16);
+    });
+  });
+
+  it('behind a proxy only the hop the proxy appended counts, so a forged first entry buys nothing', async () => {
+    await withServer({ trustProxy: true }, async (_s, u) => {
+      await postJson(u, '/api/rpc/createVault', JSON.stringify([PASSWORD]));
+      let last = 0;
+      for (let i = 0; i < 12; i++) {
+        last = (await postJson(u, '/api/rpc/unlock', JSON.stringify([`wrong ${i}`]), { 'x-forwarded-for': `10.0.0.${i}, 203.0.113.9`, 'x-forwarded-proto': 'https' })).status;
+      }
+      expect(last).toBe(429);
+    });
+  });
+});
+
+describe('request limits and addressing', () => {
+  it('does not read a large body for someone who is not signed in', async () => {
+    await withServer({}, async (_s, u) => {
+      const big = JSON.stringify(['x'.repeat(200_000)]); // over the 64 KB allowed before a session exists
+      expect((await postJson(u, '/api/rpc/listItems', big)).status).toBe(401);
+      const signIn = await postJson(u, '/api/rpc/unlock', big);
+      expect(signIn.status).toBe(413);
+      expect((await signIn.json()).error).toMatch(/too large/i);
+    });
+  });
+
+  it('is not fooled by a Host header: a request for another name is plain HTTP from elsewhere', async () => {
+    await withServer({}, async (s) => {
+      expect((await rawGet(s.port, `localhost:${s.port}`)).status).toBe(200);
+      const other = await rawGet(s.port, 'notes.example.com');
+      expect(other.status).toBe(400);
+      expect(other.text).toMatch(/HTTPS/);
+    });
+  });
+
+  it('keeps folder storage inside the data directory', async () => {
+    await withServer({}, async (_s, u, d) => {
+      const created = await postJson(u, '/api/rpc/createVault', JSON.stringify([PASSWORD]));
+      const cookie = created.headers.get('set-cookie')!.split(';')[0];
+      const outside = await postJson(u, '/api/rpc/setStore', JSON.stringify([{ type: 'folder', path: '/etc' }]), { cookie });
+      expect(outside.status).toBe(400);
+      expect((await outside.json()).error).toMatch(/has to be inside/);
+      const inside = await postJson(u, '/api/rpc/setStore', JSON.stringify([{ type: 'folder', path: join(d, 'stores', 'a') }]), { cookie });
+      expect(inside.status).toBe(200);
+    });
   });
 });

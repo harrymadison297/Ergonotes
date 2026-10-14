@@ -8,6 +8,16 @@ const shots = process.argv[3] ?? './shots';
 mkdirSync(shots, { recursive: true });
 const PASSWORD = 'correct horse battery staple';
 let failures = 0;
+/** Poll until `fn` returns something truthy (or `ms` pass); replaces fixed sleeps before persistence checks. */
+const until = async (fn, ms = 8000) => {
+  const end = Date.now() + ms;
+  for (;;) {
+    const v = await fn().catch(() => null);
+    if (v) return v;
+    if (Date.now() > end) return null;
+    await new Promise(r => setTimeout(r, 150));
+  }
+};
 const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? '  — ' + extra : ''}`); if (!ok) failures++; };
 
 const browser = await chromium.launch();
@@ -138,11 +148,10 @@ await page.locator('.prose table td').last().click();
 await page.keyboard.type('x');
 await page.keyboard.press('Enter');
 await page.keyboard.type('y');
-await page.waitForTimeout(1500);
 {
   const rpcT = (m, ...a) => page.evaluate(async ([m, a]) => (await fetch(`./api/rpc/${m}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(a) })).json(), [m, a]);
   const n = (await rpcT('listItems')).find(i => i.title === 'Property listings');
-  const saved = (await rpcT('getNote', n.id)).body;
+  const saved = (await until(async () => { const b = (await rpcT('getNote', n.id)).body; return b.includes('| y ') ? b : null; })) ?? (await rpcT('getNote', n.id)).body;
   check('a table keeps its Markdown form after Enter in a cell', saved.includes('| ') && !saved.includes('[table]'), JSON.stringify(saved.slice(-160)));
 }
 
@@ -161,7 +170,6 @@ await page.screenshot({ path: `${shots}/10-csv-preview.png` });
 await page.keyboard.press('Escape');
 
 // files page lists the attachment and previews it beside the list
-await page.waitForTimeout(1500);
 await page.goto(`${base}/#/files`);
 await page.locator('.file-card', { hasText: 'prices.csv' }).waitFor({ timeout: 10000 });
 await page.locator('.file-card', { hasText: 'Property listings' }).waitFor({ timeout: 10000 }).then(

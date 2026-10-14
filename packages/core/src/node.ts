@@ -83,6 +83,7 @@ export class FilePersist implements Persist {
     this.heads[item] = id;
     await this.queue(() => writeAtomic(join(this.dir, 'heads.json'), JSON.stringify(this.heads), true));
   }
+  async close() { await this.writing; }
   async setMeta(key: string, value: unknown) {
     await this.ensure();
     if (value === undefined) delete this.meta[key]; else this.meta[key] = value;

@@ -20,7 +20,13 @@ export class Mirror {
     this.off = this.vault.onEvent(e => { if (e.type === 'items') this.schedule(); });
     this.schedule();
   }
-  stop() { this.off?.(); this.off = null; if (this.timer) clearTimeout(this.timer); }
+  /** Stop watching; resolves once a write in progress has finished. */
+  async stop() {
+    this.off?.(); this.off = null;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    while (this.running) await new Promise(r => setTimeout(r, 10));
+  }
   private schedule() {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.write(), 2000);

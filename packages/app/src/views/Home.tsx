@@ -84,10 +84,10 @@ export function Home() {
         <section className="widget w-capture" aria-labelledby="w-capture">
           <h2 id="w-capture">Scratch pad</h2>
           <div className="capture">
-            <textarea aria-label="Scratch pad" placeholder="Start writing…" maxLength={600} value={capture} onChange={e => setCapture(e.target.value)}
+            <textarea aria-label="Scratch pad" placeholder="Start writing…" value={capture} onChange={e => setCapture(e.target.value)}
               onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void saveCapture(); }} />
             <div className="foot">
-              <span>{capture.length ? `${capture.length}/600` : 'Goes to your Inbox'}</span>
+              <span>{capture.length ? `${capture.length} characters` : 'Goes to your Inbox'}</span>
               <IconBtn label="Save to Inbox (Ctrl+Enter)" icon={<Send size={16} />} onClick={() => void saveCapture()} disabled={!capture.trim()} />
             </div>
           </div>

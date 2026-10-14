@@ -117,8 +117,10 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   const readBody = (req: IncomingMessage, limit = 64 * 1024 * 1024) => new Promise<string>((resolve, reject) => {
     const chunks: Buffer[] = [];
     let n = 0;
-    req.on('data', (c: Buffer) => { n += c.length; if (n > limit) { reject(new Error('Body too large')); req.destroy(); } else chunks.push(c); });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    let over = false;
+    // past the limit nothing more is kept; the caller answers 413 and the connection is closed after that answer
+    req.on('data', (c: Buffer) => { n += c.length; if (over) return; if (n > limit) { over = true; chunks.length = 0; reject(new Error('Body too large')); } else chunks.push(c); });
+    req.on('end', () => { if (!over) resolve(Buffer.concat(chunks).toString('utf8')); });
     req.on('error', reject);
   });
   // only failures count, so a signed-in owner is never locked out by someone else's guesses on a shared address
@@ -171,7 +173,8 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     if (!preAuth && !authed(req)) return json(res, 401, { error: 'Sign in first' });
     let args: unknown[];
     try { args = JSON.parse((await readBody(req, preAuth ? 64 * 1024 : 64 * 1024 * 1024)) || '[]'); if (!Array.isArray(args)) throw new Error('args must be an array'); } catch (e) {
-      return json(res, 400, { error: String(e instanceof Error ? e.message : e) });
+      const msg = String(e instanceof Error ? e.message : e);
+      return json(res, /too large/i.test(msg) ? 413 : 400, { error: msg }, { connection: 'close' });
     }
     const st = await vault.status();
 
@@ -301,10 +304,10 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   return {
     server, port, vault,
     close: async () => {
-      vault.stopAutoSync();
-      mirror?.stop();
       for (const r of sse) r.end();
       await new Promise<void>(r => server.close(() => r()));
+      await mirror?.stop();
+      await vault.close();
     },
   };
 }

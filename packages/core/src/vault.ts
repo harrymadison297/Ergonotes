@@ -1018,6 +1018,13 @@ export class Vault implements VaultApi {
     void this.sync();
   }
 
+  /** Stop background work and let anything already started finish writing (server shutdown, tests). */
+  async close(): Promise<void> {
+    this.stopAutoSync();
+    try { await this.syncing; } catch { /* reported through status */ }
+    await this.persist.close?.();
+  }
+
   stopAutoSync(): void {
     if (this.pullTimer) clearInterval(this.pullTimer);
     if (this.pushTimer) clearTimeout(this.pushTimer);

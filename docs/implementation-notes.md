@@ -40,6 +40,12 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 
 ## Known limits
 
+- The editor rewrites the whole body through its Markdown serializer on every change, so Markdown that has no editor node (raw HTML, footnotes) can be normalised. Notes written by agents through MCP are affected the same way once a person edits them.
+- A stale device (offline for more than the history window) is not detected on purpose: it shows up as a `no-base` conflict that a person resolves, and the first push after compaction is sent as a snapshot.
+- `{{cursor}}` in a template is removed, not turned into the caret position; HTML export shows drawings as a text placeholder (SVG/PNG export is in the drawing dialog).
+- The web build sends no `Content-Security-Policy` header yet. Drawings are rendered as images, so note content never injects HTML into the page.
+- S3 requests are signed with the device clock; a clock more than 15 minutes off fails every request until corrected.
+
 - The Markdown mirror is one way: it is rebuilt in a temporary folder and swapped in when a note changes, so edits made to those files outside the app are replaced. It inlines attachments as base64 `data:` URIs (the same export a person gets from the Export menu).
 - Reminders are checked every 20 s while the app is open; one that came due while the app was closed shows once on the next start (within a week). Which reminders have fired is remembered per device in `localStorage`.
 - Two devices that are offline and both open the same day's daily note each create one; they appear as two notes with the same title.

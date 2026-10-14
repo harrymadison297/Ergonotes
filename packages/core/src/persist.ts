@@ -17,6 +17,8 @@ export interface Persist {
   markPushed(commits: Commit[]): Promise<void>;
   setHead(item: string, id: string): Promise<void>;
   setMeta(key: string, value: unknown): Promise<void>;
+  /** wait for queued writes; called when the owner shuts down */
+  close?(): Promise<void>;
 }
 
 export class MemPersist implements Persist {

@@ -59,7 +59,11 @@ class LocalBackend implements Backend {
   constructor(vault: Vault) {
     this.vault = vault;
     this.api = vault;
-    window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') void vault.flush(); });
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') void vault.flush();
+      // coming back to the app (or switching device): look for news at once instead of waiting for the timer
+      else if (this.started) void vault.sync();
+    });
     window.addEventListener('pagehide', () => { void vault.flush(); });
   }
 

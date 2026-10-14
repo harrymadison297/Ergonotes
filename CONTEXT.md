@@ -40,7 +40,7 @@ _Avoid_: Diagram, canvas, whiteboard
 
 **Attachment**:
 A binary file (image, PDF, spreadsheet...) referenced from a Note, stored once per distinct content.
-_Avoid_: Upload, asset, media
+_Avoid_: Upload, asset, media (the "Media" filter on the Files page is only a view label)
 
 ### Organisation
 
