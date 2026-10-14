@@ -209,10 +209,31 @@ export class Vault implements VaultApi {
     await this.sync({ full: true });
   }
 
+  /**
+   * Unwrap the master key. A password changed on another device only reaches this one through the
+   * Store's `vault.json`, so a failed attempt is retried with that copy before giving up.
+   */
+  private async unwrap(password: string): Promise<Uint8Array> {
+    try {
+      return await unwrapMasterKey(password, this.vaultFile!);
+    } catch (e) {
+      if (!(e instanceof WrongPasswordError)) throw e;
+      const s = await this.getStore().catch(() => null);
+      const blob = s ? await s.get('vault.json').catch(() => null) : null;
+      if (!blob) throw e;
+      const remote = JSON.parse(dec(blob)) as VaultFile;
+      if (remote.wrappedKey === this.vaultFile!.wrappedKey) throw e;
+      const key = await unwrapMasterKey(password, remote);
+      this.vaultFile = remote;
+      await this.setMeta('vaultFile', remote);
+      return key;
+    }
+  }
+
   async unlock(password: string, o: { remember?: boolean } = {}): Promise<void> {
     if (!this.vaultFile) throw new Error('No vault on this device');
     if (this.replica) return;
-    const key = await unwrapMasterKey(password, this.vaultFile);
+    const key = await this.unwrap(password);
     if (o.remember) await this.setMeta('rememberedKey', toB64(key));
     await this.activate(key);
   }
@@ -220,7 +241,7 @@ export class Vault implements VaultApi {
   /** Check a password without changing any state (used by the server to sign a browser in). */
   async verifyPassword(password: string): Promise<void> {
     if (!this.vaultFile) throw new Error('No vault on this device');
-    await unwrapMasterKey(password, this.vaultFile);
+    await this.unwrap(password);
   }
 
   async lock(): Promise<void> {
@@ -230,6 +251,8 @@ export class Vault implements VaultApi {
     this.sealer = null;
     this.masterKey = null;
     this.views.clear();
+    this.files.clear(); // attachments are plaintext in memory
+    this.fileBySha.clear();
     this.searchIndex.removeAll();
     await this.setMeta('rememberedKey', undefined);
     delete this.meta.rememberedKey;
@@ -243,10 +266,11 @@ export class Vault implements VaultApi {
     const key = await unwrapMasterKey(oldPassword, this.vaultFile);
     const file = await wrapMasterKey(newPassword, key, this.opts.kdf ?? DEFAULT_KDF, this.vaultFile.epoch);
     file.created = this.vaultFile.created;
-    this.vaultFile = file;
-    await this.setMeta('vaultFile', file);
+    // the Store first: if it cannot be reached nothing has changed here, and other devices never see a password this one lost
     const s = await this.getStore();
     if (s) await s.put('vault.json', enc(JSON.stringify(file)));
+    this.vaultFile = file;
+    await this.setMeta('vaultFile', file);
   }
 
   async setDeviceName(name: string): Promise<void> {
@@ -534,7 +558,14 @@ export class Vault implements VaultApi {
     return out;
   }
 
+  /** True when any item at or below `id` has a concurrent edit nobody has resolved yet. */
+  private hasOpenConflict(id: string): boolean {
+    return this.subtree(id).some(x => this.replica!.hasConflict(x));
+  }
+
   async purge(id: string): Promise<void> {
+    this.ready();
+    if (this.hasOpenConflict(id)) throw new Error('This note was also changed on another device. Resolve that first, then delete it.');
     for (const x of this.subtree(id).reverse()) await this.ready().purge(x, this.now());
     for (const x of this.subtree(id)) this.views.delete(x);
     this.refresh([id]);
@@ -542,14 +573,15 @@ export class Vault implements VaultApi {
 
   async emptyTrash(): Promise<void> {
     const top = [...this.views.values()].filter(v => v.trashed);
-    for (const v of top) if (this.views.has(v.id)) await this.purge(v.id);
+    // an item with an unresolved concurrent edit stays in the Trash until a person has chosen
+    for (const v of top) if (this.views.has(v.id) && !this.hasOpenConflict(v.id)) await this.purge(v.id);
   }
 
   /** Purge items that have been in the Trash for more than 30 days. */
   private async housekeeping(now: number): Promise<void> {
     const cutoff = now - TRASH_DAYS * DAY;
     for (const v of [...this.views.values()]) {
-      if (v.trashed && Date.parse(v.trashed) < cutoff && this.views.has(v.id)) await this.purge(v.id);
+      if (v.trashed && Date.parse(v.trashed) < cutoff && this.views.has(v.id) && !this.hasOpenConflict(v.id)) await this.purge(v.id);
     }
   }
 
@@ -912,12 +944,18 @@ export class Vault implements VaultApi {
         const r = this.ready();
         let now = this.now();
         if (store) { try { now += await r.storeClockOffset(this.ctx(store)); } catch { /* offline: local clock */ } }
-        await this.housekeeping(now); // uses the Store's clock when known: a wrong device clock must not purge the Trash
-        if (!store) return rep;
+        if (!store) { await this.housekeeping(now); return rep; }
         const ctx = this.ctx(store);
-        const pull = await r.pull(ctx, { full: o.full });
+        // once a day look at everything on the Store, not only at what the inbox announced
+        const lastFull = (this.meta.lastFullAt as number | undefined) ?? 0;
+        const full = o.full === true || this.now() - lastFull > DAY;
+        const pull = await r.pull(ctx, { full });
+        if (full) await this.setMeta('lastFullAt', this.now());
         rep.pulled = pull.fetched + pull.overlays;
         rep.merged = pull.merged;
+        // after the pull, so a concurrent edit is known before anything is purged; the Store's clock when known:
+        // a wrong device clock must not purge the Trash
+        await this.housekeeping(now);
         const push = await r.push(ctx);
         rep.pushed = push.pushed;
         const last = (this.meta.lastCompactAt as number | undefined) ?? 0;
@@ -960,6 +998,8 @@ export class Vault implements VaultApi {
     if (this.pushTimer) { clearTimeout(this.pushTimer); this.pushTimer = null; }
     const store = await this.getStore().catch(() => null);
     if (!store || !this.replica) return;
+    // look for news first: a delta must not be pushed on top of a base another device just compacted away
+    try { await this.replica.pull(this.ctx(store)); } catch { /* offline: push what we can */ }
     try { await this.replica.push(this.ctx(store)); } catch (e) { this.lastSyncError = e instanceof Error ? e.message : String(e); }
     this.emit({ type: 'status' });
   }

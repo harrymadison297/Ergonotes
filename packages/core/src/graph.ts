@@ -27,8 +27,6 @@ export class Graph {
   private textCache = new Map<string, string[]>();
   private genCache = new Map<string, number>();
   private ancCache = new Map<string, Set<string>>();
-  /** number of times a text could not be materialised (missing base) */
-  dangling = 0;
 
   has(id: string): boolean { return this.commits.has(id); }
   get(id: string): Commit | undefined { return this.commits.get(id); }
@@ -73,7 +71,7 @@ export class Graph {
     if (c.kind === 'snap') t = c.body as string[];
     else {
       const base = this.text(c.parents[0]);
-      if (!base) { this.dangling++; return null; }
+      if (!base) return null;
       t = patch(base, c.body);
     }
     this.textCache.set(id, t);

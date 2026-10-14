@@ -74,7 +74,15 @@ export async function wrapMasterKey(password: string, masterKey: Uint8Array, par
   return { version: 1, kdf, wrappedKey: toB64(wrapped), epoch, created: Date.now() };
 }
 
+/** `vault.json` comes from the Store, so its cost parameters are not trusted: bound them before running Argon2. */
+function assertSaneKdf(k: KdfParams): void {
+  const ok = k.alg === 'argon2id' && Number.isInteger(k.m) && k.m >= 8 && k.m <= 1_048_576
+    && Number.isInteger(k.t) && k.t >= 1 && k.t <= 10 && Number.isInteger(k.p) && k.p >= 1 && k.p <= 16;
+  if (!ok) throw new Error('This vault uses encryption settings this app does not accept.');
+}
+
 export async function unwrapMasterKey(password: string, file: VaultFile): Promise<Uint8Array> {
+  assertSaneKdf(file.kdf);
   const kek = await aesKey(await derive(password, file.kdf), ['decrypt']);
   try {
     return await openRaw(kek, fromB64(file.wrappedKey));
@@ -83,7 +91,11 @@ export async function unwrapMasterKey(password: string, file: VaultFile): Promis
   }
 }
 
-/** Per-object sealing with the master key. */
+/**
+ * Per-object sealing with the master key. Every object gets a fresh random 96-bit IV under the
+ * one key, which AES-GCM tolerates up to about 2^32 objects (NIST SP 800-38D); a vault is nowhere
+ * near that, and key rotation (deferred, ADR 0004) is the answer if it ever were.
+ */
 export class Sealer {
   private key: Promise<CryptoKey>;
   constructor(masterKey: Uint8Array) { this.key = aesKey(masterKey, ['encrypt', 'decrypt']); }

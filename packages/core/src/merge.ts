@@ -81,16 +81,15 @@ export function mergeText(ours: string, base: string | null, theirs: string): Me
   return { clean: true, text: render(fm.fm, body.text), purge: false };
 }
 
-/** "Keep both": union of conflicting regions, tags unioned, newer scalar wins for the rest. */
+/** "Keep both": union of conflicting regions, tags unioned; for other properties this side's value wins. */
 export function unionText(ours: string, base: string | null, theirs: string): string {
   if (ours === theirs) return ours;
   const O = splitDoc(ours), T = splitDoc(theirs), B = splitDoc(base ?? '');
   const merged: Frontmatter = { ...T.fm, ...O.fm };
   merged.tags = [...new Set([...asArr(O.fm.tags), ...asArr(T.fm.tags)])].sort();
   if (!merged.tags || (merged.tags as string[]).length === 0) delete merged.tags;
-  const body = base === null
-    ? [...new Set([...O.body.split('\n'), ...T.body.split('\n')])].join('\n')
-    : unionBodies(O.body, B.body, T.body);
+  // with no common ancestor both sides count as additions to an empty text: lines and blocks are kept in order
+  const body = unionBodies(O.body, base === null ? '' : B.body, T.body);
   return render(merged, body);
 }
 
@@ -111,7 +110,7 @@ export function baseText(g: Graph, x: string, y: string, depth = 0, virtual = tr
     const bb = baseText(g, accId, m, depth + 1, virtual) ?? '';
     const r = mergeText(acc, bb, tm.join('\n'));
     acc = r.clean ? r.text : unionText(acc, bb, tm.join('\n'));
-    accId = m;
+    accId = m; // approximation of git's recursive merge: the base of the next step is the previous base commit
   }
   return acc;
 }
@@ -131,9 +130,3 @@ export function tryMerge(g: Graph, x: string, y: string, stats?: MergeStats): Me
   return mergeText(sx, base, sy);
 }
 
-/** "Keep both" text for two heads. */
-export function unionHeads(g: Graph, x: string, y: string): string {
-  const tx = (g.text(x) ?? []).join('\n');
-  const ty = (g.text(y) ?? []).join('\n');
-  return unionText(tx, baseText(g, x, y), ty);
-}

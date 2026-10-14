@@ -30,7 +30,10 @@ export function planCompaction(
     const c = g.get(id)!;
     if (heads.has(id) || !canDrop(id)) continue;
     if (opts.purged) { droppable.add(id); continue; }
-    if (c.parents.length === 1 && (children.get(id)?.length ?? 0) === 1 && c.kind !== 'purge') droppable.add(id);
+    const kids = children.get(id) ?? [];
+    // a child whose text cannot be rebuilt cannot get an overlay: its parent has to stay, or it becomes unreadable everywhere
+    const kidReadable = kids.length === 1 && (g.get(kids[0])!.kind === 'purge' || g.text(kids[0]) !== null);
+    if (c.parents.length === 1 && kids.length === 1 && c.kind !== 'purge' && kidReadable) droppable.add(id);
   }
 
   const dropped = new Set<string>();

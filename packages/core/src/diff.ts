@@ -36,19 +36,6 @@ export function lineDiff(a: string[], b: string[]): DiffOp[] {
   return ops;
 }
 
-/** Group diff ops into hunks of changes with the unchanged context around them. */
-export interface Hunk { id: number; del: string[]; add: string[] }
-export function toHunks(ops: DiffOp[]): Hunk[] {
-  const hunks: Hunk[] = [];
-  let cur: Hunk | null = null;
-  for (const op of ops) {
-    if (op.type === 'same') { cur = null; continue; }
-    if (!cur) { cur = { id: hunks.length, del: [], add: [] }; hunks.push(cur); }
-    if (op.type === 'del') cur.del.push(...op.lines); else cur.add.push(...op.lines);
-  }
-  return hunks;
-}
-
 /**
  * Build a text from `local` and `other` taking each hunk from `other` when `takeOther[hunkId]` is true.
  * Hunks are those of lineDiff(local, other).

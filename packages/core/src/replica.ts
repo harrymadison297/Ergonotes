@@ -3,7 +3,7 @@
 import { planCompaction } from './compaction.ts';
 import type { Sealer } from './crypto.ts';
 import { Graph, type Commit } from './graph.ts';
-import { tryMerge, unionHeads, type MergeStats } from './merge.ts';
+import { tryMerge, type MergeStats } from './merge.ts';
 import type { Persist } from './persist.ts';
 import type { Store } from './store.ts';
 import { DAY, MIN, enc, pad } from './util.ts';
@@ -52,6 +52,10 @@ export class Replica {
   order: string[] = [];
   inboxCursor = 0;
   lastPullAt = 0;
+  /** an object could not be fetched or read during a pull: the next pull lists everything again */
+  needFull = false;
+  /** commits being uploaded right now; a new edit must chain on them, never amend them */
+  private inflight = new Set<string>();
   readonly stats = { merges: 0, amends: 0, commits: 0, snapshotOnPush: 0, crissCross: 0 } satisfies MergeStats & Record<string, number>;
   readonly deviceId: string;
   deviceName: string;
@@ -76,6 +80,7 @@ export class Replica {
     for (const n of (s.meta.gcSeen as string[] | undefined) ?? []) r.gcSeen.add(n);
     r.inboxCursor = (s.meta.inboxCursor as number | undefined) ?? 0;
     r.lastPullAt = (s.meta.lastPullAt as number | undefined) ?? 0;
+    r.needFull = (s.meta.needFull as boolean | undefined) === true;
     r.order = s.commits.filter(c => !r.pushed.has(c.id)).sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1)).map(c => c.id);
     for (const item of r.g.byItem.keys()) await r.refreshLocalHead(item);
     return r;
@@ -122,7 +127,7 @@ export class Replica {
     let parents = head ? [head] : [];
     const hc = head ? this.g.get(head) : undefined;
     let removed: Commit | undefined;
-    if (hc && hc.author === this.deviceId && !this.pushed.has(hc.id) && hc.kind !== 'purge' && hc.parents.length <= 1 && this.g.children(hc.id).length === 0) {
+    if (hc && hc.author === this.deviceId && !this.pushed.has(hc.id) && !this.inflight.has(hc.id) && hc.kind !== 'purge' && hc.parents.length <= 1 && this.g.children(hc.id).length === 0) {
       removed = hc;
       parents = hc.parents;
       this.g.remove(hc.id);
@@ -165,11 +170,6 @@ export class Replica {
     await this.persist.putCommit(c, false);
     await this.persist.setHead(item, c.id);
     this.emit([item]);
-  }
-
-  /** Union of this Device's head and another head ("keep both" resolution text). */
-  keepBothText(item: string, otherHead: string): string {
-    return unionHeads(this.g, this.localHead.get(item)!, otherHead);
   }
 
   // ---------- deterministic automatic merge ----------
@@ -241,6 +241,8 @@ export class Replica {
     const now = (ctx.now ?? Date.now)();
     const serverNow = now + (await this.storeClockOffset(ctx));
     const done: string[] = [];
+    for (const id of unpushed) this.inflight.add(id);
+    try {
     for (const id of unpushed) {
       let c = this.g.get(id)!;
       // self-containment: never push a delta whose base is no longer on the Store
@@ -254,7 +256,11 @@ export class Replica {
       done.push(id);
       report.pushed++;
     }
-    if (done.length) await this.persist.markPushed(done.map(id => this.g.get(id)!).filter(Boolean));
+    } finally {
+      for (const id of unpushed) this.inflight.delete(id);
+      // whatever did reach the Store is recorded even when a later object failed
+      if (done.length) await this.persist.markPushed(done.map(id => this.g.get(id)!).filter(Boolean));
+    }
     this.order = this.order.filter(i => !this.pushed.has(i));
     await this.writeDeviceRecord(ctx, serverNow, report.pushed > 0);
     return report;
@@ -274,7 +280,8 @@ export class Replica {
     const wanted: Wanted[] = [];
     let newestMarker = this.inboxCursor;
     const stale = this.lastPullAt > 0 && now - this.lastPullAt > 25 * DAY;
-    const full = opts.full || this.inboxCursor === 0 || stale;
+    const full = opts.full || this.inboxCursor === 0 || stale || this.needFull;
+    let unreadable = 0;
 
     if (full) {
       for (const k of await ctx.store.list('commits/')) {
@@ -323,8 +330,11 @@ export class Replica {
     });
     if (alreadyKnown.length) await this.persist.markPushed(alreadyKnown);
     const got = await mapLimit(toFetchC, 8, async w => {
-      const blob = await ctx.store.get(K.commit(w.item, w.id));
-      return blob ? await ctx.sealer.openJson<Commit>(blob) : null;
+      try {
+        const blob = await ctx.store.get(K.commit(w.item, w.id));
+        if (!blob) { unreadable++; return null; }
+        return await ctx.sealer.openJson<Commit>(blob);
+      } catch { unreadable++; return null; } // one bad object must not stop the others
     });
     for (const c of got) {
       if (!c || this.g.has(c.id)) continue;
@@ -347,10 +357,11 @@ export class Replica {
     await mapLimit([...bestO.values()], 8, async w => {
       const cur = this.g.get(w.id);
       if (cur && (cur.subsumed?.length ?? 0) >= w.gen) return;
-      const blob = await ctx.store.get(w.key);
-      if (!blob) return;
-      const o = await ctx.sealer.openJson<Commit>(blob);
-      applied.push(o);
+      try {
+        const blob = await ctx.store.get(w.key);
+        if (!blob) { unreadable++; return; }
+        applied.push(await ctx.sealer.openJson<Commit>(blob));
+      } catch { unreadable++; }
     });
     for (const o of applied) {
       const cur = this.g.get(o.id);
@@ -366,12 +377,14 @@ export class Replica {
     const newGc = wanted.filter((w): w is Extract<Wanted, { kind: 'g' }> => w.kind === 'g' && !this.gcSeen.has(w.key));
     let gcChanged = false;
     for (const w of newGc) {
-      const blob = await ctx.store.get(w.key);
-      this.gcSeen.add(w.key);
-      gcChanged = true;
-      if (!blob) continue;
-      const { drop } = await ctx.sealer.openJson<{ drop: string[] }>(blob);
-      for (const id of drop) this.dropped.add(id);
+      try {
+        const blob = await ctx.store.get(w.key);
+        if (!blob) { unreadable++; continue; }
+        const { drop } = await ctx.sealer.openJson<{ drop: string[] }>(blob);
+        for (const id of drop) this.dropped.add(id);
+        this.gcSeen.add(w.key);
+        gcChanged = true;
+      } catch { unreadable++; }
     }
     if (gcChanged) {
       await this.persist.setMeta('gcSeen', [...this.gcSeen]);
@@ -391,6 +404,9 @@ export class Replica {
     }
     this.inboxCursor = newestMarker;
     this.lastPullAt = now;
+    // something could not be read: do a full listing next time instead of trusting the cursor
+    this.needFull = unreadable > 0;
+    await this.persist.setMeta('needFull', this.needFull);
     await this.persist.setMeta('inboxCursor', this.inboxCursor);
     await this.persist.setMeta('lastPullAt', this.lastPullAt);
     report.touched = [...touched];
@@ -424,9 +440,12 @@ export class Replica {
       const plan = planCompaction(this.g, item, serverNow, canDropFor(item), { purged });
       if (!plan.drop.length) continue;
       for (const o of plan.overlays) {
-        for (const k of await ctx.store.list(`overlays/${item}/${o.id}-`)) await ctx.store.delete(k.key);
+        // write the new overlay first and only then remove the older generations: a crash in between loses nothing
         const gen = o.subsumed!.length;
-        await ctx.store.put(K.overlay(item, o.id, gen), await ctx.sealer.sealJson(o));
+        const keep = K.overlay(item, o.id, gen);
+        const older = (await ctx.store.list(`overlays/${item}/${o.id}-`)).filter(k => k.key !== keep);
+        await ctx.store.put(keep, await ctx.sealer.sealJson(o));
+        for (const k of older) await ctx.store.delete(k.key);
         await ctx.store.put(K.inbox(serverNow, this.deviceId, 'o', item, `${o.id}-${String(gen).padStart(5, '0')}`), new Uint8Array(1));
         this.g.add(o);
         this.pushed.add(o.id);

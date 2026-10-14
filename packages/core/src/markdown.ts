@@ -7,6 +7,8 @@ const FM_ORDER = ['id', 'type', 'title', 'parent', 'tags', 'created', 'updated',
 
 /** Split `---\nyaml\n---\nbody` into frontmatter and body. A text without frontmatter has an empty `fm`. */
 export function splitDoc(text: string): Doc {
+  // files written on Windows: normalise the line endings of a note that starts with CRLF frontmatter
+  if (text.startsWith('---\r\n')) text = text.replace(/\r\n/g, '\n');
   if (!text.startsWith('---\n')) return { fm: {}, body: text };
   const end = text.indexOf('\n---', 4);
   if (end < 0) return { fm: {}, body: text };
