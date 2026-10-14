@@ -362,7 +362,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         </nav>
         {!app.isMobile && <IconBtn label={prefs.toc ? 'Hide table of contents' : 'Show table of contents'} active={prefs.toc} icon={<TableOfContents size={18} />}
           className="toc-toggle" onClick={() => setPrefs({ toc: !prefs.toc })} />}
-        <IconBtn label="Export" variant="soft" haspopup icon={<Share2 size={18} />} onClick={e => exportMenu.open(e, exportEntries(), 'right')} />
+        <IconBtn label="Export" haspopup icon={<Share2 size={18} />} onClick={e => exportMenu.open(e, exportEntries(), 'right')} />
         <IconBtn label="More actions" haspopup icon={<MoreHorizontal size={20} />} onClick={e => moreMenu.open(e, moreEntries(), 'right')} />
       </div>
       {exportMenu.node}{moreMenu.node}{insertMenu.node}{styleMenu.node}

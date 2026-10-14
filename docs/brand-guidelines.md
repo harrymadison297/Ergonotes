@@ -114,19 +114,19 @@ Red is excluded: it means "danger".
 
 - **Family**: Inter Variable. Fallback `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`.
 - **Mono** (code, diff): `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`.
-- Body 14 px in chrome, 16 px / 1.65 in the editor. Minimum 12 px everywhere.
+- Body 13 px in chrome, 15 px / 1.65 in the editor. Minimum 12 px everywhere.
 
 | Role | Size | Weight |
 |---|---|---|
-| Home greeting | 30 px | 700 |
-| Page title | 26 px | 700 |
-| Note list heading | 22 px | 700 |
-| Dialog title | 18 px | 600 |
-| New note pill | 15 px | 700 |
-| Section heading | 16–18 px | 600 |
-| Body (chrome) | 14 px | 400 / 500 |
-| Meta, captions | 12.5 px | 400 |
-| Editor title | 32 px | 700 |
+| Home greeting | 26 px | 700 |
+| Page title | 24 px | 700 |
+| Note list heading | 20 px | 700 |
+| Dialog title | 17 px | 600 |
+| New note pill | 14 px | 700 |
+| Section heading | 16 px | 600 |
+| Body (chrome) | 13 px | 400 / 500 |
+| Meta, captions | 12–12.5 px | 400 |
+| Editor title | 28 px (24 px on phones) | 700 |
 
 Sentence case everywhere ("New note", not "New Note"). No all-caps except the small menu group titles (12 px).
 
@@ -150,6 +150,7 @@ rounded square in brand green. File: `packages/app/public/icon.svg`. (The raster
 | Spacing scale | 4 · 8 · 12 · 16 · 24 · 32 · 48 |
 | Controls (buttons, inputs, rows) | radius 6 px, min height 36 px (44 px touch) |
 | Inline breadcrumbs and path segments | min height 32 px (they sit in a 38 px bar) |
+| Note top bar and formatting toolbar | 42 px bar; toolbar buttons 34 px; icon buttons 40 px on phones (dense, always-visible chrome) |
 | Cards | radius 8 px, 1 px `--slate-200` border (not a shadow ring, so scrollers never clip it) |
 | Dialogs, search popup, empty drop areas | radius 10 px; the first two have a soft pop shadow |
 | Icon buttons | **fully round**, 36 px (44 px on touch, 40 px for the quick row, 44 px for Home actions) |
