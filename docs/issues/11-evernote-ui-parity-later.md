@@ -1,0 +1,45 @@
+---
+title: "Later: features the Evernote web reference has that Ergonotes does not yet"
+labels: [type:backlog, area:ui]
+blocked_by: []
+---
+
+## Why
+The UI was brought to the look and sizes of the Evernote web client (screenshots of Home, Notes,
+a note with its toolbar, a notebook, Files). Everything that is visible there and **not**
+implemented is listed here, so it is a deliberate "later" and not a silent gap.
+Sizes and styling for the parts we do have are in `docs/brand-guidelines.md`.
+
+## Not built (each is its own issue when picked up)
+
+### Create menu (the "…" circle under New note)
+- Meeting recording (record, transcript, summary, speakers)
+- AI Prompts
+- Event (calendar event, as opposed to a dated task)
+- Space (a second workspace)
+- File and Image as creation entries (today they are inserted from inside a note)
+
+### Note editor
+- Font family and font size pickers, text colour, highlight colour
+- Underline, text alignment, indent / outdent, a "More" overflow for the rest
+- AI Edit and the right-hand AI assistant panel ("Summarize this note", "Suggest follow-ups")
+- Voice note and meeting recording buttons in the toolbar
+- Reminder and "Add to…" actions in the note footer (task reminders exist inside the text)
+- Share button: share a note by link or with collaborators (needs accounts, so a product decision)
+
+### Navigation and pages
+- Notebooks as their own page with stacks (today: Folders view and the folder explorer)
+- Tags page; Templates gallery page; Spaces switcher; account and notification entries
+- Notebook header "Share" link and a "…" menu with notebook actions
+- Home widgets that can be added, removed and rearranged (the pencil button), and the Web clips widget
+- Files: upload from the page, sort, audio waveform preview, in-page rename and delete
+
+### Capture
+- Web clipper (browser extension) and the "Clip web content" button
+- Email-in, meeting transcripts, audio notes
+
+## Notes for whoever picks this up
+- Anything that needs an account, a server of ours, or an AI service conflicts with ADR 0004 and
+  the offline-first principle; write the ADR first.
+- Editor formatting beyond Markdown (font, colour, alignment) has no Markdown form: it needs an
+  `ergonote-*` representation or HTML spans, and must survive the three-way merge (ADR 0001).

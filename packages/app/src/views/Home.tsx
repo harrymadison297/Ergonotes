@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight, CalendarPlus, ChevronLeft, ChevronRight, FilePlus2, LayoutTemplate, Send, Upload } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, FilePlus2, Send } from 'lucide-react';
 import { useApp } from '../state/app';
 import { href, noteHref } from '../state/router';
 import { isoDay } from '../state/util';
@@ -38,11 +38,6 @@ export function MiniCalendar({ onPick }: { onPick?: (day: string) => void }) {
   );
 }
 
-function greeting(now = new Date()): string {
-  const h = now.getHours();
-  return h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-}
-
 export function Home() {
   const app = useApp();
   const [tab, setTab] = useState<'recent' | 'inbox'>('recent');
@@ -56,71 +51,55 @@ export function Home() {
   const open = useMemo(() => app.tasks.filter(t => !t.done)
     .sort((a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999')).slice(0, 6), [app.tasks]);
   const shown = tab === 'recent' ? recent : inbox;
-  const today = new Date();
+  const folderName = (n: { parent: string | null }) => (n.parent ? app.byId.get(n.parent)?.title : undefined);
 
   const saveCapture = async () => {
     if (!capture.trim()) return;
     const n = await app.run(app.api.capture({ text: capture }));
     if (n) { setCapture(''); app.toast('Saved to Inbox'); await app.refresh(); }
   };
-  const daily = async () => {
-    const d = await app.run(app.api.dailyNote(isoDay()));
-    if (d) { await app.refresh(); app.go({ name: 'notes', note: d.id, folder: d.parent ?? undefined }); }
-  };
-
-  const action = (label: string, icon: JSX.Element, onClick: () => void, primary = false) => (
-    <button key={label} className="home-action" onClick={onClick}>
-      <span className={primary ? 'icon-btn lg primary' : 'icon-btn lg ring'}>{icon}</span>
-      <span>{label}</span>
-    </button>
-  );
 
   return (
     <div className="home">
-      <header className="home-head">
-        <div>
-          <div className="home-date">{today.toLocaleDateString('en', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-          <h1>{greeting(today)}</h1>
-        </div>
-        <div className="home-actions" role="group" aria-label="Quick actions">
-          {action('New note', <FilePlus2 size={22} />, () => void app.newNote(), true)}
-          {action('Daily note', <CalendarPlus size={22} />, () => void daily())}
-          {action('From template', <LayoutTemplate size={22} />, () => app.setDialog({ kind: 'templates' }))}
-          {action('Import', <Upload size={22} />, () => app.setDialog({ kind: 'import' }))}
-        </div>
-      </header>
+      <h1>Home</h1>
+
+      <div className="home-row">
+        <section className="widget w-notes" aria-labelledby="w-notes">
+          <h2 id="w-notes">Notes
+            <span className="grow" />
+            <span className="seg" role="group" aria-label="Which notes">
+              <button aria-pressed={tab === 'recent'} onClick={() => setTab('recent')}>Recent</button>
+              <button aria-pressed={tab === 'inbox'} onClick={() => setTab('inbox')}>Inbox</button>
+            </span>
+          </h2>
+          <div className="cards hrow">
+            {shown.map(n => <NoteCard key={n.id} n={n} folder={folderName(n)} href={noteHref(n)} />)}
+            <button className="card create" onClick={() => void app.newNote()}>
+              <span className="create-dot"><FilePlus2 size={20} /></span>
+              <span>Create new note</span>
+            </button>
+          </div>
+        </section>
+
+        <section className="widget w-capture" aria-labelledby="w-capture">
+          <h2 id="w-capture">Scratch pad</h2>
+          <div className="capture">
+            <textarea aria-label="Scratch pad" placeholder="Start writing…" maxLength={600} value={capture} onChange={e => setCapture(e.target.value)}
+              onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void saveCapture(); }} />
+            <div className="foot">
+              <span>{capture.length ? `${capture.length}/600` : 'Goes to your Inbox'}</span>
+              <IconBtn label="Save to Inbox (Ctrl+Enter)" icon={<Send size={16} />} onClick={() => void saveCapture()} disabled={!capture.trim()} />
+            </div>
+          </div>
+        </section>
+      </div>
 
       <div className="home-grid">
         <div className="home-main">
-          <section className="widget w-capture" aria-labelledby="w-capture">
-            <h2 id="w-capture">Quick capture</h2>
-            <div className="capture">
-              <textarea aria-label="Quick capture" placeholder="Jot something down…" maxLength={600} rows={3} value={capture} onChange={e => setCapture(e.target.value)}
-                onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void saveCapture(); }} />
-              <div className="foot">
-                <span>{capture.length ? `${capture.length}/600` : 'Goes to your Inbox'}</span>
-                <IconBtn label="Save to Inbox (Ctrl+Enter)" variant="primary" icon={<Send size={16} />} onClick={() => void saveCapture()} disabled={!capture.trim()} />
-              </div>
-            </div>
-          </section>
-
-          <section className="widget w-notes" aria-labelledby="w-notes">
-            <h2 id="w-notes">Notes
-              <span className="grow" />
-              <span className="seg" role="group" aria-label="Which notes">
-                <button aria-pressed={tab === 'recent'} onClick={() => setTab('recent')}>Recent</button>
-                <button aria-pressed={tab === 'inbox'} onClick={() => setTab('inbox')}>Inbox</button>
-              </span>
-            </h2>
-            {shown.length === 0
-              ? <div className="empty" style={{ padding: 24 }}>Nothing here yet. Use New note to write your first one.</div>
-              : <div className="cards">{shown.map(n => <NoteCard key={n.id} n={n} href={noteHref(n)} />)}</div>}
-          </section>
-
           {pinned.length > 0 && (
             <section className="widget w-pinned" aria-labelledby="w-pin">
               <h2 id="w-pin">Pinned</h2>
-              <div className="cards">{pinned.map(n => <NoteCard key={n.id} n={n} href={noteHref(n)} />)}</div>
+              <div className="cards hrow">{pinned.map(n => <NoteCard key={n.id} n={n} folder={folderName(n)} href={noteHref(n)} />)}</div>
             </section>
           )}
 

@@ -12,6 +12,8 @@ const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+// the reference UI starts with the icon rail; most checks here use the full sidebar with its folder tree
+await ctx.addInitScript(() => { try { if (localStorage.getItem('ergo.rail') === null) localStorage.setItem('ergo.rail', '0'); } catch { /* ignore */ } });
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
@@ -25,7 +27,7 @@ await page.getByLabel('Repeat password').fill(PASSWORD);
 await page.getByRole('button', { name: 'Create vault' }).click();
 await page.getByRole('navigation', { name: 'Main' }).waitFor({ timeout: 30000 });
 check('vault created and shell visible', true);
-await page.locator('.home-head h1').waitFor();
+await page.locator('.home h1').waitFor();
 check('home screen rendered', true);
 check('default folders listed', (await page.getByRole('link', { name: 'Inbox' }).count()) > 0);
 await page.waitForTimeout(500);
@@ -146,6 +148,24 @@ check('csv attachment previews as a table', (await page.getByRole('dialog').getB
 await page.screenshot({ path: `${shots}/10-csv-preview.png` });
 await page.keyboard.press('Escape');
 
+// files page lists the attachment and previews it beside the list
+await page.waitForTimeout(1500);
+await page.goto(`${base}/#/files`);
+await page.locator('.file-card', { hasText: 'prices.csv' }).waitFor({ timeout: 10000 });
+check('files page lists the attachment with its note', (await page.locator('.file-card', { hasText: 'Property listings' }).count()) === 1);
+await page.locator('.file-card', { hasText: 'prices.csv' }).click();
+await page.getByText('Bergen, NO').waitFor({ timeout: 10000 });
+check('file preview opens beside the list', true);
+await page.screenshot({ path: `${shots}/10b-files.png` });
+
+// create menu next to New note
+await page.goto(`${base}/#/`);
+await page.getByRole('button', { name: 'Create…' }).click();
+check('create menu offers template and folder', (await page.getByRole('menuitem', { name: 'Note from template' }).count()) === 1 && (await page.getByRole('menuitem', { name: 'Folder' }).count()) === 1);
+await page.keyboard.press('Escape');
+await page.goto(`${base}/#/notes`);
+await page.locator('.note-row', { hasText: 'Property listings' }).first().click();
+
 // wiki link picker
 await page.locator('.prose').click();
 await page.keyboard.press('Control+End');
@@ -198,14 +218,14 @@ check('sidebar can be resized by dragging its edge', sbW1 > sbW0 + 60, `${Math.r
 await page.getByRole('separator', { name: 'Resize sidebar' }).dblclick();
 check('double-click resets the width', Math.abs((await page.locator('.sidebar').boundingBox()).width - sbW0) < 2);
 
-// type scale: every rendered text size is a whole, even number of px
+// type scale: every rendered text size comes from the reference scale
 const oddSizes = async () => page.evaluate(() => {
   const bad = new Set();
   for (const el of document.querySelectorAll('body *')) {
     if (el.closest('svg, .ex-paper, .excalidraw')) continue;
     if (!el.childNodes.length || ![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
     const px = parseFloat(getComputedStyle(el).fontSize);
-    if (px % 2 !== 0) bad.add(`${px}px ${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]}`);
+    if (![11, 12, 13, 14, 15, 16, 18, 22, 24, 30].includes(px)) bad.add(`${px}px ${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]}`);
   }
   return [...bad];
 });
@@ -213,7 +233,7 @@ for (const route of ['#/', '#/notes', '#/tasks', '#/calendar', '#/folders']) {
   await page.goto(`${base}/${route}`);
   await page.waitForTimeout(500);
   const bad = await oddSizes();
-  check(`all text sizes are even on ${route}`, bad.length === 0, bad.slice(0, 5).join(', '));
+  check(`all text sizes are on the scale on ${route}`, bad.length === 0, bad.slice(0, 5).join(', '));
 }
 
 // pinned and trash with undo
@@ -259,8 +279,8 @@ await mp.waitForTimeout(600);
 await mp.screenshot({ path: `${shots}/07-mobile-notes.png` });
 check('mobile bottom navigation present', (await mp.locator('.bottom-nav').count()) === 1);
 await mp.goto(`${base}/#/`);
-await mp.locator('.home-head').waitFor();
-check('mobile has a home screen with quick actions', (await mp.locator('.home-action').count()) === 4);
+await mp.locator('.home h1').waitFor();
+check('mobile has a home screen with notes and a scratch pad', (await mp.locator('.home .card.create').count()) === 1 && (await mp.getByRole('textbox', { name: 'Scratch pad' }).count()) === 1);
 check('mobile home has no horizontal overflow', await mp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 await mp.screenshot({ path: `${shots}/07a-mobile-home.png` });
 await mp.goto(`${base}/#/tasks`);

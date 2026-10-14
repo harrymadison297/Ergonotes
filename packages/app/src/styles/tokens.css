@@ -11,9 +11,6 @@
   --slate-100: #eff2f3;
   --white: #ffffff;
   --danger: #c8283a;
-  /* action icons in the quick row (secondary accents, see brand guidelines) */
-  --accent-indigo: #5a60c8;
-  --accent-orange: #c9650f;
 
   /* roles */
   --bg: var(--white);
@@ -43,19 +40,20 @@
   --radius: 6px;
   --radius-lg: 10px;
   --sidebar-w: 264px;
-  --rail-w: 68px;
-  --list-w: 352px;
+  --rail-w: 94px;
+  --list-w: 370px;
   --toc-w: 240px;
-  /* type scale: even sizes only */
-  --fs-xs: 12px;
-  --fs-s: 14px;
-  --fs-m: 16px;
-  --fs-lg: 18px;
-  --fs-l: 20px;
-  --fs-h: 22px;
+  /* type scale, measured from the reference (Evernote web, 100 %) */
+  --fs-2xs: 11px;   /* dates on Home cards, file sizes */
+  --fs-xs: 12px;    /* meta, counts, dates in lists */
+  --fs-s: 13px;     /* body and controls */
+  --fs-m: 14px;     /* menu items, inputs that need air */
+  --fs-editor: 15px;
+  --fs-l: 16px;     /* dialog titles */
+  --fs-lg: 18px;    /* editor heading 3 */
+  --fs-h: 22px;     /* page and list headings, editor heading 2 */
   --fs-xl: 24px;
-  --fs-title: 30px;
-  --fs-editor: var(--fs-s);
+  --fs-title: 30px; /* note title, editor heading 1 */
   --font: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
@@ -80,8 +78,6 @@
   --danger: #ff7b8a;
   --danger-bg: #3d1f25;
   --on-danger: #1b2022;
-  --accent-indigo: #9aa0f2;
-  --accent-orange: #f0a04d;
   --shadow-pop: 0 10px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --tag-alpha: 22%;
   color-scheme: dark;
@@ -105,8 +101,6 @@
     --danger: #ff7b8a;
     --danger-bg: #3d1f25;
     --on-danger: #1b2022;
-    --accent-indigo: #9aa0f2;
-    --accent-orange: #f0a04d;
     --shadow-pop: 0 10px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
     --tag-alpha: 22%;
     color-scheme: dark;

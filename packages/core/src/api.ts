@@ -110,6 +110,8 @@ export interface CalendarData {
 
 export interface FileBlob { name: string; mime: string; data: string }
 export interface ImportFile { path: string; content: string }
+/** One attachment: what it is, how big, and the note that uses it. */
+export interface FileInfo { id: string; name: string; mime: string; size: number; created: string; noteId: string | null; noteTitle: string | null }
 /** One row of the search popup: where it lives and the passage that matched. */
 export interface SearchHit {
   id: string;
@@ -177,6 +179,7 @@ export interface VaultApi {
   flush(): Promise<void>;
 
   addFile(input: FileBlob): Promise<{ id: string }>;
+  listFiles(): Promise<FileInfo[]>;
   getFile(id: string): Promise<FileBlob | null>;
 
   importMarkdown(files: ImportFile[], parent?: string | null): Promise<{ notes: number; folders: number }>;
@@ -189,5 +192,5 @@ export const VAULT_METHODS = [
   'renameTag', 'setPinned', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'searchHits', 'linkTargets', 'tags', 'tasks', 'toggleTask',
   'calendar', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
   'resolveConflict', 'history', 'versionText', 'restoreVersion', 'getSettings', 'setSettings', 'setStore',
-  'sync', 'flush', 'addFile', 'getFile', 'importMarkdown', 'exportNote',
+  'sync', 'flush', 'addFile', 'listFiles', 'getFile', 'importMarkdown', 'exportNote',
 ] as const satisfies readonly (keyof VaultApi)[];

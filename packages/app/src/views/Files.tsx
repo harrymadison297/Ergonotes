@@ -1,0 +1,111 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Download, File as FileIcon, FileSpreadsheet, FileText, Image as ImageIcon, Music, Presentation, Search, Video } from 'lucide-react';
+import type { FileInfo } from '@ergonotes/core';
+import { useApp } from '../state/app';
+import { href } from '../state/router';
+import { classNames } from '../state/util';
+import { FileImg } from '../components/FileImg';
+import { FilePreviewBody, useFilePreview } from '../components/FilePreview';
+import { Resizer } from '../components/Resizer';
+
+type Tab = 'all' | 'media' | 'docs';
+const isMedia = (f: FileInfo) => /^(image|video|audio)\//.test(f.mime);
+
+export function fileSize(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function kindIcon(f: FileInfo, size = 40) {
+  const n = f.name.toLowerCase();
+  if (f.mime.startsWith('image/')) return <ImageIcon size={size} strokeWidth={1.25} />;
+  if (f.mime.startsWith('video/')) return <Video size={size} strokeWidth={1.25} />;
+  if (f.mime.startsWith('audio/')) return <Music size={size} strokeWidth={1.25} />;
+  if (/\.(csv|tsv|xlsx)$/.test(n)) return <FileSpreadsheet size={size} strokeWidth={1.25} />;
+  if (n.endsWith('.pptx')) return <Presentation size={size} strokeWidth={1.25} />;
+  if (/\.(pdf|txt|md|docx?)$/.test(n)) return <FileText size={size} strokeWidth={1.25} />;
+  return <FileIcon size={size} strokeWidth={1.25} />;
+}
+
+function FilePane({ file }: { file: FileInfo }) {
+  const app = useApp();
+  const { file: blob, pv, err, save } = useFilePreview(file.id);
+  return (
+    <div className="editor">
+      <div className="editor-top">
+        <nav className="crumbs" aria-label="File">
+          <span>{file.noteTitle ?? 'Not in a note'}</span><span aria-hidden>›</span><span>{file.name}</span>
+        </nav>
+        {file.noteId && <button className="btn primary" onClick={() => app.go({ name: 'notes', note: file.noteId! })}>Go to note</button>}
+        <button className="icon-btn" title="Download" aria-label="Download" disabled={!blob} onClick={save}><Download size={18} /></button>
+      </div>
+      <div className="editor-scroll" style={{ padding: 16 }}>
+        <FilePreviewBody file={blob} pv={pv} err={err} />
+      </div>
+    </div>
+  );
+}
+
+export function FilesView({ fileId }: { fileId?: string }) {
+  const app = useApp();
+  const [files, setFiles] = useState<FileInfo[] | null>(null);
+  const [tab, setTab] = useState<Tab>('all');
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    let live = true;
+    void app.api.listFiles().then(f => { if (live) setFiles(f); });
+    return () => { live = false; };
+  }, [app.api, app.items]);
+
+  const shown = useMemo(() => (files ?? []).filter(f =>
+    (tab === 'all' || (tab === 'media') === isMedia(f)) && (!q || f.name.toLowerCase().includes(q.toLowerCase()))), [files, tab, q]);
+  const total = (files ?? []).reduce((a, f) => a + f.size, 0);
+  const current = (files ?? []).find(f => f.id === fileId);
+
+  const list = (
+    <div className="pane-list">
+      <Resizer pane="listW" edge="right" label="Resize list" />
+      <div className="list-head files-head">
+        <h2><span className="ttl">Files</span><span className="count">{files?.length ?? 0}</span><span className="grow" /><span className="total">Total size: {fileSize(total)}</span></h2>
+        <div className="pills" role="tablist" aria-label="File kinds">
+          {([['all', 'Files'], ['media', 'Media'], ['docs', 'Docs']] as [Tab, string][]).map(([k, l]) => (
+            <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>
+          ))}
+        </div>
+        <label className="file-search">
+          <input aria-label="Search files" placeholder="Search file…" value={q} onChange={e => setQ(e.target.value)} />
+          <Search size={16} aria-hidden />
+        </label>
+      </div>
+      <div className="list-scroll file-grid">
+        {files && shown.length === 0 && <div className="empty"><FileIcon size={32} /><h3>No files</h3><p>Attach files from a note’s Insert menu and they show up here.</p></div>}
+        {shown.map(f => (
+          <a key={f.id} className={classNames('file-card', f.id === fileId && 'active')} href={href({ name: 'files', file: f.id })}>
+            <span className="file-thumb">{f.mime.startsWith('image/') ? <FileImg src={`ergo-file:${f.id}`} alt="" /> : kindIcon(f)}</span>
+            <span className="file-name">{f.name}</span>
+            <span className="file-sub">{f.noteTitle ?? 'Not in a note'}</span>
+            <span className="file-sub">{fileSize(f.size)}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (app.isMobile) {
+    return (
+      <div className="m-content">
+        {list}
+        {current && <div className="m-note"><button className="btn ghost" style={{ alignSelf: 'flex-start', margin: 8 }} onClick={() => app.go({ name: 'files' })}>Back</button><FilePane file={current} /></div>}
+      </div>
+    );
+  }
+  return (
+    <div className="split">
+      {list}
+      <div className="pane-body">
+        {current ? <FilePane file={current} /> : <div className="empty" style={{ margin: 'auto' }}><FileIcon size={40} strokeWidth={1.25} /><h3>Select a file</h3><p>Its preview opens here.</p></div>}
+      </div>
+    </div>
+  );
+}

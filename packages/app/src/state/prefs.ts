@@ -6,6 +6,10 @@ export interface Prefs {
   toc: boolean;
   /** note list layout */
   listView: 'cards' | 'list';
+  /** hide the note list beside an open note */
+  listHidden: boolean;
+  /** hide the sidebar and the list: the note on its own */
+  focus: boolean;
   /** pane widths in CSS px; null = built-in default */
   sidebarW: number | null;
   listW: number | null;
@@ -20,7 +24,7 @@ export const WIDTHS: Record<Width, { min: number; max: number; cssVar: string }>
 };
 
 const KEY = 'ergo.prefs';
-const DEFAULTS: Prefs = { toc: true, listView: 'cards', sidebarW: null, listW: null, tocW: null };
+const DEFAULTS: Prefs = { toc: true, listView: 'cards', listHidden: false, focus: false, sidebarW: null, listW: null, tocW: null };
 const clampWidth = (k: Width, v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) ? Math.min(WIDTHS[k].max, Math.max(WIDTHS[k].min, Math.round(v))) : null;
 
@@ -30,6 +34,8 @@ function load(): Prefs {
     return {
       toc: raw.toc !== false,
       listView: raw.listView === 'list' ? 'list' : 'cards',
+      listHidden: raw.listHidden === true,
+      focus: raw.focus === true,
       sidebarW: clampWidth('sidebarW', raw.sidebarW),
       listW: clampWidth('listW', raw.listW),
       tocW: clampWidth('tocW', raw.tocW),

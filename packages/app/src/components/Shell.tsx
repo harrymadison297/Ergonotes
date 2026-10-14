@@ -1,13 +1,14 @@
 import { useEffect, useRef } from 'react';
 import {
   AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, Cloud, FilePlus2, FileText, Folder as FolderIcon, Home as HomeIcon, Keyboard, LayoutTemplate,
-  MoreHorizontal, Search, Settings as SettingsIcon, Tag as TagIcon, Trash2,
+  MoreHorizontal, Paperclip, Search, Settings as SettingsIcon, Tag as TagIcon, Trash2,
 } from 'lucide-react';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames, isoDay } from '../state/util';
 import { CalendarView } from '../views/Calendar';
 import { ConflictsView } from '../views/Conflicts';
+import { FilesView } from '../views/Files';
 import { FoldersView } from '../views/Folders';
 import { Home } from '../views/Home';
 import { NotesView, TrashView } from '../views/Notes';
@@ -18,6 +19,7 @@ import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, Se
 import { Sidebar } from './Sidebar';
 import { IconBtn, TagLink, Toasts } from './ui';
 import { useSync } from './useSync';
+import { usePrefs } from '../state/prefs';
 
 function RouteView() {
   const { route } = useApp();
@@ -26,6 +28,7 @@ function RouteView() {
     case 'notes': return <NotesView noteId={route.note} />;
     case 'tasks': return <TasksView noteId={route.note} />;
     case 'calendar': return <CalendarView noteId={route.note} />;
+    case 'files': return <FilesView fileId={route.file} />;
     case 'folders': return <FoldersView />;
     case 'trash': return <TrashView noteId={route.note} />;
     case 'conflicts': return <ConflictsView noteId={route.note} />;
@@ -151,6 +154,7 @@ function MoreView() {
   const sync = useSync();
   const rows: { icon: JSX.Element; label: string; to?: string; onClick?: () => void; badge?: number }[] = [
     { icon: <CalendarDays size={20} />, label: 'Calendar', to: href({ name: 'calendar' }) },
+    { icon: <Paperclip size={20} />, label: 'Files', to: href({ name: 'files' }) },
     { icon: <LayoutTemplate size={20} />, label: 'New from template', onClick: () => app.setDialog({ kind: 'templates' }) },
     { icon: <AlertTriangle size={20} />, label: 'Conflicts', to: href({ name: 'conflicts' }), badge: app.conflicts.length },
     { icon: <Trash2 size={20} />, label: 'Trash', to: href({ name: 'trash' }) },
@@ -204,6 +208,7 @@ function MobileShell() {
 
 export function Shell() {
   const app = useApp();
+  const prefs = usePrefs();
   useGlobalShortcuts();
   useReminders();
   useShareIntent();
@@ -212,7 +217,7 @@ export function Shell() {
   }
   return (
     <>
-      <div className={classNames('app', app.rail && 'rail')}>
+      <div className={classNames('app', app.rail && 'rail', prefs.focus && 'focus')}>
         <Sidebar />
         <main className="main"><RouteView /></main>
       </div>

@@ -3,7 +3,7 @@
 import MarkdownIt from 'markdown-it';
 import MiniSearch from 'minisearch';
 import type {
-  CalendarData, ConflictChoice, ConflictDetail, ExportResult, FileBlob, HeadInfo, ImportFile, ItemSummary, NoteDoc, SearchHit,
+  CalendarData, ConflictChoice, ConflictDetail, ExportResult, FileBlob, FileInfo, HeadInfo, ImportFile, ItemSummary, NoteDoc, SearchHit,
   Settings, StoreConfig, SyncReport, TaskEntry, VaultApi, VaultState, VaultStatus, VersionInfo,
 } from './api.ts';
 import {
@@ -55,6 +55,12 @@ interface View {
 
 export type VaultEvent = { type: 'items'; ids: string[] } | { type: 'status' };
 
+/** Decoded size of a base64 string (whitespace ignored). */
+const b64Bytes = (b64: string): number => {
+  const s = b64.replace(/\s+/g, '');
+  return Math.floor((s.length * 3) / 4) - (s.endsWith('==') ? 2 : s.endsWith('=') ? 1 : 0);
+};
+
 const TRASH_DAYS = 30;
 const MAX_SEARCH_HITS = 40;
 const PUSH_DEBOUNCE_MS = 5 * MIN;
@@ -93,7 +99,7 @@ export class Vault implements VaultApi {
   private masterKey: Uint8Array | null = null;
   private vaultFile: VaultFile | null = null;
   private views = new Map<string, View>();
-  private files = new Map<string, { name: string; mime: string; body: string }>();
+  private files = new Map<string, { name: string; mime: string; body: string; size: number; created: string }>();
   private fileBySha = new Map<string, string>();
   private searchIndex = new MiniSearch<{ id: string; title: string; body: string; tags: string }>({
     fields: ['title', 'body', 'tags'],
@@ -285,7 +291,11 @@ export class Vault implements VaultApi {
       if (text === null) { this.views.delete(id); this.files.delete(id); continue; }
       const { fm, body } = splitDoc(text);
       if (fm.type === 'file') {
-        this.files.set(id, { name: String(fm.name ?? 'file'), mime: String(fm.mime ?? 'application/octet-stream'), body });
+        this.files.set(id, {
+          name: String(fm.name ?? 'file'), mime: String(fm.mime ?? 'application/octet-stream'), body,
+          size: typeof fm.size === 'number' ? fm.size : b64Bytes(body),
+          created: typeof fm.created === 'string' ? fm.created : '',
+        });
         if (typeof fm.sha === 'string') this.fileBySha.set(fm.sha, id);
         this.views.delete(id);
         continue;
@@ -987,11 +997,22 @@ export class Vault implements VaultApi {
     const existing = this.fileBySha.get(sha);
     if (existing && this.files.has(existing)) return { id: existing }; // stored once per distinct content
     const id = newId();
-    const fm: Frontmatter = { id, type: 'file', name: input.name, mime: input.mime, sha, size: Math.floor((input.data.length * 3) / 4), created: this.iso() };
+    const fm: Frontmatter = { id, type: 'file', name: input.name, mime: input.mime, sha, size: b64Bytes(input.data), created: this.iso() };
     const body = input.data.replace(/(.{76})/g, '$1\n');
     await r.commit(id, joinDoc(fm, body), this.now());
     this.refresh([id]);
     return { id };
+  }
+
+  async listFiles(): Promise<FileInfo[]> {
+    this.ready();
+    const notes = [...this.views.values()].filter(v => v.type === 'note' && !this.inTrash(v));
+    const out: FileInfo[] = [];
+    for (const [id, f] of this.files) {
+      const user = notes.find(n => n.body.includes(`ergo-file:${id}`));
+      out.push({ id, name: f.name, mime: f.mime, size: f.size, created: f.created, noteId: user?.id ?? null, noteTitle: user?.title ?? null });
+    }
+    return out.sort((a, b) => b.created.localeCompare(a.created));
   }
 
   async getFile(id: string): Promise<FileBlob | null> {

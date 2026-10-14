@@ -130,7 +130,7 @@ export function NotesView({ noteId }: { noteId?: string }) {
     );
   }
   return (
-    <div className="split">
+    <div className={classNames('split', prefs.listHidden && 'list-hidden')}>
       {listPane}
       <div className="pane-body">
         {noteId ? <NoteEditor key={noteId} id={noteId} /> : explorer}

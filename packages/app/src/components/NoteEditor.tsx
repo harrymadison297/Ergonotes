@@ -12,7 +12,7 @@ import TableHeader from '@tiptap/extension-table-header';
 import { Markdown } from 'tiptap-markdown';
 import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
-  Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, X, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
+  ChevronsLeft, ChevronsRight, Maximize2, Minimize2, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, X, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
 } from 'lucide-react';
 import { mergeText, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
@@ -87,7 +87,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       MarkdownBulletList,
       ListItem.extend({ content: 'paragraph (bulletList | orderedList)*' }),
       Link.configure({ openOnClick: false, autolink: true, protocols: [{ scheme: 'ergo-file', optionalSlashes: true }], HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
-      Placeholder.configure({ placeholder: 'Start writing…  type / for commands, [[ to link a note' }),
+      Placeholder.configure({ placeholder: 'Press "/" to insert an element' }),
       MarkdownTaskList, TaskItem.extend({ content: 'paragraph taskList?' }).configure({ nested: true }),
       Table.configure({ resizable: false }), TableRow, TableHeader, TableCell,
       StoredImage.configure({ inline: true }),
@@ -135,6 +135,11 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       dirty.current = false;
       setSaveState('saved');
       if (editor) editor.commands.setContent(d.body, false);
+      // "Sketch" in the create menu: open a new note straight into the drawing board
+      if (sessionStorage.getItem('ergo.pending') === 'drawing') {
+        sessionStorage.removeItem('ergo.pending');
+        setTimeout(() => window.dispatchEvent(new Event('ergo-insert-drawing')), 60);
+      }
     });
     return () => {
       live = false;
@@ -190,6 +195,12 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     editor.state.doc.descendants((n, p) => { if (n.type.name === 'excalidraw' && !n.attrs.data && p <= from) pos = p; });
     setDrawing({ pos: pos >= 0 ? pos : Math.max(0, from - 1), data: '' });
   }, [editor]);
+
+  useEffect(() => {
+    const on = () => { if (!locked) insertDrawing(); };
+    window.addEventListener('ergo-insert-drawing', on);
+    return () => window.removeEventListener('ergo-insert-drawing', on);
+  }, [insertDrawing, locked]);
 
   useEffect(() => {
     const on = (e: Event) => {
@@ -353,6 +364,13 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       )}
       <div className="editor-top">
         {onBack && <IconBtn label="Back" icon={<ArrowLeft size={20} />} onClick={onBack} />}
+        {!onBack && !app.isMobile && app.route.name === 'notes' && (
+          <>
+            <IconBtn label={prefs.listHidden ? 'Show the note list' : 'Hide the note list'} icon={prefs.listHidden ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />} onClick={() => setPrefs({ listHidden: !prefs.listHidden })} />
+            <IconBtn label={prefs.focus ? 'Leave full screen' : 'Full screen'} icon={prefs.focus ? <Minimize2 size={16} /> : <Maximize2 size={16} />} onClick={() => setPrefs({ focus: !prefs.focus })} />
+            <span className="top-sep" aria-hidden />
+          </>
+        )}
         <nav className="crumbs" aria-label="Location">
           <FolderIcon size={14} />
           {path.length === 0 && <span style={{ padding: '0 6px' }}>No folder</span>}
@@ -371,7 +389,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       {exportMenu.node}{moreMenu.node}{insertMenu.node}{styleMenu.node}
 
       <div className="toolbar" role="toolbar" aria-label="Formatting">
-        <button type="button" className="tb-btn accent" disabled={locked} onClick={e => insertMenu.open(e, insertEntries())}><Plus size={16} /> Insert <ChevronDown size={14} /></button>
+        <button type="button" className="tb-btn accent" disabled={locked} onClick={e => insertMenu.open(e, insertEntries())}><span className="insert-dot"><Plus size={12} /></span> Insert <ChevronDown size={14} /></button>
         <TB locked={locked} label="Checklist" on={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={18} /></TB>
         <TB locked={locked} label={tokens.inTask ? 'Due date' : 'Due date (place the cursor in a task)'} on={!!tokens.due} disabled={!tokens.inTask} onClick={() => setDateDialog('due')}><CalendarDays size={18} /></TB>
         <TB locked={locked} label="Reminder" on={!!tokens.remind} disabled={!tokens.inTask} onClick={() => setDateDialog('remind')}><Bell size={18} /></TB>
@@ -397,7 +415,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       <div className="editor-scroll" ref={scrollRef} onScroll={trackHeading}>
         <div className="editor-page">
           <div className="edited">Edited {new Date(doc.updated).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</div>
-          <input className="title-input" aria-label="Title" placeholder="Untitled" value={title} readOnly={locked}
+          <input className="title-input" aria-label="Title" placeholder="Title" value={title} readOnly={locked}
             onChange={e => { setTitle(e.target.value); setSaveState('saving'); saveTitle(id, e.target.value); }}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); editor.commands.focus('start'); } }} />
           <EditorContent editor={editor} />

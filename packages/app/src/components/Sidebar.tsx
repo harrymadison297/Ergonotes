@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, ChevronDown, ChevronRight, FileText, Folder as FolderIcon, FolderPlus, Home, Keyboard, LayoutTemplate,
-  MoreHorizontal, PanelLeftClose, PanelLeftOpen, Search, Settings as SettingsIcon, Star, Tag as TagIcon, Trash2,
-  CheckCircle2, FilePlus2,
+  MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Search, Settings as SettingsIcon, Star, Tag as TagIcon, Trash2,
+  CheckCircle2, FilePlus2, Upload,
 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
-import { activateKeys, classNames, rowClick } from '../state/util';
+import { activateKeys, classNames, isoDay, rowClick } from '../state/util';
 import { tagStyle } from '../state/tags';
 import { dragSource, dropZone, useDropState, useMoveInto, type Dragged } from '../state/dnd';
 import { IconBtn, useMenu, type MenuEntry } from './ui';
@@ -45,6 +45,7 @@ export function Sidebar() {
   const folderMenu = useMenu();
   const tagMenu = useMenu();
   const pinnedMenu = useMenu();
+  const createMenu = useMenu();
   const sync = useSync();
   const drop = useDropState();
   const hover = drop.key;
@@ -125,6 +126,26 @@ export function Sidebar() {
     ? pinned.map(p => ({ label: p.title, icon: <FileText size={16} />, onClick: () => go({ name: 'notes', note: p.id, folder: p.parent ?? undefined }) }))
     : [{ label: 'Pin a note to see it here', disabled: true, onClick: () => undefined }];
 
+  const createEntries = (): MenuEntry[] => [
+    { label: 'Task', icon: <CheckCircle2 size={16} />, onClick: () => void app.newNote({ body: '- [ ] ' }) },
+    { label: 'Folder', icon: <FolderIcon size={16} />, onClick: () => app.setDialog({ kind: 'newFolder', parent: null }) },
+    { label: 'Sketch', icon: <Pencil size={16} />, onClick: () => { sessionStorage.setItem('ergo.pending', 'drawing'); void app.newNote(); } },
+    { label: 'Note from template', icon: <FilePlus2 size={16} />, onClick: () => app.setDialog({ kind: 'templates' }) },
+    { label: 'Template', icon: <LayoutTemplate size={16} />, onClick: async () => {
+      const n = await app.run(app.api.createNote({ title: 'Untitled template' }));
+      if (!n) return;
+      await app.run(app.api.setTemplate(n.id, true));
+      await app.refresh();
+      app.go({ name: 'notes', note: n.id, folder: n.parent ?? undefined });
+    } },
+    { sep: true },
+    { label: 'Today’s daily note', icon: <CalendarDays size={16} />, onClick: async () => {
+      const d = await app.run(app.api.dailyNote(isoDay()));
+      if (d) { await app.refresh(); app.go({ name: 'notes', note: d.id, folder: d.parent ?? undefined }); }
+    } },
+    { label: 'Import Markdown files…', icon: <Upload size={16} />, onClick: () => app.setDialog({ kind: 'import' }) },
+  ];
+
   const topTags = tagTree.names.filter(n => !n.includes('/'));
   const tagsMenuEntries = (): MenuEntry[] => topTags.length
     ? tagTree.names.map(n => ({ label: n, icon: <i className="tag-dot" style={tagStyle(n)} />, onClick: () => go({ name: 'notes', tag: n }) }))
@@ -142,9 +163,10 @@ export function Sidebar() {
         <button className="new-pill" onClick={() => void app.newNote()} title="New note (Ctrl+N)" aria-label="New note (Ctrl+N)">
           <FilePlus2 size={20} /><span className="new-pill-label">New note</span>
         </button>
-        <IconBtn label="Search (Ctrl+K)" className="ring ring-indigo" icon={<Search size={18} />} onClick={() => app.setDialog({ kind: 'search' })} />
-        <IconBtn label="New from template" className="ring ring-orange" icon={<LayoutTemplate size={18} />} onClick={() => app.setDialog({ kind: 'templates' })} />
+        <IconBtn label="Search (Ctrl+K)" className="ring ring-search" icon={<Search size={18} />} onClick={() => app.setDialog({ kind: 'search' })} />
+        <IconBtn label="Create…" className="ring ring-more" haspopup icon={<MoreHorizontal size={18} />} onClick={e => createMenu.open(e, createEntries())} />
       </div>
+      {createMenu.node}
       {folderMenu.node}
       {tagMenu.node}
       {pinnedMenu.node}
@@ -174,6 +196,7 @@ export function Sidebar() {
         <div className="nav-sep" />
         {link(href({ name: 'notes' }), <FileText size={18} />, 'Notes', route.name === 'notes' && !route.folder && !route.tag)}
         {link(href({ name: 'tasks' }), <CheckCircle2 size={18} />, 'Tasks', isActive('tasks'))}
+        {link(href({ name: 'files' }), <Paperclip size={18} />, 'Files', isActive('files'))}
         {link(href({ name: 'calendar' }), <CalendarDays size={18} />, 'Calendar', isActive('calendar'))}
         <div className="nav-sep" />
 

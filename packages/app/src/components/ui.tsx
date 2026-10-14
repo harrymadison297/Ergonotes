@@ -175,18 +175,17 @@ export function NoteRow({ n, active, href, onClick, cards }: { n: ItemSummary; a
   );
 }
 
-export function NoteCard({ n, href }: { n: ItemSummary; href: string }) {
-  const s = firstSentence(n.snippet);
+export function NoteCard({ n, href, folder }: { n: ItemSummary; href: string; folder?: string }) {
   return (
     <a className="card" href={href} {...dragSource({ id: n.id, type: 'note' })}>
+      {folder && <span className="crumb">{folder}</span>}
       <span className="t">{n.title}</span>
-      {s && <span className="s">{s}</span>}
+      {n.snippet && <span className="s">{n.snippet}</span>}
       <span className="foot">
-        <span>{relTime(n.updated)}</span>
         <NoteChips n={n} />
-        <span className="grow" />
         {n.conflicted && <span className="chip warn">conflict</span>}
-        {n.pinned && <Star size={13} aria-label="Pinned" fill="currentColor" />}
+        {n.pinned && <Star size={12} aria-label="Pinned" fill="currentColor" />}
+        <span className="date">{relTime(n.updated)}</span>
       </span>
     </a>
   );

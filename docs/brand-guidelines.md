@@ -1,8 +1,8 @@
-# Ergonotes Brand Guidelines v1.3
+# Ergonotes Brand Guidelines v1.4
 
 > Source of truth for the look and voice of Ergonotes. The CSS tokens in
 > `packages/app/src/styles/tokens.css` implement this document; change both together.
-> Last updated: 2026-10-14 (v1.3)
+> Last updated: 2026-10-14 (v1.4)
 
 ## Quick reference
 
@@ -27,8 +27,8 @@ connection, and is encrypted with one password.
 ## 2. Colour
 
 The palette is deliberately small: one accent and a cool grey scale. Chrome colours are these
-nine values and tints mixed from them. Three groups sit outside it on purpose: the danger
-red, the two quick-row accents and the tag colours (listed below).
+nine values and tints mixed from them. Two groups sit outside it on purpose: the danger
+red and the tag colours (listed below).
 
 ### Core palette
 
@@ -53,8 +53,6 @@ red, the two quick-row accents and the tag colours (listed below).
 | `--green-ink` | `#196935` (`#2dbe60` 55 % + black) | Green **text** and icons on light surfaces |
 | `--green-tint` | `#e6f7ec` | Soft green backgrounds (reminders, "new" states) |
 | `--danger` | `#c8283a` (dark theme `#ff7b8a`) | Errors, destructive actions, conflicts. Text on it is `--on-danger`: white in light, `#1b2022` in dark |
-| `--accent-indigo` | `#5a60c8` (dark `#9aa0f2`) | Search icon in the quick row. 5.5 : 1 on white |
-| `--accent-orange` | `#c9650f` (dark `#f0a04d`) | New-from-template icon in the quick row. 4.3 : 1 on white |
 
 ### Contrast rules (WCAG 2.2 AA)
 
@@ -114,19 +112,21 @@ Red is excluded: it means "danger".
 
 - **Family**: Inter Variable. Fallback `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`.
 - **Mono** (code, diff): `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`.
-- **Every size is an even number of px**: 12, 14, 16, 18, 20, 22, 24, 30 (tokens `--fs-xs/s/m/lg/l/h/xl/title`). 12 px is
-  the minimum and is used for meta text. No fractional or odd sizes.
-- The editor body uses `--fs-editor` (14 px). Set it to `var(--fs-m)` for 16 px reading text.
+- Sizes are **measured from the reference** (Evernote web at 100 %) and used as they are; there is
+  no even-number or multiple-of-4 rule any more. Tokens `--fs-2xs … --fs-title` in `tokens.css`.
+- Body text and controls are 13 px; the editor body is 15 px (its default in the reference).
 
 | Role | Size | Weight |
 |---|---|---|
-| Editor title and Heading 1 | 30 px (title 20 px on phones) | 600 |
-| Page title, Home greeting, editor Heading 2 | 24 px | 700 |
-| Note list heading ("Inbox" + count) | 22 px | 600 |
-| Section heading (widgets), dialog title, search field | 16 px | 600 |
+| Note title and editor Heading 1 | 30 px (22 px on phones) | 600 |
+| Page and list headings ("Home", "Inbox" + count), editor Heading 2 | 22 px | 600 |
 | Editor Heading 3 | 18 px | 600 |
-| Body, buttons, menus, list rows, editor text | 14 px | 400 / 500 |
-| Meta, captions, timestamps, counts, tags in dots | 12 px | 400 |
+| Dialog title | 16 px | 600 |
+| Menu items, Create menu | 14 px | 400 |
+| Editor body | 15 px | 400 |
+| Body, buttons, toolbar, breadcrumb, card title (bold), card text, section labels (semi-bold) | 13 px | 400 / 600 |
+| Meta: counts, list dates, "Edited", Total size | 12 px | 400 |
+| Dates on Home cards, file sizes and note names on file cards | 11 px | 400 |
 
 Sentence case everywhere ("New note", not "New Note"). No all-caps except the small menu group titles (12 px).
 
@@ -148,7 +148,7 @@ rounded square in brand green. File: `packages/app/public/icon.svg`. (The raster
 | Element | Value |
 |---|---|
 | Spacing scale | 4 · 8 · 12 · 16 · 24 · 32 · 48 |
-| Controls (buttons, inputs, rows) | radius 6 px, min height 34 px (40 px touch) |
+| Controls (buttons, inputs, rows) | radius 6 px, min height 34 px (40 px touch); 40 px circles in the rail |
 | Inline breadcrumbs and path segments | min height 32 px (they sit in a 38 px bar) |
 | Note top bar and formatting toolbar | 38 px bar; toolbar buttons 34 px; icon buttons 36 px on phones (dense, always-visible chrome) |
 | Cards | radius 8 px, 1 px `--slate-200` border (not a shadow ring, so scrollers never clip it) |
@@ -188,12 +188,10 @@ the text inside it.
   outline offset by 2 px. Text fields, the editing surface and the title keep the border change
   instead of a ring; checkboxes, sliders, buttons, links and rows get the ring.
 
-### Quick row
+### Quick actions
 
-Top of the sidebar: a green **New note** pill (icon + label), then round outlined buttons for
-**Search** and **New from template**, in that order. Their icons carry the two secondary
-accents (indigo, orange). Folders are created from the Folders views, not from this row.
-When the sidebar is collapsed the pill becomes a round green button.
+Top of the rail (or sidebar): search, **New note** (green) and the **Create** "…" menu, in that
+order from the top in the rail; in the labelled sidebar the New note pill comes first.
 
 ### Panes
 
@@ -219,14 +217,24 @@ Modelled on the reference (Evernote web), measured at 1919 × 1079:
 
 - The window behind the note list is the soft grey (`--bg-sidebar`); the open note is a **white
   rounded panel** (10 px radius, 1 px border, 8 px gap) sitting on it.
-- List heading: the folder name at 22 px with its note count beside it in 12 px grey; under it a
-  right-aligned row of three plain icons: New note, Sort, View options.
-- View options switch the list between **Cards** (default; two columns in a 352 px list; 10 px radius,
-  12 px padding, bold title, opening text over up to four lines, date and chips at the bottom, the open
-  card has a 2 px green border) and **List** (single-line rows). The choice is per device.
-- Note page: breadcrumb at 14 px, an "Edited Oct 13" line at 12 px, a 30 px title, content column
-  780 px wide, footer with the tag field on the left and the save state on the right.
-- Sizes use the nearest even step to the reference (its 13 px text becomes 14 px; its 12 px stays).
+- **Icon rail**: 94 px wide and the default. A 40 px search circle (grey), a 40 px green New note
+  circle and a 40 px outlined "…" circle (the Create menu), then the destinations one under the
+  other, 30 px apart, each a 52 × 30 px pill with an 18 px icon; the open one has a grey fill.
+  The footer icon expands the rail into the labelled sidebar with the folder tree.
+- **Create menu** (the "…" circle): 210 px wide, 40 px rows, 16 px icon + 14 px label, 12 px radius.
+  It holds Task, Folder, Sketch, Note from template, Template, Today's daily note, Import.
+- **Home**: grey page, "Home" at 22 px; the Notes row of 170 × 256 px cards ending with a
+  "Create new note" card, the yellow 420 × 256 px Scratch pad at its right, then tags, tasks and
+  the calendar.
+- **List**: heading with note count, 370 px wide by default. View options switch between **Cards**
+  (default; two 172 px columns, 8 px gap, 256 px tall, 16 px padding, bold title, opening text, tasks
+  chip and date at the bottom; the open card has a 1 px green border) and **List** (single-line rows).
+- **Files page**: heading "Files" + count and "Total size", pills Files / Media / Docs (the open one
+  has a 2 px outline), a search field, two-column cards with a preview, name, note and size; the
+  preview opens beside the list with a "Go to note" button.
+- Note page: top bar with collapse-list and full-screen buttons, breadcrumb at 13 px, the
+  formatting toolbar with an Insert button (green dot), an "Edited Oct 13" line, a 30 px title with
+  the placeholder "Title", and the body placeholder `Press "/" to insert an element`.
 
 ### Compact views
 
@@ -293,6 +301,7 @@ template action; **Move to trash**, **Empty trash** (the place itself is "Trash"
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-10-14 | Initial guidelines; palette fixed to green + cool-grey scale |
+| 1.4 | 2026-10-14 | Even-size rule removed; sizes taken from the reference as measured (13 px body, 15 px editor, 22 px headings, 30 px title); icon rail as default, Create menu, new Home, Files page, collapse-list and full-screen; features not yet built listed in docs/issues/11 |
 | 1.3 | 2026-10-14 | Matched to the Evernote web reference: note list as cards with a View options switch, rounded white note panel on the grey frame, 22/30 px headings, "Edited" line, thinner icon strokes |
 | 1.2 | 2026-10-14 | Type scale on even sizes 12/14/16/20/24 with a 14 px body (a multiple-of-4 trial at 12 px was reverted as too small); tighter paddings and 34 px controls |
 | 1.1 | 2026-10-14 | Filled green controls use `--green-fill` with white text; quick row (New note pill, search, template); Home and mobile Home; resizable panes and table of contents; interface scale added and then removed in favour of browser zoom; Pinned wording; documented drag and drop, compact views and focus rules |

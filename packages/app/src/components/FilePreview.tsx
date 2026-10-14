@@ -31,7 +31,7 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
-type Preview =
+export type Preview =
   | { kind: 'table'; sheets: { name: string; rows: string[][] }[] }
   | { kind: 'slides'; slides: string[][] }
   | { kind: 'image' | 'pdf'; url: string }
@@ -69,14 +69,15 @@ async function buildPreview(f: FileBlob): Promise<Preview> {
   return { kind: 'none' };
 }
 
-export function FilePreviewDialog({ id, onClose }: { id: string; onClose: () => void }) {
+/** Loads one attachment and builds its preview. */
+export function useFilePreview(id: string) {
   const app = useApp();
   const [file, setFile] = useState<FileBlob | null | undefined>(undefined);
   const [pv, setPv] = useState<Preview | null>(null);
-  const [sheet, setSheet] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
+    setFile(undefined); setPv(null); setErr(null);
     void app.api.getFile(id).then(async f => {
       if (!live) return;
       setFile(f);
@@ -84,7 +85,6 @@ export function FilePreviewDialog({ id, onClose }: { id: string; onClose: () => 
     });
     return () => { live = false; };
   }, [id, app.api]);
-
   const save = () => {
     if (!file) return;
     const url = URL.createObjectURL(new Blob([b64ToBytes(file.data) as BlobPart], { type: file.mime }));
@@ -92,9 +92,14 @@ export function FilePreviewDialog({ id, onClose }: { id: string; onClose: () => 
     a.href = url; a.download = file.name; document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   };
+  return { file, pv, err, save };
+}
 
+/** The preview itself, without a frame: used by the dialog and by the Files page. */
+export function FilePreviewBody({ file, pv, err }: { file: FileBlob | null | undefined; pv: Preview | null; err: string | null }) {
+  const [sheet, setSheet] = useState(0);
   return (
-    <Dialog title={file?.name ?? 'File'} wide onClose={onClose} footer={<button className="btn" disabled={!file} onClick={save}><Download size={16} /> Download</button>}>
+    <>
       {file === undefined && <div className="empty"><Loader2 className="spin" /></div>}
       {file === null && <div className="empty"><h3>This file is not on this device yet</h3><p>Sync, then try again.</p></div>}
       {file && !pv && <div className="empty"><Loader2 className="spin" /></div>}
@@ -119,7 +124,16 @@ export function FilePreviewDialog({ id, onClose }: { id: string; onClose: () => 
           {pv.slides.map((s, i) => <li key={i} style={{ marginBottom: 14 }}><b>{s[0] ?? `Slide ${i + 1}`}</b>{s.slice(1).map((l, j) => <div key={j}>{l}</div>)}</li>)}
         </ol>
       )}
-      {pv?.kind === 'none' && <div className="empty"><h3>No preview for this type of file</h3><p>{err ?? 'Download it to open it in another app.'}</p></div>}
+      {pv?.kind === 'none' && <div className="empty"><h3>Couldn’t preview file</h3><p>{err ?? 'Preview is not supported for this file type. Download it to open it in another app.'}</p></div>}
+    </>
+  );
+}
+
+export function FilePreviewDialog({ id, onClose }: { id: string; onClose: () => void }) {
+  const { file, pv, err, save } = useFilePreview(id);
+  return (
+    <Dialog title={file?.name ?? 'File'} wide onClose={onClose} footer={<button className="btn" disabled={!file} onClick={save}><Download size={16} /> Download</button>}>
+      <FilePreviewBody file={file} pv={pv} err={err} />
     </Dialog>
   );
 }

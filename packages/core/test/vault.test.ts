@@ -213,6 +213,20 @@ describe('Vault fixes from review', () => {
   });
 });
 
+describe('files', () => {
+  it('lists attachments with their size and the note that uses them', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const data = Buffer.from('hello,world\n1,2\n').toString('base64');
+    const f = await v.addFile({ name: 'data.csv', mime: 'text/csv', data });
+    const n = await v.createNote({ title: 'Uses file', body: `[data.csv](ergo-file:${f.id})` });
+    const files = await v.listFiles();
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatchObject({ id: f.id, name: 'data.csv', mime: 'text/csv', noteId: n.id, noteTitle: 'Uses file' });
+    expect(files[0].size).toBe(16);
+  });
+});
+
 describe('search hits', () => {
   it('returns folders by name and notes with the folder path and the passage that matched', async () => {
     const v = await open('A');

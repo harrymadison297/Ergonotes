@@ -85,7 +85,7 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
   const [route, go] = useRoute();
   const isMobile = useMedia('(max-width: 767px)');
   const seq = useRef(0);
-  const [rail, setRail] = useState(() => { try { return localStorage.getItem('ergo.rail') === '1'; } catch { return false; } });
+  const [rail, setRail] = useState(() => { try { return localStorage.getItem('ergo.rail') !== '0'; } catch { return true; } });
   const toggleRail = useCallback(() => setRail(r => {
     try { localStorage.setItem('ergo.rail', r ? '0' : '1'); } catch { /* private mode */ }
     return !r;
