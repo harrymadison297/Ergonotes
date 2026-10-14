@@ -4,6 +4,7 @@ import type { CalendarData } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames, isoDay } from '../state/util';
+import { Resizer } from '../components/Resizer';
 import { NoteEditor } from '../components/NoteEditor';
 
 export function CalendarView({ noteId }: { noteId?: string }) {
@@ -84,7 +85,7 @@ export function CalendarView({ noteId }: { noteId?: string }) {
   if (noteId) {
     return (
       <div className="split" style={{ gridTemplateColumns: '340px minmax(0,1fr)' }}>
-        <div className="pane-list" style={{ overflow: 'auto' }}>{head}{side}</div>
+        <div className="pane-list" style={{ overflow: 'auto' }}><Resizer pane="listW" edge="right" label="Resize list" />{head}{side}</div>
         <div className="pane-body"><NoteEditor key={noteId} id={noteId} /></div>
       </div>
     );

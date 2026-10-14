@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, ChevronDown, ChevronRight, CloudOff, FileText, Folder as FolderIcon, FolderPlus, Home, Keyboard, LayoutTemplate,
-  Loader2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, Settings as SettingsIcon, Star, Tag as TagIcon, Trash2,
-  CheckCircle2, FilePlus2, Upload, Cloud,
+  Loader2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Settings as SettingsIcon, Star, Tag as TagIcon, Trash2,
+  CheckCircle2, FilePlus2, Cloud,
 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
-import { classNames, isoDay, relTime } from '../state/util';
+import { classNames, relTime } from '../state/util';
 import { tagStyle } from '../state/tags';
 import { dragSource, dropZone, type Dragged } from '../state/dnd';
 import { IconBtn, useMenu, type MenuEntry } from './ui';
+import { Resizer } from './Resizer';
 
 const ROLE_ORDER = ['inbox', 'projects', 'areas', 'resources', 'archive', 'templates'];
 const sortFolders = (a: ItemSummary, b: ItemSummary) => {
@@ -30,26 +31,6 @@ function useStoredSet(key: string): [Set<string>, (id: string) => void] {
     return n;
   });
   return [s, toggle];
-}
-
-export function useNewMenu() {
-  const app = useApp();
-  const m = useMenu();
-  const open = (e: { currentTarget: Element }, parent?: string | null) => {
-    const entries: MenuEntry[] = [
-      { label: 'New note', icon: <FilePlus2 size={16} />, kbd: 'Ctrl+N', onClick: () => void app.newNote({ parent }) },
-      { label: 'New folder', icon: <FolderPlus size={16} />, onClick: () => app.setDialog({ kind: 'newFolder', parent: parent ?? null }) },
-      { label: 'New from template…', icon: <LayoutTemplate size={16} />, onClick: () => app.setDialog({ kind: 'templates' }) },
-      { label: "Today's daily note", icon: <CalendarDays size={16} />, onClick: async () => {
-        const d = await app.run(app.api.dailyNote(isoDay()));
-        if (d) { await app.refresh(); app.go({ name: 'notes', note: d.id, folder: d.parent ?? undefined }); }
-      } },
-      { sep: true },
-      { label: 'Import Markdown files…', icon: <Upload size={16} />, onClick: () => app.setDialog({ kind: 'import' }) },
-    ];
-    m.open(e, entries);
-  };
-  return { open, node: m.node };
 }
 
 export function useSync() {
@@ -83,7 +64,6 @@ export function Sidebar() {
   const [foldersOpen, setFoldersOpen] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(true);
-  const newMenu = useNewMenu();
   const folderMenu = useMenu();
   const tagMenu = useMenu();
   const shortcutMenu = useMenu();
@@ -190,20 +170,13 @@ export function Sidebar() {
 
   return (
     <aside className={classNames('sidebar', rail && 'rail')} aria-label="Sidebar">
-      <div className="sidebar-head">
-        <a className="brand" href={href({ name: 'home' })} title="Home" aria-label="Ergonotes home">
-          <img src="./icon.svg" alt="" /><span className="brand-name">Ergonotes</span>
-        </a>
-        <IconBtn label={rail ? 'Expand sidebar' : 'Collapse sidebar'} icon={rail ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />} onClick={toggleRail} />
-      </div>
-
       <div className="quick">
-        <IconBtn label="Search (Ctrl+K)" variant="soft" icon={<Search size={18} />} onClick={() => app.setDialog({ kind: 'search' })} />
-        <IconBtn label="New note (Ctrl+N)" variant="primary" icon={<Plus size={20} />} onClick={() => void app.newNote()} />
-        <IconBtn label="New folder" variant="soft" icon={<FolderPlus size={18} />} onClick={() => app.setDialog({ kind: 'newFolder', parent: null })} />
-        <IconBtn label="More: template, daily note, import" variant="soft" haspopup icon={<LayoutTemplate size={18} />} onClick={e => newMenu.open(e)} />
+        <button className="new-pill" onClick={() => void app.newNote()} title="New note (Ctrl+N)" aria-label="New note (Ctrl+N)">
+          <FilePlus2 size={20} /><span className="new-pill-label">New note</span>
+        </button>
+        <IconBtn label="Search (Ctrl+K)" className="ring ring-indigo" icon={<Search size={18} />} onClick={() => app.setDialog({ kind: 'search' })} />
+        <IconBtn label="New from template" className="ring ring-orange" icon={<LayoutTemplate size={18} />} onClick={() => app.setDialog({ kind: 'templates' })} />
       </div>
-      {newMenu.node}
       {folderMenu.node}
       {tagMenu.node}
       {shortcutMenu.node}
@@ -287,7 +260,9 @@ export function Sidebar() {
         <span className={classNames('grow', 'sync-text', sync.err && 'err')} title={sync.label}>{sync.text}</span>
         <IconBtn label="Keyboard shortcuts" icon={<Keyboard size={18} />} onClick={() => app.setDialog({ kind: 'shortcuts' })} />
         <IconBtn label="Settings" icon={<SettingsIcon size={18} />} onClick={() => app.setDialog({ kind: 'settings' })} />
+        <IconBtn label={rail ? 'Expand sidebar' : 'Collapse sidebar'} icon={rail ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />} onClick={toggleRail} />
       </div>
+      {!rail && <Resizer pane="sidebarW" edge="right" label="Resize sidebar" />}
     </aside>
   );
 }

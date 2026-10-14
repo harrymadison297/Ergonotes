@@ -12,7 +12,7 @@ import TableHeader from '@tiptap/extension-table-header';
 import { Markdown } from 'tiptap-markdown';
 import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
-  Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, X, Image as ImageIcon, Minus, LayoutTemplate,
+  Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, X, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
 } from 'lucide-react';
 import { mergeText, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
@@ -20,6 +20,8 @@ import { classNames, debounce, download } from '../state/util';
 import { currentTaskTokens, ExcalidrawBlock, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SlashCommands, slashItems, StoredImage, Wikilink } from '../editor/extensions';
 import { DrawingDialog } from './DrawingDialog';
 import { IconBtn, TagPill, useMenu, type MenuEntry } from './ui';
+import { Resizer } from './Resizer';
+import { setPrefs, usePrefs } from '../state/prefs';
 
 type SaveState = 'saved' | 'saving' | 'error';
 
@@ -58,6 +60,9 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const locked = readOnly || isTrashed;
 
   const editSeq = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [activeHeading, setActiveHeading] = useState(0);
+  const prefs = usePrefs();
   const saveBody = useMemo(() => debounce((nid: string, body: string, seq: number) => {
     setSaveState('saving');
     inflight.current = api.saveNote(nid, { body }).then(s => {
@@ -238,6 +243,27 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   if (missing) return <div className="empty"><h3>This note is no longer available</h3><p>It may have been deleted on another device.</p></div>;
   if (!doc || !editor) return <div className="empty" aria-busy="true" />;
 
+  // table of contents: the headings of this note, in order
+  const headings: { pos: number; level: number; text: string }[] = [];
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === 'heading' && node.textContent.trim()) headings.push({ pos, level: Number(node.attrs.level) || 1, text: node.textContent });
+  });
+  const showToc = prefs.toc && !app.isMobile;
+  const trackHeading = () => {
+    const box = scrollRef.current;
+    if (!box || !headings.length) return;
+    const top = box.getBoundingClientRect().top + 24;
+    let idx = 0;
+    headings.forEach((h, i) => { const el = editor.view.nodeDOM(h.pos) as HTMLElement | null; if (el && el.getBoundingClientRect().top <= top) idx = i; });
+    setActiveHeading(idx);
+  };
+  const gotoHeading = (h: { pos: number }, i: number) => {
+    const el = editor.view.nodeDOM(h.pos) as HTMLElement | null;
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    editor.commands.setTextSelection(h.pos + 1);
+    setActiveHeading(i);
+  };
+
   const tokens = currentTaskTokens(editor);
   const path = doc.path;
   const words = editor.getText().trim().split(/\s+/).filter(Boolean).length;
@@ -333,6 +359,8 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
             </span>
           ))}
         </nav>
+        {!app.isMobile && <IconBtn label={prefs.toc ? 'Hide table of contents' : 'Show table of contents'} active={prefs.toc} icon={<TableOfContents size={18} />}
+          onClick={() => setPrefs({ toc: !prefs.toc })} />}
         <IconBtn label="Export" variant="soft" haspopup icon={<Share2 size={18} />} onClick={e => exportMenu.open(e, exportEntries(), 'right')} />
         <IconBtn label="More actions" haspopup icon={<MoreHorizontal size={20} />} onClick={e => moreMenu.open(e, moreEntries(), 'right')} />
       </div>
@@ -361,7 +389,8 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         <TB locked={locked} label="Quote" on={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={18} /></TB>
       </div>
 
-      <div className="editor-scroll">
+      <div className="editor-main">
+      <div className="editor-scroll" ref={scrollRef} onScroll={trackHeading}>
         <div className="editor-page">
           <input className="title-input" aria-label="Title" placeholder="Untitled" value={title} readOnly={locked}
             onChange={e => { setTitle(e.target.value); setSaveState('saving'); saveTitle(id, e.target.value); }}
@@ -374,6 +403,19 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
             </section>
           )}
         </div>
+      </div>
+      {showToc && (
+        <aside className="toc" aria-label="Table of contents">
+          <Resizer pane="tocW" edge="left" label="Resize table of contents" />
+          <h3>Contents</h3>
+          {headings.length === 0
+            ? <p className="toc-empty">Headings you add to this note show up here.</p>
+            : <nav>{headings.map((h, i) => (
+              <button key={`${h.pos}-${i}`} className={classNames('toc-item', i === activeHeading && 'active')} style={{ paddingLeft: 10 + (h.level - 1) * 14 }}
+                title={h.text} onClick={() => gotoHeading(h, i)}>{h.text}</button>
+            ))}</nav>}
+        </aside>
+      )}
       </div>
 
       <div className="editor-foot">

@@ -4,6 +4,7 @@ import type { TaskEntry } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames, dueLabel } from '../state/util';
+import { Resizer } from '../components/Resizer';
 import { NoteEditor } from '../components/NoteEditor';
 
 export function TaskRow({ t, compact, active }: { t: TaskEntry; compact?: boolean; active?: boolean }) {
@@ -39,6 +40,7 @@ export function TasksView({ noteId }: { noteId?: string }) {
 
   const listPane = (
     <div className="pane-list">
+      <Resizer pane="listW" edge="right" label="Resize list" />
       <div className="list-head">
         <h2>Tasks</h2>
         <div className="meta"><span>{openCount} open</span></div>

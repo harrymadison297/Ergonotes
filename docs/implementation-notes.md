@@ -18,6 +18,7 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 | Tag colours | Brand guidelines: tags are coloured | A tag's colour is a hash of its top-level name into the 8-colour tag palette (`state/tags.ts`); nothing is stored or synced | Same colour on every device without a setting. A person cannot pick a colour yet. |
 | Folder pane | "Folders are the tree a person navigates" | Opening a folder with no note selected shows its contents as large icons or a details list (`views/Explorer.tsx`); tag and search results use the same pane | Replaces the empty "Select a note" half of the screen. |
 | Search popup | Search by title, text, tag | `searchHits` (core) returns folders by name and notes with the folder path and the passage that matched; `Ctrl/Cmd+K` or the round search button opens it. "Show all results" still goes to the filtered list | Needed passages, not just summaries. |
+| Interface size, pane widths, contents panel | Brand guidelines §6 | Per-device preferences in `localStorage` (`state/prefs.ts`), not synced. Size uses CSS `zoom` on the root (default 90 %, 50–200 %), so pointer and rect coordinates are corrected by the zoom factor in menus and resizers | A phone and a desktop want different values. Firefox before 126 ignores `zoom`. |
 | Argon2id cost | 64 MiB, 3 passes | Implemented with `hash-wasm` (WASM). Not measured on a real phone | Measure on a mid-range device and adjust `DEFAULT_KDF`. |
 
 ## Decisions to confirm

@@ -4,6 +4,7 @@ import { applyHunks, joinDoc, lineDiff, splitDoc, type ConflictDetail, type Head
 import { useApp } from '../state/app';
 import { classNames, relTime } from '../state/util';
 import { Dialog } from './ui';
+import { DEFAULT_SCALE, SCALE_MAX, SCALE_MIN, setPrefs, usePrefs } from '../state/prefs';
 import { StoreForm, formFromStore, storeFromForm, type StoreFormState } from './StoreForm';
 
 // ---------------------------------------------------------------- conflicted revision
@@ -271,6 +272,7 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
 // ---------------------------------------------------------------- settings
 export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onClose: () => void }) {
   const app = useApp();
+  const prefs = usePrefs();
   const [tab, setTab] = useState(initialTab ?? 'general');
   const [name, setName] = useState(app.status.deviceName);
   const [store, setStore] = useState<StoreFormState>(() => formFromStore(null));
@@ -308,6 +310,21 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
           <div className="field"><label htmlFor="s-theme">Appearance</label>
             <select id="s-theme" className="input" value={app.settings.theme} onChange={async e => { await app.run(app.api.setSettings({ theme: e.target.value as 'system' | 'light' | 'dark' })); await app.refresh(); }}>
               <option value="system">Match my system</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+          <div className="field"><label htmlFor="s-scale">Interface size <b>{prefs.scale}%</b></label>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <input id="s-scale" type="range" min={SCALE_MIN} max={SCALE_MAX} step={5} value={prefs.scale} style={{ flex: 1, accentColor: 'var(--green)' }}
+                onChange={e => setPrefs({ scale: Number(e.target.value) })} />
+              <button className="btn" disabled={prefs.scale === DEFAULT_SCALE} onClick={() => setPrefs({ scale: DEFAULT_SCALE })}>Reset</button>
+            </div>
+            <span className="hint">From {SCALE_MIN}% to {SCALE_MAX}%. The default is {DEFAULT_SCALE}%. Only this device changes.</span></div>
+          <div className="field">
+            <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontWeight: 600 }}>
+              <input type="checkbox" checked={prefs.toc} onChange={e => setPrefs({ toc: e.target.checked })} style={{ accentColor: 'var(--green)', width: 18, height: 18 }} />
+              Show the table of contents beside a note</label>
+            <span className="hint">Lists the note’s headings on the right. You can also toggle it from the note’s toolbar.</span></div>
+          <div className="field"><span className="label">Layout</span>
+            <div><button className="btn" onClick={() => setPrefs({ sidebarW: null, listW: null, tocW: null })}>Reset pane widths</button></div>
+            <span className="hint">Drag the edge of the sidebar, the note list or the contents panel to resize it.</span></div>
           <div className="field"><label htmlFor="s-cap">New captures go to</label>
             <select id="s-cap" className="input" value={app.settings.captureFolder ?? ''} onChange={async e => { await app.run(app.api.setSettings({ captureFolder: e.target.value || null })); await app.refresh(); }}>
               <option value="">Inbox (created when needed)</option>

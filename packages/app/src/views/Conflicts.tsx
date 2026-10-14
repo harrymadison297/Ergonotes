@@ -1,12 +1,14 @@
 import { GitMerge } from 'lucide-react';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
+import { Resizer } from '../components/Resizer';
 import { NoteEditor } from '../components/NoteEditor';
 
 export function ConflictsView({ noteId }: { noteId?: string }) {
   const app = useApp();
   const list = (
     <div className="pane-list">
+      <Resizer pane="listW" edge="right" label="Resize list" />
       <div className="list-head"><h2>Conflicts</h2><div className="meta"><span>{app.conflicts.length} note{app.conflicts.length === 1 ? '' : 's'} changed on more than one device</span></div></div>
       <div className="list-scroll">
         {app.conflicts.length === 0 && <div className="empty"><GitMerge size={32} /><h3>No conflicts</h3><p>When two devices edit the same text at once, both versions are kept here until you choose.</p></div>}

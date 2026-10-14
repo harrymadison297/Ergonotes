@@ -173,6 +173,21 @@ the text inside it.
 - Keyboard (after a Tab or arrow key): a 2 px `--green-ink` ring with a 2 px paper gap.
 - The editing surface itself never shows a ring.
 
+### Quick row
+
+Top of the sidebar: a green **New note** pill (icon + label), then round outlined buttons for
+**Search** and **New from template**, in that order. Their icons carry the two secondary
+accents (indigo, orange). Folders are created from the Folders views, not from this row.
+When the sidebar is collapsed the pill becomes a round green button.
+
+### Panes and size
+
+- The sidebar, the note list and the table of contents can be resized by dragging their edge
+  (arrow keys nudge, double-click resets). Widths are per device.
+- The table of contents sits to the right of an open note and is on by default; it is toggled from
+  the note toolbar or Settings.
+- Interface size defaults to **90 %** and can be set from 50 % to 200 % in Settings. It is per device.
+
 ### Search popup
 
 `Ctrl/Cmd + K` or the round search button opens a centred popup (560 px). Results appear as

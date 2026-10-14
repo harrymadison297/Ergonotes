@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import {
   AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, Cloud, FilePlus2, FileText, Folder as FolderIcon, Home as HomeIcon, Keyboard, LayoutTemplate,
-  MoreHorizontal, Plus, Search, Settings as SettingsIcon, Tag as TagIcon, Trash2,
+  MoreHorizontal, Search, Settings as SettingsIcon, Tag as TagIcon, Trash2,
 } from 'lucide-react';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
@@ -16,8 +16,8 @@ import { TasksView } from '../views/Tasks';
 import { FilePreviewDialog } from './FilePreview';
 import { SearchPalette } from './SearchPalette';
 import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, SettingsDialog, ShortcutsDialog, TemplatesDialog } from './Dialogs';
-import { Sidebar, useNewMenu } from './Sidebar';
-import { IconBtn, NoteCard, Toasts } from './ui';
+import { Sidebar } from './Sidebar';
+import { IconBtn, Toasts } from './ui';
 
 function RouteView() {
   const { route } = useApp();
@@ -176,9 +176,8 @@ function MoreView() {
 function MobileShell() {
   const app = useApp();
   const { route } = app;
-  const newMenu = useNewMenu();
   const noteOpen = 'note' in route && !!route.note;
-  const tab = route.name === 'notes' || route.name === 'home' ? 'notes' : route.name === 'folders' ? 'folders' : route.name === 'tasks' ? 'tasks' : 'more';
+  const tab = route.name === 'home' ? 'home' : route.name === 'notes' ? 'notes' : route.name === 'folders' ? 'folders' : route.name === 'tasks' ? 'tasks' : 'more';
   return (
     <div className="mobile">
       <div className="m-top">
@@ -186,33 +185,20 @@ function MobileShell() {
         <IconBtn label="Settings" icon={<SettingsIcon size={20} />} onClick={() => app.setDialog({ kind: 'settings' })} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {route.name === 'home' ? <MobileHome /> : <RouteView />}
+        <RouteView />
       </div>
       {!noteOpen && (route.name === 'notes' || route.name === 'home' || route.name === 'folders' || route.name === 'tasks') && (
         <button className="fab" aria-label="New note" title="New note" onClick={() => void app.newNote()}><FilePlus2 size={24} /></button>
       )}
       <nav className="bottom-nav" aria-label="Main">
-        <button onClick={e => newMenu.open(e)}><Plus size={22} />Create</button>
+        <a className={classNames(tab === 'home' && 'active')} href={href({ name: 'home' })}><HomeIcon size={22} />Home</a>
         <a className={classNames(tab === 'notes' && 'active')} href={href({ name: 'notes' })}><FileText size={22} />Notes</a>
         <a className={classNames(tab === 'folders' && 'active')} href={href({ name: 'folders' })}><FolderIcon size={22} />Folders</a>
         <a className={classNames(tab === 'tasks' && 'active')} href={href({ name: 'tasks' })}><CheckCircle2 size={22} />Tasks</a>
         <a className={classNames(tab === 'more' && 'active')} href={href({ name: 'more' })}><span style={{ position: 'relative' }}><MoreHorizontal size={22} />{app.conflicts.length > 0 && <i style={{ position: 'absolute', top: -2, right: -4, width: 8, height: 8, borderRadius: 4, background: 'var(--danger)' }} />}</span>More</a>
       </nav>
-      {newMenu.node}
     </div>
   );
-}
-
-function MobileHome() {
-  // on a phone the home screen is the notes grid, like the reference app
-  const app = useApp();
-  const notes = app.items.filter(i => i.type === 'note' && !i.inTrash && !i.template).sort((a, b) => b.updated.localeCompare(a.updated));
-  return <div className="m-content">
-    <div style={{ padding: '4px 16px', color: 'var(--text-2)', fontSize: 12.5 }}>{notes.length} notes</div>
-    <div className="m-cards">
-      {notes.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })} />)}
-    </div>
-  </div>;
 }
 
 export function Shell() {

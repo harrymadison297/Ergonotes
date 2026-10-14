@@ -6,6 +6,7 @@ import { Bell, Flag } from 'lucide-react';
 import { classNames, dueLabel, firstSentence, relTime } from '../state/util';
 import { tagStyle } from '../state/tags';
 import { dragSource } from '../state/dnd';
+import { zoomFactor } from '../state/prefs';
 import { FileImg } from './FileImg';
 
 // ---------------------------------------------------------------- menus
@@ -31,11 +32,15 @@ function MenuView({ x, y, w, entries, onClose }: { x: number; y: number; w: numb
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // rects and the window size are in real pixels, `left`/`top` are in the zoomed document's CSS px
+    const z = zoomFactor();
     const r = el.getBoundingClientRect();
-    let left = w ? x - r.width : x;
-    let top = y;
-    left = Math.max(8, Math.min(left, window.innerWidth - r.width - 8));
-    if (top + r.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - r.height - 8);
+    const mw = r.width / z, mh = r.height / z;
+    const vw = window.innerWidth / z, vh = window.innerHeight / z;
+    let left = (w ? x - r.width : x) / z;
+    let top = y / z;
+    left = Math.max(8, Math.min(left, vw - mw - 8));
+    if (top + mh > vh - 8) top = Math.max(8, vh - mh - 8);
     setPos({ left, top });
   }, [x, y, w]);
   useEffect(() => {

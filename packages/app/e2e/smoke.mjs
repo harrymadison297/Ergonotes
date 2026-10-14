@@ -25,7 +25,8 @@ await page.getByLabel('Repeat password').fill(PASSWORD);
 await page.getByRole('button', { name: 'Create vault' }).click();
 await page.getByRole('navigation', { name: 'Main' }).waitFor({ timeout: 30000 });
 check('vault created and shell visible', true);
-await page.getByRole('heading', { name: 'Home', exact: true }).waitFor();
+await page.locator('.home-head h1').waitFor();
+check('default interface size is 90%', (await page.evaluate(() => getComputedStyle(document.documentElement).zoom)) === '0.9');
 check('home screen rendered', true);
 check('default folders listed', (await page.getByRole('link', { name: 'Inbox' }).count()) > 0);
 await page.waitForTimeout(500);
@@ -52,6 +53,11 @@ await page.keyboard.press('Enter');
 await page.keyboard.type('Book a viewing');
 await page.waitForTimeout(1200);
 check('note saved', await page.getByText('All changes saved').isVisible());
+check('table of contents lists the heading', (await page.locator('.toc .toc-item', { hasText: '5347 Silver Lake Dr.' }).count()) === 1);
+await page.getByRole('button', { name: 'Hide table of contents' }).click();
+check('table of contents can be hidden', (await page.locator('.toc').count()) === 0);
+await page.getByRole('button', { name: 'Show table of contents' }).click();
+check('and shown again', (await page.locator('.toc').count()) === 1);
 const tagInput = page.getByLabel('Add tag');
 await tagInput.fill('Business');
 await tagInput.press('Enter');
@@ -172,6 +178,26 @@ await page.waitForTimeout(1500);
 const unkBody = (await call('getNote', unk.id)).body;
 check('unknown ergonote block round-trips through an edit', unkBody.includes('```ergonote-future\n{"a":1,"b":[1,2,3]}\n```') && unkBody.includes('after edited'), JSON.stringify(unkBody));
 
+// resizable sidebar
+const sbW0 = (await page.locator('.sidebar').boundingBox()).width;
+const rz = await page.getByRole('separator', { name: 'Resize sidebar' }).boundingBox();
+await page.mouse.move(rz.x + rz.width / 2, rz.y + 200);
+await page.mouse.down();
+await page.mouse.move(rz.x + rz.width / 2 + 80, rz.y + 200, { steps: 6 });
+await page.mouse.up();
+const sbW1 = (await page.locator('.sidebar').boundingBox()).width;
+check('sidebar can be resized by dragging its edge', sbW1 > sbW0 + 60, `${Math.round(sbW0)} -> ${Math.round(sbW1)}`);
+await page.getByRole('separator', { name: 'Resize sidebar' }).dblclick();
+check('double-click resets the width', Math.abs((await page.locator('.sidebar').boundingBox()).width - sbW0) < 2);
+
+// interface size from Settings
+await page.getByRole('button', { name: 'Settings' }).click();
+await page.locator('#s-scale').fill('120');
+check('interface size changes', (await page.evaluate(() => getComputedStyle(document.documentElement).zoom)) === '1.2');
+await page.getByRole('button', { name: 'Reset' }).first().click();
+check('interface size resets to 90%', (await page.evaluate(() => getComputedStyle(document.documentElement).zoom)) === '0.9');
+await page.keyboard.press('Escape');
+
 // folder explorer, drag and drop, icon-only sidebar
 await page.goto(`${base}/#/notes`);
 await page.locator('.ex-tile', { hasText: 'Inbox' }).dblclick();
@@ -197,6 +223,11 @@ await mp.getByRole('navigation', { name: 'Main' }).waitFor({ timeout: 20000 });
 await mp.waitForTimeout(600);
 await mp.screenshot({ path: `${shots}/07-mobile-notes.png` });
 check('mobile bottom navigation present', (await mp.locator('.bottom-nav').count()) === 1);
+await mp.goto(`${base}/#/`);
+await mp.locator('.home-head').waitFor();
+check('mobile has a home screen with quick actions', (await mp.locator('.home-action').count()) === 4);
+check('mobile home has no horizontal overflow', await mp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+await mp.screenshot({ path: `${shots}/07a-mobile-home.png` });
 await mp.goto(`${base}/#/tasks`);
 await mp.waitForTimeout(500);
 await mp.screenshot({ path: `${shots}/08-mobile-tasks.png` });

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight, ChevronLeft, ChevronRight, FilePlus2, LayoutTemplate, Send } from 'lucide-react';
+import { ArrowRight, CalendarPlus, ChevronLeft, ChevronRight, FilePlus2, LayoutTemplate, Send, Upload } from 'lucide-react';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { isoDay } from '../state/util';
@@ -39,81 +39,112 @@ export function MiniCalendar({ onPick }: { onPick?: (day: string) => void }) {
   );
 }
 
+function greeting(now = new Date()): string {
+  const h = now.getHours();
+  return h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
+
 export function Home() {
   const app = useApp();
   const [tab, setTab] = useState<'recent' | 'inbox'>('recent');
   const [scratch, setScratch] = useState('');
   const notes = useMemo(() => app.items.filter(i => i.type === 'note' && !i.inTrash && !i.template), [app.items]);
-  const recent = useMemo(() => [...notes].sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, 12), [notes]);
+  const recent = useMemo(() => [...notes].sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, 10), [notes]);
   const inboxId = app.settings.captureFolder ?? app.items.find(i => i.role === 'inbox')?.id;
-  const inbox = useMemo(() => notes.filter(n => n.parent === inboxId).sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, 12), [notes, inboxId]);
+  const inbox = useMemo(() => notes.filter(n => n.parent === inboxId).sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, 10), [notes, inboxId]);
   const pinned = notes.filter(n => n.pinned).slice(0, 6);
-  const open = app.tasks.filter(t => !t.done).slice(0, 6);
+  // what is due first, then everything else that is open
+  const open = useMemo(() => app.tasks.filter(t => !t.done)
+    .sort((a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999')).slice(0, 6), [app.tasks]);
   const shown = tab === 'recent' ? recent : inbox;
+  const today = new Date();
 
   const saveScratch = async () => {
     if (!scratch.trim()) return;
     const n = await app.run(app.api.capture({ text: scratch }));
     if (n) { setScratch(''); app.toast('Saved to Inbox'); await app.refresh(); }
   };
+  const daily = async () => {
+    const d = await app.run(app.api.dailyNote(isoDay()));
+    if (d) { await app.refresh(); app.go({ name: 'notes', note: d.id, folder: d.parent ?? undefined }); }
+  };
+
+  const action = (label: string, icon: JSX.Element, onClick: () => void, primary = false) => (
+    <button key={label} className="home-action" onClick={onClick}>
+      <span className={primary ? 'icon-btn lg primary' : 'icon-btn lg ring'}>{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
 
   return (
     <div className="home">
-      <h1>Home</h1>
+      <header className="home-head">
+        <div>
+          <div className="home-date">{today.toLocaleDateString('en', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+          <h1>{greeting(today)}</h1>
+        </div>
+        <div className="home-actions" role="group" aria-label="Quick actions">
+          {action('New note', <FilePlus2 size={22} />, () => void app.newNote(), true)}
+          {action('Daily note', <CalendarPlus size={22} />, () => void daily())}
+          {action('Template', <LayoutTemplate size={22} />, () => app.setDialog({ kind: 'templates' }))}
+          {action('Import', <Upload size={22} />, () => app.setDialog({ kind: 'import' }))}
+        </div>
+      </header>
 
-      <section className="widget" aria-labelledby="w-notes">
-        <h2 id="w-notes">Notes
-          <span className="grow" />
-          <span className="seg" role="group" aria-label="Which notes">
-            <button aria-pressed={tab === 'recent'} onClick={() => setTab('recent')}>Recent</button>
-            <button aria-pressed={tab === 'inbox'} onClick={() => setTab('inbox')}>Inbox</button>
-          </span>
-          <IconBtn label="New note" variant="primary" icon={<FilePlus2 size={18} />} onClick={() => void app.newNote()} />
-        </h2>
-        {shown.length === 0
-          ? <div className="empty" style={{ padding: 24 }}>Nothing here yet. Press + to write your first note.</div>
-          : <div className="cards row">{shown.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })} />)}</div>}
-      </section>
-
-      <div className="widgets">
-        <section className="widget" aria-labelledby="w-scratch">
-          <h2 id="w-scratch">Scratch Pad</h2>
-          <div className="scratch">
-            <textarea aria-label="Scratch pad" placeholder="Jot something down…" maxLength={600} value={scratch} onChange={e => setScratch(e.target.value)}
-              onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void saveScratch(); }} />
-            <div className="foot">
-              <span>{scratch.length}/600</span>
-              <IconBtn label="Save to Inbox (Ctrl+Enter)" variant="primary" icon={<Send size={16} />} onClick={() => void saveScratch()} disabled={!scratch.trim()} />
+      <div className="home-grid">
+        <div className="home-main">
+          <section className="widget w-capture" aria-labelledby="w-capture">
+            <h2 id="w-capture">Quick capture</h2>
+            <div className="scratch">
+              <textarea aria-label="Quick capture" placeholder="Jot something down…" maxLength={600} rows={3} value={scratch} onChange={e => setScratch(e.target.value)}
+                onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void saveScratch(); }} />
+              <div className="foot">
+                <span>{scratch.length ? `${scratch.length}/600` : 'Saved to your Inbox'}</span>
+                <IconBtn label="Save to Inbox (Ctrl+Enter)" variant="primary" icon={<Send size={16} />} onClick={() => void saveScratch()} disabled={!scratch.trim()} />
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section className="widget" aria-labelledby="w-cal">
-          <h2 id="w-cal">Calendar</h2>
-          <MiniCalendar />
-        </section>
+          <section className="widget w-notes" aria-labelledby="w-notes">
+            <h2 id="w-notes">Notes
+              <span className="grow" />
+              <span className="seg" role="group" aria-label="Which notes">
+                <button aria-pressed={tab === 'recent'} onClick={() => setTab('recent')}>Recent</button>
+                <button aria-pressed={tab === 'inbox'} onClick={() => setTab('inbox')}>Inbox</button>
+              </span>
+            </h2>
+            {shown.length === 0
+              ? <div className="empty" style={{ padding: 24 }}>Nothing here yet. Press + to write your first note.</div>
+              : <div className="cards">{shown.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })} />)}</div>}
+          </section>
 
-        <section className="widget" aria-labelledby="w-tasks">
-          <h2 id="w-tasks">My tasks<span className="grow" /><a href={href({ name: 'tasks' })} className="icon-btn" title="All tasks" aria-label="All tasks"><ArrowRight size={18} /></a></h2>
-          {open.length === 0 ? <div className="empty" style={{ padding: 16 }}>No open tasks. Add a checklist to any note.</div>
-            : open.map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} compact />)}
-        </section>
+          {pinned.length > 0 && (
+            <section className="widget w-pinned" aria-labelledby="w-pin">
+              <h2 id="w-pin">Pinned</h2>
+              <div className="cards">{pinned.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })} />)}</div>
+            </section>
+          )}
+
+          {app.tags.length > 0 && (
+            <section className="widget w-tags" aria-labelledby="w-tags">
+              <h2 id="w-tags">Tags</h2>
+              <div className="tag-cloud">{app.tags.slice(0, 30).map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })} style={tagStyle(t.tag)}><i className="tag-dot" />{t.tag}<small>{t.count}</small></a>)}</div>
+            </section>
+          )}
+        </div>
+
+        <aside className="home-side" aria-label="Calendar and tasks">
+          <section className="widget w-tasks" aria-labelledby="w-tasks">
+            <h2 id="w-tasks">Tasks<span className="grow" /><a href={href({ name: 'tasks' })} className="icon-btn" title="All tasks" aria-label="All tasks"><ArrowRight size={18} /></a></h2>
+            {open.length === 0 ? <div className="empty" style={{ padding: 16 }}>No open tasks. Add a checklist to any note.</div>
+              : open.map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} compact />)}
+          </section>
+          <section className="widget w-cal" aria-labelledby="w-cal">
+            <h2 id="w-cal">Calendar</h2>
+            <MiniCalendar />
+          </section>
+        </aside>
       </div>
-
-      {pinned.length > 0 && (
-        <section className="widget" aria-labelledby="w-pin">
-          <h2 id="w-pin">Pinned notes</h2>
-          <div className="cards">{pinned.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })} />)}</div>
-        </section>
-      )}
-
-      {app.tags.length > 0 && (
-        <section className="widget" aria-labelledby="w-tags">
-          <h2 id="w-tags">Tags</h2>
-          <div className="tag-cloud">{app.tags.slice(0, 30).map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })} style={tagStyle(t.tag)}><i className="tag-dot" />{t.tag}<small>{t.count}</small></a>)}</div>
-        </section>
-      )}
-      <IconBtn label="Start from a template" variant="soft" icon={<LayoutTemplate size={18} />} onClick={() => app.setDialog({ kind: 'templates' })} />
     </div>
   );
 }

@@ -11,6 +11,9 @@
   --slate-100: #eff2f3;
   --white: #ffffff;
   --danger: #c8283a;
+  /* action icons in the quick row (secondary accents, see brand guidelines) */
+  --accent-indigo: #5a60c8;
+  --accent-orange: #c9650f;
 
   /* roles */
   --bg: var(--white);
@@ -39,6 +42,7 @@
   --sidebar-w: 264px;
   --rail-w: 68px;
   --list-w: 352px;
+  --toc-w: 240px;
   --font: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
@@ -71,6 +75,8 @@
   --green-tint: #17301f;
   --danger: #ff7b8a;
   --danger-bg: #3d1f25;
+  --accent-indigo: #9aa0f2;
+  --accent-orange: #f0a04d;
   --shadow-pop: 0 10px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.5);
   --tag-alpha: 22%;
@@ -94,6 +100,8 @@
     --green-tint: #17301f;
     --danger: #ff7b8a;
     --danger-bg: #3d1f25;
+    --accent-indigo: #9aa0f2;
+    --accent-orange: #f0a04d;
     --shadow-pop: 0 10px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
     --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.5);
     --tag-alpha: 22%;

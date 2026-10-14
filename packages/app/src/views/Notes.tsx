@@ -6,6 +6,7 @@ import { href } from '../state/router';
 import { NoteEditor } from '../components/NoteEditor';
 import { IconBtn, NoteCard, NoteRow, useMenu } from '../components/ui';
 import { Explorer } from './Explorer';
+import { Resizer } from '../components/Resizer';
 import { classNames } from '../state/util';
 
 type Sort = 'updated' | 'created' | 'title';
@@ -78,6 +79,7 @@ export function NotesView({ noteId }: { noteId?: string }) {
 
   const listPane = (
     <div className="pane-list">
+      <Resizer pane="listW" edge="right" label="Resize list" />
       <div className="list-head">
         <h2>{heading}</h2>
         <div className="meta">
@@ -142,6 +144,7 @@ export function TrashView({ noteId }: { noteId?: string }) {
   };
   const listPane = (
     <div className="pane-list">
+      <Resizer pane="listW" edge="right" label="Resize list" />
       <div className="list-head">
         <h2>Trash</h2>
         <div className="meta"><span>{rows.length} item{rows.length === 1 ? '' : 's'} · removed after 30 days</span><span className="grow" />
