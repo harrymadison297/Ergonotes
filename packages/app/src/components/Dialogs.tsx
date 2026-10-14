@@ -144,7 +144,7 @@ export function HistoryDialog({ id, onClose }: { id: string; onClose: () => void
               <button key={v.commit} role="option" aria-selected={sel === v.commit} className="menu-item" style={{ background: sel === v.commit ? 'var(--bg-active)' : undefined }} onClick={() => setSel(v.commit)}>
                 <HistoryIcon size={15} />
                 <span className="grow"><span style={{ display: 'block' }}>{new Date(v.ts).toLocaleString('en', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                  <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{v.deviceName}{v.current ? ' · current' : ''}</span></span>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-2)' }}>{v.deviceName}{v.current ? ' · current' : ''}</span></span>
               </button>
             ))}
           </div>
@@ -203,7 +203,7 @@ export function TemplatesDialog({ onClose }: { onClose: () => void }) {
             const n = await app.run(app.api.createFromTemplate(t.id));
             if (n) { await app.refresh(); onClose(); app.go({ name: 'notes', note: n.id, folder: n.parent ?? undefined }); }
           }}>
-          <b>{t.title}</b><span style={{ color: 'var(--text-2)', fontSize: 12 }}>{t.snippet.slice(0, 90)}</span>
+          <b>{t.title}</b><span style={{ color: 'var(--text-2)', fontSize: 'var(--fs-xs)' }}>{t.snippet.slice(0, 90)}</span>
         </button>
       ))}
     </Dialog>
@@ -401,7 +401,7 @@ function AgentsPanel() {
         <div className="banner info" style={{ borderRadius: 6, display: 'block', marginBottom: 14 }} role="status">
           <b>Copy this token now; it is shown only once.</b>
           <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: '6px 0' }}>{fresh}</pre>
-          <details><summary>Client configuration</summary><pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{snippet}</pre></details>
+          <details><summary>Client configuration</summary><pre style={{ whiteSpace: 'pre-wrap', fontSize: 'var(--fs-xs)' }}>{snippet}</pre></details>
           <button className="btn" onClick={async () => { await navigator.clipboard?.writeText(fresh); app.toast('Token copied'); }}><Copy size={14} /> Copy</button>
         </div>
       )}

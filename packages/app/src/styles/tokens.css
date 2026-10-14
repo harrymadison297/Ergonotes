@@ -46,8 +46,9 @@
   --rail-w: 68px;
   --list-w: 352px;
   --toc-w: 240px;
-  /* type scale: every size is a multiple of 4 px */
-  --fs-s: 12px;
+  /* type scale: even sizes only */
+  --fs-xs: 12px;
+  --fs-s: 14px;
   --fs-m: 16px;
   --fs-l: 20px;
   --fs-xl: 24px;

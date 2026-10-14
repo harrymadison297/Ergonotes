@@ -1,8 +1,8 @@
-# Ergonotes Brand Guidelines v1.1
+# Ergonotes Brand Guidelines v1.2
 
 > Source of truth for the look and voice of Ergonotes. The CSS tokens in
 > `packages/app/src/styles/tokens.css` implement this document; change both together.
-> Last updated: 2026-10-14 (v1.1, consolidated after review)
+> Last updated: 2026-10-14 (v1.2)
 
 ## Quick reference
 
@@ -114,16 +114,17 @@ Red is excluded: it means "danger".
 
 - **Family**: Inter Variable. Fallback `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`.
 - **Mono** (code, diff): `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`.
-- **Every size is a multiple of 4 px**: 12, 16, 20, 24 (tokens `--fs-s/m/l/xl`). 12 px is both the
-  body size and the minimum. Nothing uses 13, 14, 15 px or fractional sizes.
-- The editor body uses `--fs-editor` (12 px). Set it to `var(--fs-m)` for 16 px reading text.
+- **Every size is an even number of px**: 12, 14, 16, 20, 24 (tokens `--fs-xs/s/m/l/xl`). 12 px is
+  the minimum and is used for meta text. No fractional or odd sizes.
+- The editor body uses `--fs-editor` (14 px). Set it to `var(--fs-m)` for 16 px reading text.
 
 | Role | Size | Weight |
 |---|---|---|
 | Page title, Home greeting, editor title, editor Heading 1 | 24 px (editor title 20 px on phones) | 700 |
-| Note list heading, editor Heading 2, dialog-level headings | 20 px | 700 |
+| Note list heading, editor Heading 2 | 20 px | 700 |
 | Section heading (widgets), dialog title, editor Heading 3, search field | 16 px | 600 |
-| Body, buttons, meta, captions, editor text | 12 px | 400 / 500 |
+| Body, buttons, menus, list rows, editor text | 14 px | 400 / 500 |
+| Meta, captions, timestamps, counts, tags in dots | 12 px | 400 |
 
 Sentence case everywhere ("New note", not "New Note"). No all-caps except the small menu group titles (12 px).
 
@@ -145,12 +146,12 @@ rounded square in brand green. File: `packages/app/public/icon.svg`. (The raster
 | Element | Value |
 |---|---|
 | Spacing scale | 4 · 8 · 12 · 16 · 24 · 32 · 48 |
-| Controls (buttons, inputs, rows) | radius 6 px, min height 36 px (44 px touch) |
+| Controls (buttons, inputs, rows) | radius 6 px, min height 34 px (40 px touch) |
 | Inline breadcrumbs and path segments | min height 32 px (they sit in a 38 px bar) |
-| Note top bar and formatting toolbar | 42 px bar; toolbar buttons 34 px; icon buttons 40 px on phones (dense, always-visible chrome) |
+| Note top bar and formatting toolbar | 38 px bar; toolbar buttons 34 px; icon buttons 36 px on phones (dense, always-visible chrome) |
 | Cards | radius 8 px, 1 px `--slate-200` border (not a shadow ring, so scrollers never clip it) |
 | Dialogs, search popup, empty drop areas | radius 10 px; the first two have a soft pop shadow |
-| Icon buttons | **fully round**, 36 px (44 px on touch, 40 px for the quick row, 44 px for Home actions) |
+| Icon buttons | **fully round**, 34 px (40 px on touch, 38 px in the quick row, 44 px for Home actions) |
 | Icons | Lucide, default 2 px stroke, 18 px in chrome, 22 px in the collapsed sidebar; 1.25 px stroke for the large folder icons |
 
 Borders are always full 1 px lines on all intended sides. Elevation is used only for
@@ -266,7 +267,7 @@ template action; **Move to trash**, **Empty trash** (the place itself is "Trash"
 
 - All text ≥ 4.5 : 1, non-text UI ≥ 3 : 1 (field borders use `--slate-500`). Placeholders are hints, never the only label.
 - Icon-only buttons carry `aria-label` and a tooltip.
-- Hit targets ≥ 36 px on desktop (32 px for inline breadcrumbs), ≥ 44 px on touch.
+- Hit targets ≥ 34 px on desktop (32 px for inline breadcrumbs and contents entries), ≥ 40 px on touch (36 px in the note's top bar).
 - Respect `prefers-reduced-motion` and `prefers-color-scheme`.
 - Drag and drop always has a keyboard equivalent (menu → "Move to…", "Pin to sidebar", "Move to trash").
 
@@ -275,4 +276,5 @@ template action; **Move to trash**, **Empty trash** (the place itself is "Trash"
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-10-14 | Initial guidelines; palette fixed to green + cool-grey scale |
+| 1.2 | 2026-10-14 | Type scale on even sizes 12/14/16/20/24 with a 14 px body (a multiple-of-4 trial at 12 px was reverted as too small); tighter paddings and 34 px controls |
 | 1.1 | 2026-10-14 | Filled green controls use `--green-fill` with white text; quick row (New note pill, search, template); Home and mobile Home; resizable panes and table of contents; interface scale added and then removed in favour of browser zoom; Pinned wording; documented drag and drop, compact views and focus rules |

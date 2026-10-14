@@ -61,7 +61,7 @@ export function CalendarView({ noteId }: { noteId?: string }) {
 
   const side = (
     <aside style={{ padding: 18, borderTop: app.isMobile ? '1px solid var(--border)' : undefined }}>
-      <h2 style={{ margin: '0 0 8px', fontSize: 16 }}>{new Date(sel + 'T12:00').toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
+      <h2 style={{ margin: '0 0 8px', fontSize: 'var(--fs-m)' }}>{new Date(sel + 'T12:00').toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
       <button className="btn" onClick={() => void openDaily(sel)}><CalendarPlus size={15} /> Open daily note</button>
       <div style={{ marginTop: 14 }}>
         {selEvents.length === 0 && <p className="hint">Nothing scheduled.</p>}
