@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { ItemSummary, Settings, TaskEntry, VaultApi, VaultStatus } from '@ergonotes/core';
+import type { AiSettings, AiTransport, ItemSummary, Settings, TaskEntry, VaultApi, VaultStatus } from '@ergonotes/core';
 import type { Backend } from '../backend';
 import { debounce, isoDay } from './util';
 import { useRoute, type Route } from './router';
@@ -17,6 +17,9 @@ export interface AppCtx {
   tags: { tag: string; count: number }[];
   conflicts: { id: string; title: string; heads: number }[];
   settings: Settings;
+  /** AI provider settings (the key itself never reaches the UI) */
+  ai: AiSettings;
+  aiTransport: AiTransport;
   route: Route;
   go: (r: Route, replace?: boolean) => void;
   refresh: () => Promise<void>;
@@ -72,6 +75,7 @@ function useMedia(q: string): boolean {
 }
 
 const EMPTY_SETTINGS: Settings = { captureFolder: null, dailyFolder: null, theme: 'system' };
+const EMPTY_AI: AiSettings = { provider: 'openrouter', hasKey: false, keyHint: null, chatModel: '', suggestModel: '', wholeVault: false, autoApply: false };
 
 export function AppProvider({ backend, status: initial, children }: { backend: Backend; status: VaultStatus; children: ReactNode }) {
   const api = backend.api;
@@ -82,6 +86,7 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([]);
   const [conflicts, setConflicts] = useState<{ id: string; title: string; heads: number }[]>([]);
   const [settings, setSettings] = useState<Settings>(EMPTY_SETTINGS);
+  const [ai, setAi] = useState<AiSettings>(EMPTY_AI);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [route, go] = useRoute();
@@ -105,8 +110,8 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
 
   const refresh = useCallback(async () => {
     try {
-      const [st, it, tk, tg, cf, se] = await Promise.all([api.status(), api.listItems(), api.tasks(), api.tags(), api.conflicts(), api.getSettings()]);
-      setStatus(st); setItems(it); setTasks(tk); setTags(tg); setConflicts(cf); setSettings(se);
+      const [st, it, tk, tg, cf, se, aiS] = await Promise.all([api.status(), api.listItems(), api.tasks(), api.tags(), api.conflicts(), api.getSettings(), api.getAiSettings()]);
+      setStatus(st); setItems(it); setTasks(tk); setTags(tg); setConflicts(cf); setSettings(se); setAi(aiS);
     } catch (e) {
       if ((e as { status?: number }).status !== 401) console.warn('refresh failed', e);
     }
@@ -157,6 +162,6 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
     go(where === 'calendar' ? { name: 'calendar', note: d.id } : { name: 'notes', note: d.id, folder: d.parent ?? undefined });
   }, [api, run, refresh, go]);
 
-  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
+  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, ai, aiTransport: backend.aiTransport, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

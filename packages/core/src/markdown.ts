@@ -3,7 +3,7 @@ import YAML from 'yaml';
 export type Frontmatter = Record<string, unknown>;
 export interface Doc { fm: Frontmatter; body: string }
 
-const FM_ORDER = ['id', 'type', 'title', 'parent', 'tags', 'created', 'updated', 'template', 'folder', 'trashed', 'pinned'];
+const FM_ORDER = ['id', 'type', 'title', 'parent', 'tags', 'created', 'updated', 'template', 'folder', 'trashed', 'pinned', 'private'];
 
 /** Split `---\nyaml\n---\nbody` into frontmatter and body. A text without frontmatter has an empty `fm`. */
 export function splitDoc(text: string): Doc {

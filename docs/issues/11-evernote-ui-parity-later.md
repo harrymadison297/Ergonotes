@@ -22,7 +22,7 @@ Sizes and styling for the parts we do have are in `docs/brand-guidelines.md`.
 ### Note editor
 - Font family and font size pickers, text colour, highlight colour
 - Underline, text alignment, indent / outdent, a "More" overflow for the rest
-- AI Edit and the right-hand AI assistant panel ("Summarize this note", "Suggest follow-ups")
+- AI Edit on a selection (select text, then Rewrite / Shorten / Fix grammar). The right-hand assistant panel exists (ADR 0008); sending a selection to it is the next step
 - Voice note and meeting recording buttons in the toolbar
 - Reminder and "Add to…" actions in the note footer (task reminders exist inside the text)
 - Share button: share a note by link or with collaborators (needs accounts, so a product decision)
@@ -39,7 +39,7 @@ Sizes and styling for the parts we do have are in `docs/brand-guidelines.md`.
 - Email-in, meeting transcripts, audio notes
 
 ## Notes for whoever picks this up
-- Anything that needs an account, a server of ours, or an AI service conflicts with ADR 0004 and
-  the offline-first principle; write the ADR first.
+- Anything that needs an account or a server of ours conflicts with ADR 0004 and the offline-first principle; write
+  the ADR first. AI that uses the person's own key is covered by ADR 0008.
 - Editor formatting beyond Markdown (font, colour, alignment) has no Markdown form: it needs an
   `ergonote-*` representation or HTML spans, and must survive the three-way merge (ADR 0001).

@@ -1,5 +1,5 @@
 #!/bin/sh
 # Run a command inside the node container with the repo mounted (host has no node). Usage: tools/n npm test
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-exec docker run --rm -i --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e CI=1 \
+exec docker run --rm -i --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e CI=1 ${OPENROUTER_API_KEY:+-e OPENROUTER_API_KEY} ${OPENROUTER_MODEL:+-e OPENROUTER_MODEL} \
   -v "$ROOT":/work -w "${WORKDIR:-/work}" node:24-bookworm "$@"

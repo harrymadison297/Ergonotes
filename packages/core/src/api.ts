@@ -3,6 +3,7 @@
 import type { S3Config } from './store-s3.ts';
 import type { WebDavConfig } from './store-webdav.ts';
 import type { Task } from './markdown.ts';
+import type { AiSettings, AiSettingsPatch } from './ai/types.ts';
 
 export interface FolderStoreConfig { type: 'folder'; path: string }
 export type StoreConfig = S3Config | WebDavConfig | FolderStoreConfig;
@@ -40,6 +41,8 @@ export interface ItemSummary {
   inTrash: boolean;
   pinned: boolean;
   template: boolean;
+  /** hidden from the AI chat and from agents that use the MCP endpoint */
+  private: boolean;
   role: string | null;
   snippet: string;
   thumb: string | null;
@@ -148,6 +151,8 @@ export interface VaultApi {
   setTags(id: string, tags: string[]): Promise<void>;
   renameTag(from: string, to: string): Promise<number>;
   setPinned(id: string, pinned: boolean): Promise<void>;
+  /** Private notes never reach an AI provider or an MCP agent. */
+  setPrivate(id: string, isPrivate: boolean): Promise<void>;
   trash(id: string): Promise<void>;
   restore(id: string): Promise<void>;
   purge(id: string): Promise<void>;
@@ -175,6 +180,9 @@ export interface VaultApi {
 
   getSettings(): Promise<Settings>;
   setSettings(s: Partial<Settings>): Promise<Settings>;
+  /** AI provider settings as a client may see them (the API key itself is never returned). */
+  getAiSettings(): Promise<AiSettings>;
+  setAiSettings(patch: AiSettingsPatch): Promise<AiSettings>;
   setStore(store: StoreConfig | null): Promise<void>;
   sync(opts?: { full?: boolean }): Promise<SyncReport>;
   flush(): Promise<void>;
@@ -190,8 +198,8 @@ export interface VaultApi {
 export const VAULT_METHODS = [
   'status', 'createVault', 'joinVault', 'unlock', 'lock', 'changePassword', 'setDeviceName',
   'listItems', 'getNote', 'createNote', 'saveNote', 'createFolder', 'capture', 'rename', 'move', 'setTags',
-  'renameTag', 'setPinned', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'searchHits', 'linkTargets', 'tags', 'tasks', 'toggleTask',
+  'renameTag', 'setPinned', 'setPrivate', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'searchHits', 'linkTargets', 'tags', 'tasks', 'toggleTask',
   'calendar', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
-  'resolveConflict', 'history', 'versionText', 'restoreVersion', 'getSettings', 'setSettings', 'setStore',
+  'resolveConflict', 'history', 'versionText', 'restoreVersion', 'getSettings', 'setSettings', 'getAiSettings', 'setAiSettings', 'setStore',
   'sync', 'flush', 'addFile', 'listFiles', 'getFile', 'importMarkdown', 'exportNote',
 ] as const satisfies readonly (keyof VaultApi)[];

@@ -14,6 +14,7 @@ import {
   extractLinkIds, firstImage, joinDoc, parseTasks, plainSnippet, setTaskDone, splitDoc, WIKILINK_RE,
   type Frontmatter, type Task,
 } from './markdown.ts';
+import { applyAiPatch, defaultAiConfig, toSettings, AI_PROVIDERS, type AiConfig, type AiSettings, type AiSettingsPatch } from './ai/types.ts';
 import { baseText, unionText } from './merge.ts';
 import type { Persist } from './persist.ts';
 import { Replica, type SyncContext } from './replica.ts';
@@ -21,6 +22,9 @@ import type { Store } from './store.ts';
 import { S3Store } from './store-s3.ts';
 import { WebDavStore } from './store-webdav.ts';
 import { DAY, dec, enc, fromB64, MIN, newId, sha256hex, toB64 } from './util.ts';
+
+/** The single item that carries the AI provider settings (encrypted and synced like any other item, never listed). */
+export const AI_CONFIG_ID = '00000000-0000-4000-8000-0000000a1c01';
 
 export interface VaultOptions {
   persist: Persist;
@@ -44,6 +48,7 @@ interface View {
   trashed: string | null;
   pinned: boolean;
   template: boolean;
+  private: boolean;
   role: string | null;
   daily: string | null;
   body: string;
@@ -112,6 +117,7 @@ export class Vault implements VaultApi {
   private pushTimer: ReturnType<typeof setTimeout> | null = null;
   private pullTimer: ReturnType<typeof setInterval> | null = null;
   private unsub: (() => void) | null = null;
+  private aiBody: string | null = null;
 
   private constructor(opts: VaultOptions) {
     this.opts = opts;
@@ -250,6 +256,7 @@ export class Vault implements VaultApi {
     this.views.clear();
     this.files.clear(); // attachments are plaintext in memory
     this.fileBySha.clear();
+    this.aiBody = null;
     this.searchIndex.removeAll();
     await this.setMeta('rememberedKey', undefined);
     delete this.meta.rememberedKey;
@@ -309,8 +316,13 @@ export class Vault implements VaultApi {
       const text = r.text(id);
       const prev = this.views.get(id);
       if (prev) { try { this.searchIndex.discard(id); } catch { /* not indexed */ } }
-      if (text === null) { this.views.delete(id); this.files.delete(id); continue; }
+      if (text === null) { this.views.delete(id); this.files.delete(id); if (id === AI_CONFIG_ID) this.aiBody = null; continue; }
       const { fm, body } = splitDoc(text);
+      if (fm.type === 'config') {
+        if (id === AI_CONFIG_ID) this.aiBody = body;
+        this.views.delete(id);
+        continue;
+      }
       if (fm.type === 'file') {
         this.files.set(id, {
           name: String(fm.name ?? 'file'), mime: String(fm.mime ?? 'application/octet-stream'), body,
@@ -333,6 +345,7 @@ export class Vault implements VaultApi {
         trashed: typeof fm.trashed === 'string' ? fm.trashed : null,
         pinned: fm.pinned === true,
         template: fm.template === true,
+        private: fm.private === true,
         role: typeof fm.role === 'string' ? fm.role : null,
         daily: typeof fm.daily === 'string' ? fm.daily : null,
         body,
@@ -359,7 +372,7 @@ export class Vault implements VaultApi {
     const reminders = open.map(t => t.remind).filter((x): x is string => !!x).sort();
     return {
       id: v.id, type: v.type, title: v.title, parent: v.parent, tags: v.tags, created: v.created, updated: v.updated,
-      trashed: v.trashed, inTrash: this.inTrash(v), pinned: v.pinned, template: v.template, role: v.role,
+      trashed: v.trashed, inTrash: this.inTrash(v), pinned: v.pinned, template: v.template, private: v.private, role: v.role,
       snippet: v.snippet, thumb: v.thumb, conflicted: this.replica!.hasConflict(v.id),
       tasksOpen: open.length, tasksDone: v.tasks.length - open.length, nextReminder: reminders[0] ?? null,
       childCount: childCounts.get(v.id) ?? 0,
@@ -525,6 +538,10 @@ export class Vault implements VaultApi {
     await this.mutate(id, fm => { if (pinned) fm.pinned = true; else delete fm.pinned; });
   }
 
+  async setPrivate(id: string, isPrivate: boolean): Promise<void> {
+    await this.mutate(id, fm => { if (isPrivate) fm.private = true; else delete fm.private; });
+  }
+
   async setTemplate(id: string, isTemplate: boolean): Promise<void> {
     await this.mutate(id, fm => { if (isTemplate) fm.template = true; else delete fm.template; });
   }
@@ -576,6 +593,7 @@ export class Vault implements VaultApi {
 
   /** Purge items that have been in the Trash for more than 30 days. */
   private async housekeeping(now: number): Promise<void> {
+    await this.settleAiConfig();
     const cutoff = now - TRASH_DAYS * DAY;
     for (const v of [...this.views.values()]) {
       if (v.trashed && Date.parse(v.trashed) < cutoff && this.views.has(v.id) && !this.hasOpenConflict(v.id)) await this.purge(v.id);
@@ -743,7 +761,7 @@ export class Vault implements VaultApi {
   private conflictIds(): string[] {
     const r = this.replica!;
     // a deleted-here / edited-there note is a conflict too: the deleting device must be asked
-    return r.items().filter(i => r.hasConflict(i) && (!r.isPurged(i) || r.otherHeads(i).some(h => r.g.get(h)!.kind !== 'purge')));
+    return r.items().filter(i => i !== AI_CONFIG_ID && r.hasConflict(i) && (!r.isPurged(i) || r.otherHeads(i).some(h => r.g.get(h)!.kind !== 'purge')));
   }
 
   private conflictTitle(id: string): string {
@@ -886,6 +904,50 @@ export class Vault implements VaultApi {
     await this.setMeta('settings', next);
     this.emit({ type: 'status' });
     return next;
+  }
+
+  // ---------- AI ----------
+  /** The full configuration including API keys. Not part of VaultApi: only code that runs where the vault runs may call it. */
+  aiConfig(): AiConfig {
+    const base = defaultAiConfig();
+    if (!this.aiBody) return base;
+    try {
+      const j = JSON.parse(this.aiBody) as Partial<AiConfig>;
+      const keys: AiConfig['keys'] = {};
+      for (const p of AI_PROVIDERS) if (typeof j.keys?.[p] === 'string' && j.keys[p]) keys[p] = j.keys[p];
+      return {
+        provider: j.provider && AI_PROVIDERS.includes(j.provider) ? j.provider : base.provider,
+        keys,
+        chatModel: typeof j.chatModel === 'string' && j.chatModel ? j.chatModel : base.chatModel,
+        suggestModel: typeof j.suggestModel === 'string' && j.suggestModel ? j.suggestModel : base.suggestModel,
+        wholeVault: j.wholeVault === true,
+        autoApply: j.autoApply === true,
+      };
+    } catch { return base; } // two devices saved at once and the text is unreadable: enter the key again
+  }
+
+  async getAiSettings(): Promise<AiSettings> {
+    this.ready();
+    return toSettings(this.aiConfig());
+  }
+
+  async setAiSettings(patch: AiSettingsPatch): Promise<AiSettings> {
+    const r = this.ready();
+    const next = applyAiPatch(this.aiConfig(), patch);
+    const fm: Frontmatter = { id: AI_CONFIG_ID, type: 'config', updated: this.iso() };
+    const c = await r.commit(AI_CONFIG_ID, joinDoc(fm, JSON.stringify(next)), this.now());
+    if (c) this.refresh([AI_CONFIG_ID]);
+    this.emit({ type: 'status' });
+    return toSettings(next);
+  }
+
+  /** Two devices saved the AI settings at the same time: the newer one wins, nobody has to choose. */
+  private async settleAiConfig(): Promise<void> {
+    const r = this.replica;
+    if (!r || !r.hasConflict(AI_CONFIG_ID)) return;
+    const local = r.headId(AI_CONFIG_ID)!;
+    const newest = [local, ...r.otherHeads(AI_CONFIG_ID)].map(h => r.g.get(h)!).filter(c => c.kind !== 'purge').sort((a, b) => b.ts - a.ts)[0];
+    if (newest) await this.resolveConflict(AI_CONFIG_ID, newest.id === local ? { kind: 'local' } : { kind: 'other', commit: newest.id });
   }
 
   private async buildStore(cfg: StoreConfig): Promise<Store> {

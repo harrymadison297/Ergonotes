@@ -333,3 +333,98 @@ export const TableKeys = Extension.create({
     };
   },
 });
+
+// ---------------------------------------------------------------- next-words suggestion ("ghost text")
+export interface GhostOptions {
+  enabled: () => boolean;
+  delay: () => number;
+  /** the continuation for the text around the cursor, or '' */
+  suggest: (ctx: { before: string; after: string }, signal: AbortSignal) => Promise<string>;
+}
+type Ghost = { text: string; pos: number } | null;
+const ghostKey = new PluginKey<Ghost>('ergoGhost');
+
+export const GhostText = Extension.create<GhostOptions>({
+  name: 'ghostText',
+  addOptions() { return { enabled: () => false, delay: () => 400, suggest: async () => '' }; },
+  addProseMirrorPlugins() {
+    const opts = this.options;
+    return [new Plugin({
+      key: ghostKey,
+      state: {
+        init: (): Ghost => null,
+        apply(tr, prev): Ghost {
+          const meta = tr.getMeta(ghostKey) as Ghost | undefined;
+          if (meta !== undefined) return meta;
+          // any edit or cursor move drops the suggestion
+          return tr.docChanged || tr.selectionSet ? null : prev;
+        },
+      },
+      props: {
+        decorations(state) {
+          const g = ghostKey.getState(state);
+          if (!g) return null;
+          const el = document.createElement('span');
+          el.className = 'ghost-text';
+          el.textContent = g.text;
+          el.setAttribute('aria-hidden', 'true');
+          el.dataset.ghost = '1';
+          return DecorationSet.create(state.doc, [Decoration.widget(g.pos, el, { side: 1, key: 'ghost' })]);
+        },
+        handleKeyDown(view, e) {
+          const g = ghostKey.getState(view.state);
+          if (!g) return false;
+          if (e.key === 'Tab' && !e.shiftKey) {
+            e.preventDefault();
+            view.dispatch(view.state.tr.setMeta(ghostKey, null).insertText(g.text, g.pos));
+            return true;
+          }
+          if (e.key === 'Escape') { view.dispatch(view.state.tr.setMeta(ghostKey, null)); return true; }
+          return false;
+        },
+        handleDOMEvents: {
+          // touch screens have no Tab key: tapping the grey text accepts it
+          mousedown(view, e) {
+            const g = ghostKey.getState(view.state);
+            if (!g || !(e.target as HTMLElement).closest?.('[data-ghost]')) return false;
+            e.preventDefault();
+            view.dispatch(view.state.tr.setMeta(ghostKey, null).insertText(g.text, g.pos));
+            return true;
+          },
+        },
+      },
+      view() {
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        let ctl: AbortController | null = null;
+        const cancel = () => { if (timer) clearTimeout(timer); timer = null; ctl?.abort(); ctl = null; };
+        return {
+          update(view, prev) {
+            if (view.state.doc === prev.doc && view.state.selection.eq(prev.selection)) return;
+            cancel();
+            if (!opts.enabled() || !view.editable || !view.hasFocus() || view.composing) return;
+            const { selection, doc } = view.state;
+            if (!selection.empty) return;
+            const $p = selection.$from;
+            // only at the end of a line of prose: not in code, and not in the middle of a sentence
+            if (!$p.parent.isTextblock || $p.parent.type.spec.code || $p.parentOffset !== $p.parent.content.size) return;
+            const before = doc.textBetween(Math.max(0, $p.pos - 1500), $p.pos, '\n', ' ');
+            if (before.trim().length < 12) return;
+            const pos = $p.pos;
+            timer = setTimeout(() => {
+              timer = null;
+              const c = new AbortController();
+              ctl = c;
+              void opts.suggest({ before, after: '' }, c.signal).then(text => {
+                if (c.signal.aborted || !text) return;
+                // still the same place? (the document may have moved on while the request was out)
+                if (view.state.selection.from !== pos || !view.state.selection.empty) return;
+                view.dispatch(view.state.tr.setMeta(ghostKey, { text, pos }));
+              }, () => { /* a failed suggestion is silent: the chat panel is where errors are shown */ });
+            }, opts.delay());
+          },
+          destroy: cancel,
+        };
+      },
+    })];
+  },
+});

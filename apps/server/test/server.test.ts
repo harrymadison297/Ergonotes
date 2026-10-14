@@ -145,6 +145,20 @@ describe('MCP endpoint', () => {
     expect((await tool('read_note', { id: 'missing' })).error).toBe(true);
   });
 
+  it('hides private notes from agents and refuses to change them', async () => {
+    const made = JSON.parse((await tool('create_note', { title: 'Diary', body: 'secret thoughts about zebra' })).text);
+    expect((await tool('search_notes', { query: 'zebra' })).text).toContain(made.id);
+    await post('/api/rpc/setPrivate', [made.id, true], { cookie: sess });
+    expect((await tool('search_notes', { query: 'zebra' })).text).not.toContain(made.id);
+    expect((await tool('list_recent')).text).not.toContain(made.id);
+    expect((await tool('read_note', { id: made.id })).error).toBe(true);
+    expect((await tool('append_to_note', { id: made.id, text: 'x' })).error).toBe(true);
+    expect((await tool('replace_text', { id: made.id, find: 'zebra', replace: 'cat' })).error).toBe(true);
+    const names = (await mcp('tools/list')).body.result.tools.map((t: { name: string }) => t.name);
+    expect(names).toEqual(expect.arrayContaining(['replace_text', 'insert_after_heading', 'add_tags', 'move_note', 'rename_note']));
+    expect(names).not.toContain('delete_note');
+  });
+
   it('revoking a token stops it working', async () => {
     const t2 = await post('/api/tokens', { name: 'Temp' }, { cookie: sess });
     expect((await mcp('ping', {}, t2.body.token)).status).toBe(200);
@@ -152,6 +166,49 @@ describe('MCP endpoint', () => {
     const rec = list.find((x: { name: string }) => x.name === 'Temp');
     await post('/api/tokens', { revoke: rec.id }, { cookie: sess });
     expect((await mcp('ping', {}, t2.body.token)).status).toBe(401);
+  });
+});
+
+describe('AI proxy', () => {
+  it('streams the provider answer to a signed-in browser and keeps the key on the server', async () => {
+    let seenAuth = '';
+    const aiFetch = (async (_u: string, init: RequestInit) => {
+      seenAuth = new Headers(init.headers).get('authorization') ?? '';
+      const chunks = [{ choices: [{ delta: { content: 'Hi ' } }] }, { choices: [{ delta: { content: 'there' } }] }];
+      return new Response(chunks.map(c => `data: ${JSON.stringify(c)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+    }) as unknown as typeof fetch;
+    await withServer({ aiFetch }, async (_s, u) => {
+      const ask = (headers: Record<string, string> = {}) =>
+        postJson(u, '/api/ai/stream', JSON.stringify({ model: 'chat', messages: [{ role: 'user', content: 'hello' }] }), headers);
+      expect((await ask()).status).toBe(401);
+      const created = await postJson(u, '/api/rpc/createVault', JSON.stringify([PASSWORD]));
+      const cookie = created.headers.get('set-cookie')!.split(';')[0];
+      const saved = await (await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ keys: { openrouter: 'sk-or-server-side' } }]), { cookie })).json();
+      expect(saved).toMatchObject({ hasKey: true, keyHint: 'side' });
+      expect(JSON.stringify(saved)).not.toContain('server-side');
+      expect(JSON.stringify(await (await postJson(u, '/api/rpc/getAiSettings', '[]', { cookie })).json())).not.toContain('sk-or');
+      const r = await ask({ cookie });
+      expect(r.status).toBe(200);
+      const events = (await r.text()).trim().split('\n').map(l => JSON.parse(l) as { type: string; delta?: string });
+      expect(events.filter(e => e.type === 'text').map(e => e.delta).join('')).toBe('Hi there');
+      expect(seenAuth).toBe('Bearer sk-or-server-side');
+      const bad = await postJson(u, '/api/ai/stream', JSON.stringify({ model: 'nope', messages: [] }), { cookie });
+      expect(bad.status).toBe(400);
+      const cross = await postJson(u, '/api/ai/stream', JSON.stringify({ model: 'chat', messages: [] }), { cookie, origin: 'https://evil.example' });
+      expect(cross.status).toBe(403);
+    });
+  });
+
+  it('reports a provider failure as an error event instead of hanging', async () => {
+    const aiFetch = (async () => new Response(JSON.stringify({ error: { message: 'No credits' } }), { status: 402 })) as unknown as typeof fetch;
+    await withServer({ aiFetch }, async (_s, u) => {
+      const created = await postJson(u, '/api/rpc/createVault', JSON.stringify([PASSWORD]));
+      const cookie = created.headers.get('set-cookie')!.split(';')[0];
+      await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ keys: { openrouter: 'k' } }]), { cookie });
+      const r = await postJson(u, '/api/ai/stream', JSON.stringify({ model: 'chat', messages: [] }), { cookie });
+      const last = JSON.parse((await r.text()).trim().split('\n').at(-1)!) as { type: string; message: string };
+      expect(last).toEqual({ type: 'error', message: 'No credits' });
+    });
   });
 });
 

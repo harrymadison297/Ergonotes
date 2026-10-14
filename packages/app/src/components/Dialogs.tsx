@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Check, Copy, FileUp, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
-import { applyHunks, joinDoc, lineDiff, splitDoc, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
+import { Bot, Check, Copy, FileDown, FileUp, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { applyHunks, completeText, DEFAULT_MODELS, ERGONOTES_SKILL_MD, joinDoc, lineDiff, splitDoc, type AiProvider, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
-import { classNames, relTime } from '../state/util';
+import { classNames, download, relTime } from '../state/util';
 import { Dialog, IconBtn } from './ui';
 import { setPrefs, usePrefs } from '../state/prefs';
 import { StoreForm, formFromStore, storeFromForm, type StoreFormState } from './StoreForm';
@@ -298,7 +298,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
   return (
     <Dialog title="Settings" wide onClose={onClose}>
       <div className="tabs" role="tablist" style={{ margin: '0 -8px 14px' }}>
-        {[['general', 'General'], ['sync', 'Sync & storage'], ...(remote ? [['agents', 'AI & agents']] : []), ['security', 'Security'], ['data', 'Data']].map(([k, l]) =>
+        {[['general', 'General'], ['sync', 'Sync & storage'], ['ai', 'AI'], ...(remote ? [['agents', 'Agents (MCP)']] : []), ['security', 'Security'], ['data', 'Data']].map(([k, l]) =>
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}
       </div>
       {tab === 'general' && (
@@ -349,6 +349,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
           </div>
         </div>
       )}
+      {tab === 'ai' && <AiSettings />}
       {tab === 'agents' && remote && <AgentsPanel />}
       {tab === 'security' && (
         <div style={{ maxWidth: 480 }}>
@@ -379,7 +380,93 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
   );
 }
 
-// ---------------------------------------------------------------- AI & agents (MCP tokens, server mode)
+// ---------------------------------------------------------------- AI provider, chat scope, suggestions
+const PROVIDER_NAME: Record<AiProvider, string> = { openrouter: 'OpenRouter', anthropic: 'Anthropic' };
+
+function AiSettings() {
+  const app = useApp();
+  const prefs = usePrefs();
+  const ai = app.ai;
+  const [key, setKey] = useState('');
+  const [chatModel, setChatModel] = useState(ai.chatModel);
+  const [suggestModel, setSuggestModel] = useState(ai.suggestModel);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setChatModel(ai.chatModel); setSuggestModel(ai.suggestModel); }, [ai.chatModel, ai.suggestModel, ai.provider]);
+
+  const save = async (patch: Parameters<typeof app.api.setAiSettings>[0]) => {
+    const r = await app.run(app.api.setAiSettings(patch));
+    if (r) await app.refresh();
+    return r;
+  };
+  const test = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const text = await completeText(app.aiTransport, { model: 'chat', messages: [{ role: 'user', content: 'Reply with the single word: ok' }], maxTokens: 16 });
+      setMsg({ ok: true, text: text.trim() ? `Connected. The model answered: “${text.trim().slice(0, 60)}”` : 'Connected.' });
+    } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) }); }
+    setBusy(false);
+  };
+  const check = (id: string, checked: boolean, on: (v: boolean) => void, label: string, hint?: string) => (
+    <div className="field">
+      <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontWeight: 600 }}>
+        <input id={id} type="checkbox" checked={checked} onChange={e => on(e.target.checked)} style={{ accentColor: 'var(--green-fill)', width: 18, height: 18 }} />
+        {label}</label>
+      {hint && <span className="hint">{hint}</span>}
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <p className="muted" style={{ marginTop: 0 }}>
+        The assistant and the next-words suggestion send text from your notes to the AI provider you choose here. Nothing is sent until you add a key and use them. Notes marked private are never sent.
+      </p>
+      <div className="field"><label htmlFor="ai-provider">Provider</label>
+        <select id="ai-provider" className="input" value={ai.provider} onChange={e => void save({ provider: e.target.value as AiProvider })}>
+          {(Object.keys(PROVIDER_NAME) as AiProvider[]).map(p => <option key={p} value={p}>{PROVIDER_NAME[p]}</option>)}
+        </select></div>
+      <div className="field"><label htmlFor="ai-key">{PROVIDER_NAME[ai.provider]} API key</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input id="ai-key" className="input" type="password" autoComplete="off" spellCheck={false} value={key} onChange={e => setKey(e.target.value)}
+            placeholder={ai.hasKey ? `Saved (ends in ${ai.keyHint ?? '····'}). Paste a new key to replace it.` : ai.provider === 'openrouter' ? 'sk-or-…' : 'sk-ant-…'} />
+          <button className="btn primary" disabled={!key.trim()} onClick={async () => { if (await save({ keys: { [ai.provider]: key } })) { setKey(''); app.toast('Key saved'); } }}>Save</button>
+          {ai.hasKey && <button className="btn" onClick={async () => { if (await save({ keys: { [ai.provider]: null } })) app.toast('Key removed'); }}>Remove</button>}
+        </div>
+        <span className="hint">Stored encrypted in your vault, so your other devices can use it too. {app.mode === 'remote' ? 'The server calls the provider; the key never reaches this browser.' : 'This device calls the provider directly.'}</span></div>
+      <div className="field"><label htmlFor="ai-chat">Chat model</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input id="ai-chat" className="input" value={chatModel} onChange={e => setChatModel(e.target.value)} spellCheck={false} />
+          <button className="btn" disabled={chatModel.trim() === ai.chatModel || !chatModel.trim()} onClick={() => void save({ chatModel })}>Save</button>
+        </div>
+        <span className="hint">For example {DEFAULT_MODELS[ai.provider].chat}. It needs to support tools.</span></div>
+      <div className="field"><label htmlFor="ai-suggest">Suggestion model</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input id="ai-suggest" className="input" value={suggestModel} onChange={e => setSuggestModel(e.target.value)} spellCheck={false} />
+          <button className="btn" disabled={suggestModel.trim() === ai.suggestModel || !suggestModel.trim()} onClick={() => void save({ suggestModel })}>Save</button>
+        </div>
+        <span className="hint">A small, fast model is best: it is asked every time you pause typing.</span></div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
+        <button className="btn" disabled={!ai.hasKey || busy} onClick={() => void test()}>{busy ? <Loader2 size={16} className="spin" /> : <Check size={16} />} Test connection</button>
+        {msg && <span role="status" className={msg.ok ? undefined : 'error-text'}>{msg.text}</span>}
+      </div>
+      <hr style={{ margin: '4px 0 16px', border: 0, borderTop: '1px solid var(--border)' }} />
+      {check('ai-whole', ai.wholeVault, v => void save({ wholeVault: v }), 'Let the assistant search and read all my notes',
+        'Off: it only sees the note you have open. Private notes stay hidden either way.')}
+      {check('ai-auto', ai.autoApply, v => void save({ autoApply: v }), 'Apply the assistant’s edits without asking',
+        'Off: every change is shown as a suggestion you accept or reject. Applied changes can be undone from the chat or the note’s version history.')}
+      <hr style={{ margin: '4px 0 16px', border: 0, borderTop: '1px solid var(--border)' }} />
+      <p className="muted" style={{ marginTop: 0 }}>On this device</p>
+      {check('ai-ghost', prefs.ghost, v => setPrefs({ ghost: v }), 'Suggest the next words while I type',
+        'A grey suggestion appears after you pause. Tab (or a tap) accepts it, Esc dismisses it. Each suggestion is a request to the provider.')}
+      <div className="field"><label htmlFor="ai-delay">Wait after I stop typing</label>
+        <select id="ai-delay" className="input" style={{ maxWidth: 200 }} value={prefs.ghostDelay} onChange={e => setPrefs({ ghostDelay: Number(e.target.value) })}>
+          {[200, 400, 600, 1000, 1500].map(ms => <option key={ms} value={ms}>{ms} ms</option>)}
+        </select></div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Agents: MCP tokens (server mode)
 function AgentsPanel() {
   const app = useApp();
   const [tokens, setTokens] = useState<{ id: string; name: string; created: string; lastUsed: string | null }[]>([]);
@@ -390,6 +477,7 @@ function AgentsPanel() {
   useEffect(() => { void load(); }, []);
   const post = async (body: unknown) => (await fetch('./api/tokens', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
   const snippet = JSON.stringify({ mcpServers: { ergonotes: { type: 'http', url: endpoint, headers: { Authorization: `Bearer ${fresh ?? '<token>'}` } } } }, null, 2);
+  const claudeCmd = `claude mcp add --transport http ergonotes ${endpoint} --header "Authorization: Bearer ${fresh ?? '<token>'}"`;
   return (
     <div style={{ maxWidth: 620 }}>
       <p className="muted" style={{ marginTop: 0 }}>
@@ -404,10 +492,17 @@ function AgentsPanel() {
         <div className="banner info" style={{ borderRadius: 6, display: 'block', marginBottom: 14 }} role="status">
           <b>Copy this token now; it is shown only once.</b>
           <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: '6px 0' }}>{fresh}</pre>
-          <details><summary>Client configuration</summary><pre style={{ whiteSpace: 'pre-wrap', fontSize: 'var(--fs-xs)' }}>{snippet}</pre></details>
+          <details open><summary>Claude Code</summary><pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: 'var(--fs-xs)' }}>{claudeCmd}</pre>
+            <button className="btn" onClick={async () => { await navigator.clipboard?.writeText(claudeCmd); app.toast('Command copied'); }}><Copy size={14} /> Copy command</button></details>
+          <details><summary>Other clients (JSON)</summary><pre style={{ whiteSpace: 'pre-wrap', fontSize: 'var(--fs-xs)' }}>{snippet}</pre></details>
           <button className="btn" onClick={async () => { await navigator.clipboard?.writeText(fresh); app.toast('Token copied'); }}><Copy size={14} /> Copy</button>
         </div>
       )}
+      <div className="field">
+        <span className="label">Skill for Claude Code</span>
+        <div><button className="btn" onClick={() => download('SKILL.md', 'text/markdown', ERGONOTES_SKILL_MD)}><FileDown size={16} /> Download SKILL.md</button></div>
+        <span className="hint">Save it as <code>~/.claude/skills/ergonotes/SKILL.md</code> so Claude knows how to use these notes safely. Private notes are never visible to agents.</span>
+      </div>
       <table className="table"><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th /></tr></thead><tbody>
         {tokens.map(t => (
           <tr key={t.id}><td className="name">{t.name}</td><td>{new Date(t.created).toLocaleDateString()}</td><td>{t.lastUsed ? relTime(t.lastUsed) : 'never'}</td>

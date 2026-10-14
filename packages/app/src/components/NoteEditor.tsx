@@ -10,13 +10,15 @@ import TableRow from '@tiptap/extension-table-row';
 import { Markdown } from 'tiptap-markdown';
 import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
-  ChevronsLeft, ChevronsRight, Maximize2, Minimize2, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
+  ChevronsLeft, ChevronsRight, EyeOff, Maximize2, Minimize2, Sparkles, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
 } from 'lucide-react';
 import { mergeText, toB64, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, debounce, download, isoDay } from '../state/util';
-import { currentTaskTokens, ExcalidrawBlock, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, Wikilink } from '../editor/extensions';
+import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, Wikilink } from '../editor/extensions';
 import { DrawingDialog } from './DrawingDialog';
+import { AiPanel } from './AiPanel';
+import { suggestionRequest, cleanSuggestion, completeText } from '@ergonotes/core';
 import { Dialog, IconBtn, TagPill, useMenu, type MenuEntry } from './ui';
 import { Resizer } from './Resizer';
 import { href } from '../state/router';
@@ -56,6 +58,10 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeHeading, setActiveHeading] = useState(0);
   const prefs = usePrefs();
+  const titleRef = useRef('');
+  titleRef.current = title;
+  const ghostRef = useRef({ on: false, delay: 400, transport: app.aiTransport });
+  ghostRef.current = { on: prefs.ghost && app.ai.hasKey && !app.byId.get(id)?.private, delay: prefs.ghostDelay, transport: app.aiTransport };
   const saveBody = useMemo(() => debounce((nid: string, body: string, seq: number) => {
     setSaveState('saving');
     inflight.current = api.saveNote(nid, { body }).then(s => {
@@ -84,6 +90,14 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       Table.configure({ resizable: false }), TableRow, SingleParagraphHeader, SingleParagraphCell, TableKeys,
       StoredImage.configure({ inline: true }),
       Wikilink, ExcalidrawBlock, InlineDecorations,
+      GhostText.configure({
+        enabled: () => ghostRef.current.on,
+        delay: () => ghostRef.current.delay,
+        suggest: async (ctx, signal) => {
+          const raw = await completeText(ghostRef.current.transport, suggestionRequest({ title: titleRef.current, before: ctx.before, after: ctx.after }), signal);
+          return cleanSuggestion(raw, ctx.before);
+        },
+      }),
       LinkSuggest.configure({ api }),
       SlashCommands.configure({
         items: () => slashItems({
@@ -285,6 +299,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const moreEntries = (): MenuEntry[] => [
     { label: doc.pinned ? 'Unpin' : 'Pin to sidebar', icon: doc.pinned ? <PinOff size={16} /> : <Pin size={16} />, onClick: async () => { await app.run(api.setPinned(id, !doc.pinned)); } },
     { label: 'Move to…', icon: <FolderIcon size={16} />, onClick: () => app.setDialog({ kind: 'move', id }) },
+    { label: doc.private ? 'Allow AI to see this note' : 'Keep private from AI', icon: <EyeOff size={16} />, onClick: async () => { await app.run(api.setPrivate(id, !doc.private)); const d = await api.getNote(id); if (d) setDoc(x => x && ({ ...x, private: d.private })); await app.refresh(); } },
     { label: doc.template ? 'Stop using as template' : 'Use as template', icon: <LayoutTemplate size={16} />, onClick: async () => { await app.run(api.setTemplate(id, !doc.template)); } },
     { label: 'Version history', icon: <HistoryIcon size={16} />, onClick: async () => { await flushNow(); app.setDialog({ kind: 'history', id }); } },
     { sep: true },
@@ -373,6 +388,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
             </span>
           ))}
         </nav>
+        <IconBtn label={prefs.ai ? 'Hide AI assistant' : 'AI assistant'} active={prefs.ai} icon={<Sparkles size={18} />} onClick={() => setPrefs({ ai: !prefs.ai })} />
         {!app.isMobile && <IconBtn label={prefs.toc ? 'Hide table of contents' : 'Show table of contents'} active={prefs.toc} icon={<TableOfContents size={18} />}
           className="toc-toggle" onClick={() => setPrefs({ toc: !prefs.toc })} />}
         <IconBtn label="Export" haspopup icon={<Share2 size={18} />} onClick={e => exportMenu.open(e, exportEntries(), 'right')} />
@@ -406,7 +422,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       <div className="editor-main">
       <div className="editor-scroll" ref={scrollRef} onScroll={trackHeading}>
         <div className="editor-page">
-          <div className="edited">Edited {new Date(doc.updated).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</div>
+          <div className="edited">Edited {new Date(doc.updated).toLocaleDateString('en', { month: 'short', day: 'numeric' })}{doc.private && <span className="private-flag" title="The AI assistant and AI agents cannot see this note"><EyeOff size={12} /> Private</span>}</div>
           <input className="title-input" aria-label="Title" placeholder="Title" value={title} readOnly={locked}
             onChange={e => { setTitle(e.target.value); setSaveState('saving'); saveTitle(id, e.target.value); }}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); editor.commands.focus('start'); } }} />
@@ -419,7 +435,15 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
           )}
         </div>
       </div>
-      {showToc && (
+      {prefs.ai && (
+        <AiPanel noteId={id} locked={locked} onClose={() => setPrefs({ ai: false })}
+          live={() => ({ title, body: (editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown() })}
+          applyToEditor={patch => {
+            if (patch.title !== undefined) { setTitle(patch.title); saveTitle(id, patch.title); }
+            if (patch.body !== undefined) editor.commands.setContent(patch.body, true);
+          }} />
+      )}
+      {showToc && !prefs.ai && (
         <aside className="toc" aria-label="Table of contents">
           <Resizer pane="tocW" edge="left" label="Resize table of contents" />
           <div className="toc-scroll">

@@ -10,6 +10,7 @@ Markdown/HTML/PDF export, and an MCP endpoint for AI agents.
 | **Web** | The same UI served by the optional Linux *server peer* (no offline mode). |
 | **Sync** | End-to-end encrypted objects in an S3-compatible bucket, WebDAV share, or plain folder. |
 | **Agents** | MCP over HTTP on the server peer, with revocable API tokens. |
+| **Assistant** | Optional chat that answers, writes, edits and draws in your notes, and a next-words suggestion. Bring your own OpenRouter or Anthropic key; off until you add one; notes marked private are never sent. |
 
 ## Quick start
 
@@ -41,9 +42,13 @@ node dist/server/server.mjs            # PORT, HOST, ERGONOTES_DATA, ERGONOTES_W
 * The vault is unlocked at the first sign-in and the key stays in memory. `ERGONOTES_PASSWORD` unlocks at start-up
   (unattended restarts) at the cost of keeping the password in the environment.
 * A plain-Markdown mirror of every note is written to `$ERGONOTES_DATA/markdown`.
-* Agents: *Settings → AI & agents* creates a token; point an MCP client at `https://your-host/mcp` with
-  `Authorization: Bearer <token>`. Tools: `search_notes`, `list_recent`, `read_note`, `create_note`, `append_to_note`,
-  `update_note`, `list_folders`, `list_tasks`, `complete_task`, `daily_note`. See `docs/agents/ergonotes-skill/SKILL.md`.
+* Agents: *Settings → Agents (MCP)* creates a token and shows the command for Claude Code; point any MCP client at
+  `https://your-host/mcp` with `Authorization: Bearer <token>`. Tools: `search_notes`, `list_recent`, `read_note`,
+  `create_note`, `append_to_note`, `replace_text`, `insert_after_heading`, `update_note`, `rename_note`, `add_tags`,
+  `move_note`, `list_folders`, `list_tasks`, `complete_task`, `daily_note`. Notes marked private are invisible to agents.
+  The skill that teaches Claude Code to use them is `docs/agents/ergonotes-skill/SKILL.md` (also a download button).
+* Assistant: *Settings → AI* takes an OpenRouter or Anthropic API key (stored encrypted in the vault). On the server the
+  key stays on the server and the browser streams through `/api/ai/stream`. See ADR 0008.
 
 ## Building the apps
 
@@ -60,7 +65,8 @@ Android releases are signed with `KEYSTORE`/`KEYSTORE_PASS`/`KEY_ALIAS` when set
 ## Develop & test
 
 ```sh
-tools/n npm test                      # core (merge, sync simulation, vault) + server + MCP
+tools/n npm test                      # core (merge, sync simulation, vault, AI) + server + MCP
+OPENROUTER_API_KEY=… tools/n npx vitest run packages/core/test/ai-live.test.ts   # optional: the real provider
 tools/n npm run typecheck
 # end-to-end in real browsers / VMs: packages/app/e2e (smoke.mjs, sync.mjs, device.mjs)
 ```

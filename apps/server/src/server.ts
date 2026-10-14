@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
-import { Vault, VAULT_METHODS, type StoreConfig, type VaultStatus } from '@ergonotes/core';
+import { streamChat, Vault, VAULT_METHODS, type AiRequest, type StoreConfig, type VaultStatus } from '@ergonotes/core';
 import { FilePersist, FolderStore } from '@ergonotes/core/node';
 import { Mirror } from './mirror.ts';
 import { handleRpc, TokenStore } from './mcp.ts';
@@ -26,6 +26,8 @@ export interface ServerOptions {
   mirrorDir?: string | null;
   /** folder storage chosen from the web UI must live inside this directory (default: the data directory) */
   folderStoreRoot?: string;
+  /** how the AI proxy reaches the provider (tests pass a fake) */
+  aiFetch?: typeof fetch;
   log?: (msg: string) => void;
 }
 
@@ -232,6 +234,33 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     }
   };
 
+  /** The in-app chat and ghost text go through here so the provider key stays on the server. */
+  const aiStream = async (req: IncomingMessage, res: ServerResponse) => {
+    if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+    if (!authed(req)) return json(res, 401, { error: 'Sign in first' });
+    if (!/^application\/json/.test(req.headers['content-type'] ?? '')) return json(res, 415, { error: 'JSON only' });
+    if (!sameOrigin(req)) return json(res, 403, { error: 'Cross-origin request refused' });
+    let body: AiRequest;
+    try {
+      body = JSON.parse(await readBody(req, 16 * 1024 * 1024)) as AiRequest;
+      if (!Array.isArray(body.messages) || (body.model !== 'chat' && body.model !== 'suggest')) throw new Error('Bad request');
+    } catch (e) {
+      const msg = String(e instanceof Error ? e.message : e);
+      return json(res, /too large/i.test(msg) ? 413 : 400, { error: msg }, { connection: 'close' });
+    }
+    if ((await vault.status()).state !== 'ready') return json(res, 409, { error: 'The vault is locked' });
+    res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' });
+    const ac = new AbortController();
+    res.on('close', () => ac.abort());
+    const send = (o: unknown) => { if (!res.writableEnded) res.write(JSON.stringify(o) + '\n'); };
+    try {
+      for await (const e of streamChat(vault.aiConfig(), body, { signal: ac.signal, fetchImpl: o.aiFetch })) send(e);
+    } catch (e) {
+      if (!ac.signal.aborted) send({ type: 'error', message: e instanceof Error ? e.message : String(e) });
+    }
+    res.end();
+  };
+
   const serveStatic = async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const root = o.webDir;
     if (!root) { res.writeHead(404); return res.end('No web build configured'); }
@@ -289,6 +318,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
         }
         return json(res, 405, { error: 'Method not allowed' });
       }
+      if (url.pathname === '/api/ai/stream') return await aiStream(req, res);
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
       return await serveStatic(req, res, url);
     } catch (e) {

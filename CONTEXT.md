@@ -18,6 +18,18 @@ _Avoid_: Object, entry, document
 An Item of written content, made of Blocks, that lives in exactly one Folder.
 _Avoid_: Page, doc, memo
 
+**Private note**:
+A Note the person has marked as not to be shown to AI. It is never part of an assistant prompt and does not exist for MCP agents; everything else treats it like any Note.
+_Avoid_: Hidden, locked, secret
+
+**Assistant**:
+The AI chat beside an open Note. It answers, and proposes changes to Notes that the person accepts or rejects.
+_Avoid_: Bot, copilot, agent (an agent is something outside the app that uses the MCP endpoint)
+
+**Suggestion**:
+The grey next-words text shown after the cursor while typing; accepted with Tab, dismissed with Esc.
+_Avoid_: Autocomplete, ghost text
+
 **Folder**:
 An Item that holds other Items and forms the tree a person navigates. A Folder is an ordinary Item, including the ones created by default.
 _Avoid_: Directory, notebook, category

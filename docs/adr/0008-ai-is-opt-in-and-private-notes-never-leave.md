@@ -1,0 +1,33 @@
+# AI is opt-in, uses the person's own provider key, and private notes never reach it
+
+Ergonotes is offline-first and keeps plaintext on the person's devices. An AI assistant is the first feature that sends
+note text to a third party (OpenRouter or Anthropic), which is outside that promise. We add it as an explicit,
+reversible exception with these rules, so the exception stays small and visible.
+
+## Decision
+
+- **Off until configured.** No request is made until the person saves a provider API key in *Settings → AI*. The
+  next-words suggestion is a separate switch, off by default on every device, because each suggestion is a request.
+- **The person's own key.** There is no Ergonotes account or proxy of ours. The key lives in the Vault as an encrypted
+  item (`type: config`, a fixed id) that syncs to the person's other Devices; it is never returned by the API, so a
+  browser only learns that a key exists and its last four characters.
+- **Where the call is made.** A Device that holds the Vault calls the provider itself. In the web build the Server peer
+  calls it (`/api/ai/stream`) so the key never reaches the browser.
+- **What is sent.** By default the open Note and the conversation. "Let the assistant search and read all my notes" is a
+  separate setting; the same tools are used by MCP agents.
+- **Private notes.** A Note can be marked `private: true` (frontmatter, synced). Every tool, for the in-app chat and for
+  the MCP endpoint alike, treats a private Note as not existing: it is not found by search, not listed, not readable and
+  not writable. The editor's own suggestion and chat are also off for it. The owner still sees it everywhere in the app.
+- **Edits are proposals.** The assistant's changes to a Note are shown as a diff that the person accepts or rejects; an
+  accepted change goes through the editor like typing and is therefore an ordinary Commit. "Apply without asking" is a
+  setting. There is no delete tool.
+- **Nothing about conversations is stored in the Vault.** A conversation lives for the app session.
+
+## Consequences
+
+- Anyone who can unlock the Vault can read the provider key, as with the Store credentials today (ADR 0004).
+- Text of non-private notes leaves the device when the assistant is used: the person is told so in the settings page.
+- The MCP endpoint's behaviour changed: private notes disappeared from it. Agents that were told about a note by id
+  get "Note not found".
+- Two Devices saving the AI settings at once are settled automatically (newest wins) instead of opening a conflict.
+- A model that cannot call tools can chat but cannot edit; the model name is free text so the person decides.

@@ -1,4 +1,4 @@
-import { Vault, VAULT_METHODS, type VaultApi, type VaultEvent, type VaultStatus } from '@ergonotes/core';
+import { streamChat, Vault, VAULT_METHODS, type AiEvent, type AiTransport, type VaultApi, type VaultEvent, type VaultStatus } from '@ergonotes/core';
 import { IdbPersist } from '@ergonotes/core/browser';
 
 export interface Backend {
@@ -6,6 +6,8 @@ export interface Backend {
   /** subscribe to vault events (items changed, status changed) */
   onEvent(fn: (e: VaultEvent) => void): () => void;
   mode: 'local' | 'remote';
+  /** how the chat and the suggestions reach the AI provider: directly, or through the server that holds the key */
+  aiTransport: AiTransport;
   /** called once the vault is ready (starts sync timers in local mode) */
   start(): void;
 }
@@ -16,6 +18,37 @@ class HttpBackend implements Backend {
   private listeners = new Set<(e: VaultEvent) => void>();
   private es: EventSource | null = null;
   api: VaultApi;
+
+  /** The server calls the provider with the key it holds and streams the events back as one JSON object per line. */
+  aiTransport: AiTransport = async function* (req, signal) {
+    const r = await fetch('./api/ai/stream', {
+      method: 'POST', credentials: 'same-origin', signal,
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(req),
+    });
+    if (!r.ok || !r.body) {
+      const body = await r.json().catch(() => null) as { error?: string } | null;
+      throw new Error(body?.error ?? `Request failed (${r.status})`);
+    }
+    const reader = r.body.getReader();
+    const td = new TextDecoder();
+    let buf = '';
+    const parse = function* (line: string): Generator<AiEvent> {
+      if (!line.trim()) return;
+      const e = JSON.parse(line) as AiEvent | { type: 'error'; message: string };
+      if (e.type === 'error') throw new Error(e.message);
+      yield e;
+    };
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += td.decode(value, { stream: true });
+        let i: number;
+        while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); yield* parse(line); }
+      }
+      yield* parse(buf);
+    } finally { reader.releaseLock(); }
+  };
 
   constructor() {
     const call = async (method: string, args: unknown[]) => {
@@ -55,9 +88,11 @@ class LocalBackend implements Backend {
   api: VaultApi;
   private vault: Vault;
   private started = false;
+  aiTransport: AiTransport;
 
-  constructor(vault: Vault) {
+  constructor(vault: Vault, fetchImpl?: typeof fetch) {
     this.vault = vault;
+    this.aiTransport = (req, signal) => streamChat(vault.aiConfig(), req, { fetchImpl, signal });
     this.api = vault;
     window.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') void vault.flush();
@@ -90,7 +125,7 @@ export async function createBackend(): Promise<Backend> {
   }
   const fetchImpl = await tauriFetch();
   const vault = await Vault.open({ persist: new IdbPersist(), fetchImpl, defaultDeviceName: guessDeviceName() });
-  return new LocalBackend(vault);
+  return new LocalBackend(vault, fetchImpl);
 }
 
 /** Inside Tauri, S3/WebDAV requests go through the Rust HTTP plugin so storage endpoints need no CORS setup. */
