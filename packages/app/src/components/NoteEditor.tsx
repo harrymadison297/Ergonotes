@@ -19,7 +19,7 @@ import { useApp } from '../state/app';
 import { classNames, debounce, download } from '../state/util';
 import { currentTaskTokens, ExcalidrawBlock, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SlashCommands, slashItems, StoredImage, Wikilink } from '../editor/extensions';
 import { DrawingDialog } from './DrawingDialog';
-import { useMenu, type MenuEntry } from './ui';
+import { IconBtn, TagPill, useMenu, type MenuEntry } from './ui';
 
 type SaveState = 'saved' | 'saving' | 'error';
 
@@ -213,7 +213,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       if (files.length) { e.preventDefault(); void attach(files); }
     };
     const onDrop = (e: DragEvent) => {
-      const files = Array.from(e.dataTransfer?.files ?? []).filter(f => f.type.startsWith('image/'));
+      const files = Array.from(e.dataTransfer?.files ?? []);
       if (files.length) { e.preventDefault(); void attach(files); }
     };
     dom.addEventListener('paste', onPaste);
@@ -322,7 +322,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         </div>
       )}
       <div className="editor-top">
-        {onBack && <button className="icon-btn" aria-label="Back" onClick={onBack}><ArrowLeft size={20} /></button>}
+        {onBack && <IconBtn label="Back" icon={<ArrowLeft size={20} />} onClick={onBack} />}
         <nav className="crumbs" aria-label="Location">
           <FolderIcon size={14} />
           {path.length === 0 && <span style={{ padding: '0 6px' }}>No folder</span>}
@@ -333,8 +333,8 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
             </span>
           ))}
         </nav>
-        <button className="btn blue" onClick={e => exportMenu.open(e, exportEntries(), 'right')}><Share2 size={15} /> Export</button>
-        <button className="icon-btn" aria-label="More actions" onClick={e => moreMenu.open(e, moreEntries(), 'right')}><MoreHorizontal size={20} /></button>
+        <IconBtn label="Export" variant="soft" haspopup icon={<Share2 size={18} />} onClick={e => exportMenu.open(e, exportEntries(), 'right')} />
+        <IconBtn label="More actions" haspopup icon={<MoreHorizontal size={20} />} onClick={e => moreMenu.open(e, moreEntries(), 'right')} />
       </div>
       {exportMenu.node}{moreMenu.node}{insertMenu.node}{styleMenu.node}
 
@@ -369,7 +369,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
           <EditorContent editor={editor} />
           {doc.backlinks.length > 0 && (
             <section aria-label="Backlinks" style={{ marginTop: 40, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-              <h3 style={{ fontSize: 13, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.04em', margin: '0 0 8px' }}>Linked from</h3>
+              <h3 style={{ fontSize: 13, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.04em', margin: '0 0 8px' }}>Linked from</h3>
               {doc.backlinks.map(b => <a key={b.id} href={`#/notes/${b.id}`} className="chip reminder" style={{ marginRight: 6 }}>{b.title}</a>)}
             </section>
           )}
@@ -379,7 +379,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       <div className="editor-foot">
         <Tag size={15} />
         {doc.tags.map(t => (
-          <span key={t} className="chip">{t}{!locked && <button aria-label={`Remove tag ${t}`} onClick={() => void removeTag(t)} style={{ display: 'inline-flex' }}><X size={12} /></button>}</span>
+          <TagPill key={t} tag={t} onRemove={locked ? undefined : () => void removeTag(t)} />
         ))}
         {!locked && (
           <input className="tag-input" aria-label="Add tag" placeholder="Add tag" value={tagDraft} onChange={e => setTagDraft(e.target.value)}

@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, Cloud, FilePlus2, FileText, Folder as FolderIcon, Home as HomeIcon, Keyboard, LayoutTemplate,
-  Plus, Search, Settings as SettingsIcon, Tag as TagIcon, Trash2,
+  MoreHorizontal, Plus, Search, Settings as SettingsIcon, Tag as TagIcon, Trash2,
 } from 'lucide-react';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames, isoDay } from '../state/util';
+import { tagColor } from '../state/tags';
 import { CalendarView } from '../views/Calendar';
 import { ConflictsView } from '../views/Conflicts';
 import { FoldersView } from '../views/Folders';
@@ -13,9 +14,10 @@ import { Home } from '../views/Home';
 import { NotesView, TrashView } from '../views/Notes';
 import { TasksView } from '../views/Tasks';
 import { FilePreviewDialog } from './FilePreview';
+import { SearchPalette } from './SearchPalette';
 import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, SettingsDialog, ShortcutsDialog, TemplatesDialog } from './Dialogs';
 import { Sidebar, useNewMenu } from './Sidebar';
-import { Toasts } from './ui';
+import { IconBtn, NoteCard, Toasts } from './ui';
 
 function RouteView() {
   const { route } = useApp();
@@ -39,6 +41,7 @@ function DialogHost() {
   switch (d.kind) {
     case 'settings': return <SettingsDialog tab={d.tab} onClose={close} />;
     case 'shortcuts': return <ShortcutsDialog onClose={close} />;
+    case 'search': return <SearchPalette onClose={close} />;
     case 'templates': return <TemplatesDialog onClose={close} />;
     case 'move': return <MoveDialog id={d.id} onClose={close} />;
     case 'conflict': return <ConflictDialog id={d.id} onClose={close} />;
@@ -68,7 +71,7 @@ function useGlobalShortcuts() {
       const el = e.target as HTMLElement;
       const typing = el.matches('input, textarea, select, [contenteditable="true"]') || el.isContentEditable;
       const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); document.getElementById('global-search')?.focus(); return; }
+      if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); app.setDialog(app.dialog?.kind === 'search' ? null : { kind: 'search' }); return; }
       if ((mod && e.key.toLowerCase() === 'n') || (e.altKey && e.key.toLowerCase() === 'n')) { e.preventDefault(); void app.newNote(); return; }
       if (mod && e.altKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
@@ -162,8 +165,8 @@ function MoreView() {
         : <button key={r.label} onClick={r.onClick}>{r.icon}<span style={{ flex: 1 }}>{r.label}</span><ChevronRight size={18} /></button>)}
       {app.tags.length > 0 && (
         <div style={{ padding: 16 }}>
-          <h3 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--text-3)' }}><TagIcon size={14} /> Tags</h3>
-          <div className="tag-cloud">{app.tags.map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })}>{t.tag}<small>{t.count}</small></a>)}</div>
+          <h3 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--text-2)' }}><TagIcon size={14} /> Tags</h3>
+          <div className="tag-cloud">{app.tags.map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })} style={{ ['--c' as string]: tagColor(t.tag) }}><i className="tag-dot" />{t.tag}<small>{t.count}</small></a>)}</div>
         </div>
       )}
     </div>
@@ -172,31 +175,28 @@ function MoreView() {
 
 function MobileShell() {
   const app = useApp();
-  const { route, go } = app;
-  const [q, setQ] = useState('');
+  const { route } = app;
   const newMenu = useNewMenu();
   const noteOpen = 'note' in route && !!route.note;
   const tab = route.name === 'notes' || route.name === 'home' ? 'notes' : route.name === 'folders' ? 'folders' : route.name === 'tasks' ? 'tasks' : 'more';
   return (
     <div className="mobile">
       <div className="m-top">
-        <form className="search-box" role="search" onSubmit={e => { e.preventDefault(); go({ name: 'notes', q: q.trim() || undefined }); }}>
-          <Search size={16} /><input aria-label="Search notes" placeholder="Search notes and tasks" value={q} onChange={e => setQ(e.target.value)} />
-        </form>
-        <button className="icon-btn" aria-label="Settings" onClick={() => app.setDialog({ kind: 'settings' })}><SettingsIcon size={20} /></button>
+        <button className="m-search" onClick={() => app.setDialog({ kind: 'search' })} aria-label="Search"><Search size={18} />Search notes and folders</button>
+        <IconBtn label="Settings" icon={<SettingsIcon size={20} />} onClick={() => app.setDialog({ kind: 'settings' })} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {route.name === 'home' ? <MobileHome /> : <RouteView />}
       </div>
       {!noteOpen && (route.name === 'notes' || route.name === 'home' || route.name === 'folders' || route.name === 'tasks') && (
-        <button className="fab" aria-label="New note" onClick={() => void app.newNote()}><FilePlus2 size={24} /></button>
+        <button className="fab" aria-label="New note" title="New note" onClick={() => void app.newNote()}><FilePlus2 size={24} /></button>
       )}
       <nav className="bottom-nav" aria-label="Main">
         <button onClick={e => newMenu.open(e)}><Plus size={22} />Create</button>
         <a className={classNames(tab === 'notes' && 'active')} href={href({ name: 'notes' })}><FileText size={22} />Notes</a>
         <a className={classNames(tab === 'folders' && 'active')} href={href({ name: 'folders' })}><FolderIcon size={22} />Folders</a>
         <a className={classNames(tab === 'tasks' && 'active')} href={href({ name: 'tasks' })}><CheckCircle2 size={22} />Tasks</a>
-        <a className={classNames(tab === 'more' && 'active')} href={href({ name: 'more' })}><span style={{ position: 'relative' }}>···{app.conflicts.length > 0 && <i style={{ position: 'absolute', top: -2, right: -8, width: 8, height: 8, borderRadius: 4, background: 'var(--red)' }} />}</span>More</a>
+        <a className={classNames(tab === 'more' && 'active')} href={href({ name: 'more' })}><span style={{ position: 'relative' }}><MoreHorizontal size={22} />{app.conflicts.length > 0 && <i style={{ position: 'absolute', top: -2, right: -4, width: 8, height: 8, borderRadius: 4, background: 'var(--danger)' }} />}</span>More</a>
       </nav>
       {newMenu.node}
     </div>
@@ -208,14 +208,9 @@ function MobileHome() {
   const app = useApp();
   const notes = app.items.filter(i => i.type === 'note' && !i.inTrash && !i.template).sort((a, b) => b.updated.localeCompare(a.updated));
   return <div className="m-content">
-    <div style={{ padding: '4px 16px', color: 'var(--text-3)', fontSize: 12.5, textTransform: 'uppercase' }}>{notes.length} notes</div>
+    <div style={{ padding: '4px 16px', color: 'var(--text-2)', fontSize: 12.5, textTransform: 'uppercase' }}>{notes.length} notes</div>
     <div className="m-cards">
-      {notes.map(n => (
-        <a key={n.id} className="card" href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })}>
-          <span className="t">{n.title}</span><span className="s">{n.snippet}</span>
-          <span className="foot"><span>{new Date(n.updated).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span></span>
-        </a>
-      ))}
+      {notes.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })} />)}
     </div>
   </div>;
 }
@@ -230,7 +225,7 @@ export function Shell() {
   }
   return (
     <>
-      <div className="app">
+      <div className={classNames('app', app.rail && 'rail')}>
         <Sidebar />
         <main className="main"><RouteView /></main>
       </div>

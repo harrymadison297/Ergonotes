@@ -75,7 +75,7 @@ await shot('02-notes');
 
 // write on this device (on-device first), then sync
 if (mobile) await click('New note');
-else { await click('New'); await click('New note'); }
+else await click('New note (Ctrl+N)');
 await waitFor(`document.querySelector('input[aria-label=Title]')`);
 await fill('Title', noteTitle);
 await ev(`document.querySelector('.prose').focus()`);

@@ -15,6 +15,9 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 | Delete vs edit | Always ask | Trash is a frontmatter flag, so trash-vs-edit is detected in the frontmatter merge and surfaces as a conflict; *purge*-vs-edit also conflicts | See `packages/core/src/merge.ts`. |
 | Reminders | Local notifications | Fire while the app is running (web Notification API / Tauri notification plugin); **no background scheduling** when the app is closed | Android background work is out of v1 (Q12). |
 | Android share intent | "Share → Inbox capture" (issue 07) | Implemented for `text/plain`: `MainActivity.kt` keeps the shared text and the UI files it with `Vault.capture()` | Images/files shared into the app are not handled. |
+| Tag colours | Brand guidelines: tags are coloured | A tag's colour is a hash of its top-level name into the 8-colour tag palette (`state/tags.ts`); nothing is stored or synced | Same colour on every device without a setting. A person cannot pick a colour yet. |
+| Folder pane | "Folders are the tree a person navigates" | Opening a folder with no note selected shows its contents as large icons or a details list (`views/Explorer.tsx`); tag and search results use the same pane | Replaces the empty "Select a note" half of the screen. |
+| Search popup | Search by title, text, tag | `searchHits` (core) returns folders by name and notes with the folder path and the passage that matched; `Ctrl/Cmd+K` or the round search button opens it. "Show all results" still goes to the filtered list | Needed passages, not just summaries. |
 | Argon2id cost | 64 MiB, 3 passes | Implemented with `hash-wasm` (WASM). Not measured on a real phone | Measure on a mid-range device and adjust `DEFAULT_KDF`. |
 
 ## Decisions to confirm
@@ -25,6 +28,9 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 
 ## Not implemented
 
+- Native app icons (`apps/desktop/src-tauri/icons`) still use the previous green; run `tauri icon packages/app/public/icon.svg` before the next desktop release.
+- Tag colour picker and custom folder colours.
+- Keyboard-only drag and drop is covered by the "Move to…" menu entry, not by arrow-key dragging.
 - Editing spreadsheets/decks natively (xlsx/csv/pptx are stored, previewed read-only, and downloadable).
 - Drawing "promote to item", PDF export other than the system print dialog, template default-folder picker (the `folder` frontmatter key is honoured but nothing in the UI sets it).
 - Graph view, Evernote `.enex` import, background sync on Android, key rotation / device revocation, recovery phrase.

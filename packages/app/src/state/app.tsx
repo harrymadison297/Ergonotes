@@ -24,6 +24,9 @@ export interface AppCtx {
   toast: (msg: string, kind?: 'info' | 'error') => void;
   toasts: Toast[];
   isMobile: boolean;
+  /** sidebar collapsed to an icon rail */
+  rail: boolean;
+  toggleRail: () => void;
   /** run an api call, surfacing errors as toasts */
   run: <T>(p: Promise<T>) => Promise<T | undefined>;
   dialog: DialogState;
@@ -35,6 +38,7 @@ export type DialogState =
   | null
   | { kind: 'settings'; tab?: string }
   | { kind: 'shortcuts' }
+  | { kind: 'search' }
   | { kind: 'templates' }
   | { kind: 'move'; id: string }
   | { kind: 'conflict'; id: string }
@@ -79,6 +83,11 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
   const [route, go] = useRoute();
   const isMobile = useMedia('(max-width: 767px)');
   const seq = useRef(0);
+  const [rail, setRail] = useState(() => { try { return localStorage.getItem('ergo.rail') === '1'; } catch { return false; } });
+  const toggleRail = useCallback(() => setRail(r => {
+    try { localStorage.setItem('ergo.rail', r ? '0' : '1'); } catch { /* private mode */ }
+    return !r;
+  }), []);
 
   const toast = useCallback((msg: string, kind: 'info' | 'error' = 'info') => {
     const id = ++seq.current;
@@ -130,6 +139,6 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
     if (n) { await refresh(); go({ name: 'notes', note: n.id, folder: n.parent ?? undefined }); }
   }, [api, run, refresh, go]);
 
-  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, route, go, refresh, refreshStatus, toast, toasts, isMobile, run, dialog, setDialog, newNote };
+  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, route, go, refresh, refreshStatus, toast, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

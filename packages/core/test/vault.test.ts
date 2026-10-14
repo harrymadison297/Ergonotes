@@ -213,6 +213,33 @@ describe('Vault fixes from review', () => {
   });
 });
 
+describe('search hits', () => {
+  it('returns folders by name and notes with the folder path and the passage that matched', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const items = await v.listItems();
+    const projects = items.find(i => i.title === 'Projects')!;
+    const acme = await v.createFolder({ title: 'Acme Corp', parent: projects.id });
+    const long = `${'Intro words. '.repeat(30)}The quarterly zebrafish report is due on Friday.${' More words.'.repeat(30)}`;
+    const n = await v.createNote({ parent: acme.id, title: 'Plan', body: long });
+
+    const byContent = await v.searchHits('zebrafish');
+    expect(byContent).toHaveLength(1);
+    expect(byContent[0]).toMatchObject({ id: n.id, type: 'note', in: 'content' });
+    expect(byContent[0].path.map(p => p.title)).toEqual(['Projects', 'Acme Corp']);
+    expect(byContent[0].context).toContain('zebrafish');
+    expect(byContent[0].context.length).toBeLessThan(200);
+
+    const byFolder = await v.searchHits('acme');
+    expect(byFolder[0]).toMatchObject({ id: acme.id, type: 'folder', in: 'title' });
+    expect(byFolder[0].path.map(p => p.title)).toEqual(['Projects']);
+
+    await v.trash(n.id);
+    expect(await v.searchHits('zebrafish')).toHaveLength(0);
+    expect(await v.searchHits('   ')).toEqual([]);
+  });
+});
+
 describe('two devices', () => {
   it('sync through a shared store and surface a conflict that can be resolved', async () => {
     const store = new MemStore();

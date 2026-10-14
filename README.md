@@ -69,3 +69,7 @@ tools/n npm run typecheck
 `CONTEXT.md` is the glossary; `docs/adr/` records the decisions (per-note commit graph instead of CRDT, Markdown
 source format, passive Store, password-wrapped master key, ...). `docs/issues/` holds the milestone breakdown.
 `docs/implementation-notes.md` lists where the implementation deviates from the ADRs and what is not done yet.
+
+## Brand and UI
+
+Colours, type, components and voice are in [docs/brand-guidelines.md](docs/brand-guidelines.md); the CSS tokens that implement them are in `packages/app/src/styles/tokens.css`.

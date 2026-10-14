@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownUp, FileText, FilePlus2, Trash2 } from 'lucide-react';
+import { ArrowDownUp, FileText, FilePlus2, FolderPlus, Trash2 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { NoteEditor } from '../components/NoteEditor';
-import { NoteCard, NoteRow, useMenu } from '../components/ui';
+import { IconBtn, NoteCard, NoteRow, useMenu } from '../components/ui';
+import { Explorer } from './Explorer';
 import { classNames } from '../state/util';
 
 type Sort = 'updated' | 'created' | 'title';
@@ -61,14 +62,29 @@ export function NotesView({ noteId }: { noteId?: string }) {
     label: s === 'updated' ? 'Date updated' : s === 'created' ? 'Date created' : 'Title', checked: sort === s, onClick: () => changeSort(s),
   }));
 
+  // the right-hand pane with no note open: the folder's contents, like a file manager
+  const explorer = (() => {
+    const inFolder = route.name === 'notes' && !route.tag && !q;
+    if (!inFolder) return <Explorer heading={heading} parentId={undefined} crumbs={[]} folders={[]} notes={list} />;
+    const real = (id: string | null) => (id && app.byId.get(id)?.type === 'folder' ? id : null);
+    const pid = folder?.id ?? null;
+    const subs = app.items.filter(i => i.type === 'folder' && !i.inTrash && real(i.parent) === pid);
+    const here = app.items.filter(i => i.type === 'note' && !i.inTrash && real(i.parent) === pid && (pid !== null || !i.template));
+    const crumbs: { id: string | null; title: string }[] = [{ id: null, title: 'All folders' }];
+    const chain: { id: string; title: string }[] = [];
+    for (let cur = folder, n = 0; cur && n < 32; cur = cur.parent ? app.byId.get(cur.parent) : undefined, n++) chain.unshift({ id: cur.id, title: cur.title });
+    return <Explorer heading={heading} parentId={pid} crumbs={[...crumbs, ...chain]} folders={subs} notes={here} />;
+  })();
+
   const listPane = (
     <div className="pane-list">
       <div className="list-head">
         <h2>{heading}</h2>
         <div className="meta">
           <span>{list.length} note{list.length === 1 ? '' : 's'}</span><span className="grow" />
-          <button className="icon-btn" aria-label="Sort notes" onClick={e => sortMenu.open(e, sortEntries(), 'right')}><ArrowDownUp size={18} /></button>
-          <button className="icon-btn" aria-label="New note" onClick={() => void app.newNote({ parent: folder?.id })}><FilePlus2 size={18} /></button>
+          <IconBtn label="Sort notes" icon={<ArrowDownUp size={18} />} haspopup onClick={e => sortMenu.open(e, sortEntries(), 'right')} />
+          {folder && <IconBtn label="New folder here" icon={<FolderPlus size={18} />} onClick={() => app.setDialog({ kind: 'newFolder', parent: folder.id })} />}
+          <IconBtn label="New note" variant="primary" icon={<FilePlus2 size={18} />} onClick={() => void app.newNote({ parent: folder?.id })} />
         </div>
       </div>
       {sortMenu.node}
@@ -79,13 +95,9 @@ export function NotesView({ noteId }: { noteId?: string }) {
       <div className="list-scroll">
         {shown.length === 0 && (
           <div className="empty"><FileText size={32} /><h3>{q ? 'No notes match' : tab === 'reminders' ? 'No reminders' : 'No notes here yet'}</h3>
-            <p>{q ? 'Try different words.' : 'Create a note with the New button.'}</p></div>
+            <p>{q ? 'Try different words.' : 'Create one with the green button above.'}</p></div>
         )}
-        {shown.map(n => (
-          <div key={n.id} draggable onDragStart={e => { e.dataTransfer.setData('application/x-ergo-item', n.id); e.dataTransfer.effectAllowed = 'move'; }}>
-            <NoteRow n={n} active={n.id === noteId} href={href({ name: 'notes', ...base, note: n.id })} />
-          </div>
-        ))}
+        {shown.map(n => <NoteRow key={n.id} n={n} active={n.id === noteId} href={href({ name: 'notes', ...base, note: n.id })} />)}
       </div>
     </div>
   );
@@ -94,7 +106,7 @@ export function NotesView({ noteId }: { noteId?: string }) {
     const mobileList = (
       <div className="m-content">
         <div className="m-list-head"><span>{heading} · {shown.length} note{shown.length === 1 ? '' : 's'}</span><span className="grow" />
-          <button className="icon-btn" aria-label="Sort notes" onClick={e => sortMenu.open(e, sortEntries(), 'right')}><ArrowDownUp size={18} /></button></div>
+          <IconBtn label="Sort notes" icon={<ArrowDownUp size={18} />} haspopup onClick={e => sortMenu.open(e, sortEntries(), 'right')} /></div>
         {sortMenu.node}
         {shown.length === 0
           ? <div className="empty"><FileText size={32} /><h3>{q ? 'No notes match' : 'No notes here yet'}</h3><p>{q ? 'Try different words.' : 'Tap the green button to write one.'}</p></div>
@@ -112,9 +124,7 @@ export function NotesView({ noteId }: { noteId?: string }) {
     <div className="split">
       {listPane}
       <div className="pane-body">
-        {noteId ? <NoteEditor key={noteId} id={noteId} /> : (
-          <div className="empty" style={{ margin: 'auto' }}><FileText size={40} /><h3>Select a note</h3><p>Or press <b>New</b> to start writing.</p></div>
-        )}
+        {noteId ? <NoteEditor key={noteId} id={noteId} /> : explorer}
       </div>
     </div>
   );
@@ -135,7 +145,7 @@ export function TrashView({ noteId }: { noteId?: string }) {
       <div className="list-head">
         <h2>Trash</h2>
         <div className="meta"><span>{rows.length} item{rows.length === 1 ? '' : 's'} · removed after 30 days</span><span className="grow" />
-          <button className="btn" disabled={rows.length === 0} onClick={() => void emptyAll()}><Trash2 size={14} /> Empty Trash</button></div>
+          <IconBtn label="Empty Trash" variant="danger" disabled={rows.length === 0} icon={<Trash2 size={18} />} onClick={() => void emptyAll()} /></div>
       </div>
       <div className="list-scroll">
         {rows.length === 0 && <div className="empty"><Trash2 size={32} /><h3>Trash is empty</h3></div>}

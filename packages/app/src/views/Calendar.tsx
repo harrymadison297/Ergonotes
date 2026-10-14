@@ -49,7 +49,7 @@ export function CalendarView({ noteId }: { noteId?: string }) {
               onClick={() => setSel(day)} onDoubleClick={() => void openDaily(day)} aria-label={`${d.toLocaleDateString('en', { dateStyle: 'full' })}, ${ev.length} item${ev.length === 1 ? '' : 's'}`}>
               <span className="n">{d.getDate()}</span>
               {ev.slice(0, app.isMobile ? 1 : 3).map((e, i) => <span key={i} className={`cal-ev ${e.kind}`}>{e.label}</span>)}
-              {ev.length > (app.isMobile ? 1 : 3) && <span className="cal-ev" style={{ color: 'var(--text-3)' }}>+{ev.length - (app.isMobile ? 1 : 3)} more</span>}
+              {ev.length > (app.isMobile ? 1 : 3) && <span className="cal-ev" style={{ color: 'var(--text-2)' }}>+{ev.length - (app.isMobile ? 1 : 3)} more</span>}
             </button>
           );
         })}
@@ -62,7 +62,7 @@ export function CalendarView({ noteId }: { noteId?: string }) {
       <h2 style={{ margin: '0 0 8px', fontSize: 16 }}>{new Date(sel + 'T12:00').toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
       <button className="btn" onClick={() => void openDaily(sel)}><CalendarPlus size={15} /> Open daily note</button>
       <div style={{ marginTop: 14 }}>
-        {selEvents.length === 0 && <p className="hint" style={{ color: 'var(--text-3)' }}>Nothing scheduled.</p>}
+        {selEvents.length === 0 && <p className="hint" style={{ color: 'var(--text-2)' }}>Nothing scheduled.</p>}
         {selEvents.map((e, i) => <a key={i} className="note-row" href={href({ name: 'calendar', note: e.id })} style={{ padding: '8px 4px' }}><span className="info"><span className="t">{e.label}</span><span className="when">{e.kind === 'task' ? 'Task due' : e.kind === 'daily' ? 'Daily note' : 'Created'}</span></span></a>)}
       </div>
     </aside>

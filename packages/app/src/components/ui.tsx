@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, X } from 'lucide-react';
+import { Check, Star, X } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { Bell, Flag } from 'lucide-react';
-import { classNames, dueLabel, relTime } from '../state/util';
+import { classNames, dueLabel, firstSentence, relTime } from '../state/util';
+import { tagColor } from '../state/tags';
+import { dragSource } from '../state/dnd';
 import { FileImg } from './FileImg';
 
 // ---------------------------------------------------------------- menus
@@ -41,7 +43,7 @@ function MenuView({ x, y, w, entries, onClose }: { x: number; y: number; w: numb
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('mousedown', down, true);
     document.addEventListener('keydown', key);
-    ref.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
+    if (document.documentElement.classList.contains('kbd')) ref.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus();
     return () => { document.removeEventListener('mousedown', down, true); document.removeEventListener('keydown', key); };
   }, [onClose]);
   return createPortal(
@@ -99,26 +101,66 @@ export function Toasts({ toasts }: { toasts: { id: number; msg: string; kind: st
   );
 }
 
+// ---------------------------------------------------------------- buttons
+/** Round icon button: the default way to issue a command. Always labelled (tooltip + aria-label). */
+export function IconBtn({ label, icon, onClick, variant, size, active, disabled, dot, haspopup, className }: {
+  label: string; icon: ReactNode; onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  variant?: 'primary' | 'soft' | 'danger'; size?: 'sm' | 'lg'; active?: boolean; disabled?: boolean;
+  dot?: 'ok' | 'err' | 'busy' | null; haspopup?: boolean; className?: string;
+}) {
+  return (
+    <button type="button" className={classNames('icon-btn', variant, size, active && 'active', className)} title={label} aria-label={label}
+      aria-haspopup={haspopup ? 'menu' : undefined} disabled={disabled} onClick={onClick}>
+      {icon}
+      {dot && <i className={classNames('dot', dot === 'err' && 'err', dot === 'busy' && 'busy')} aria-hidden />}
+    </button>
+  );
+}
+
 // ---------------------------------------------------------------- note presentation
-export function NoteChips({ n, max = 2 }: { n: ItemSummary; max?: number }) {
-  const shown = n.tags.slice(0, max);
-  const rest = n.tags.length - shown.length;
+/** Coloured dots for tags, for compact views. Names are in the tooltip and the accessible label. */
+export function TagDots({ tags, max = 4 }: { tags: string[]; max?: number }) {
+  if (!tags.length) return null;
+  const shown = tags.slice(0, max);
+  const rest = tags.length - shown.length;
+  return (
+    <span className="tag-dots" role="img" aria-label={`Tags: ${tags.join(', ')}`} title={tags.join(', ')}>
+      {shown.map(t => <i key={t} className="tag-dot" style={{ ['--c' as string]: tagColor(t) }} />)}
+      {rest > 0 && <small>+{rest}</small>}
+    </span>
+  );
+}
+
+/** A tag with its colour dot and name, for roomy views. */
+export function TagPill({ tag, onRemove, href }: { tag: string; onRemove?: () => void; href?: string }) {
+  const style = { ['--c' as string]: tagColor(tag) };
+  const body = <><i className="tag-dot" style={style} />{tag}</>;
+  return (
+    <span className="tag-pill" style={style}>
+      {href ? <a href={href} style={{ color: 'inherit', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>{body}</a> : body}
+      {onRemove && <button type="button" aria-label={`Remove tag ${tag}`} onClick={onRemove}><X size={12} /></button>}
+    </span>
+  );
+}
+
+export function NoteChips({ n }: { n: ItemSummary }) {
   return (
     <>
-      {n.tasksOpen + n.tasksDone > 0 && <span className="chip tasks">{n.tasksDone}/{n.tasksOpen + n.tasksDone}</span>}
+      {n.tasksOpen + n.tasksDone > 0 && <span className="chip tasks" title="Checklist progress">{n.tasksDone}/{n.tasksOpen + n.tasksDone}</span>}
       {n.nextReminder && <span className="chip reminder"><Bell size={12} />{dueLabel(n.nextReminder).text.replace('Due ', '')}</span>}
-      {shown.map(t => <span key={t} className="chip">{t}</span>)}
-      {rest > 0 && <span className="chip">+{rest}</span>}
+      <TagDots tags={n.tags} />
     </>
   );
 }
 
 export function NoteRow({ n, active, href, onClick }: { n: ItemSummary; active?: boolean; href: string; onClick?: () => void }) {
+  const s = firstSentence(n.snippet);
   return (
-    <a className={classNames('note-row', active && 'active')} href={href} onClick={onClick} aria-current={active ? 'true' : undefined}>
+    <a className={classNames('note-row', active && 'active')} href={href} onClick={onClick} aria-current={active ? 'true' : undefined}
+      {...dragSource({ id: n.id, type: 'note' })}>
       <div className="info">
         <div className="t">{n.title}{n.conflicted && <span className="chip warn" title="Conflicted revision">conflict</span>}</div>
-        {n.snippet && <div className="s">{n.snippet}</div>}
+        {s && <div className="s">{s}</div>}
         <div className="chips">
           <span className="when">{relTime(n.updated)}</span>
           <NoteChips n={n} />
@@ -130,16 +172,17 @@ export function NoteRow({ n, active, href, onClick }: { n: ItemSummary; active?:
 }
 
 export function NoteCard({ n, href }: { n: ItemSummary; href: string }) {
+  const s = firstSentence(n.snippet);
   return (
-    <a className="card" href={href}>
+    <a className="card" href={href} {...dragSource({ id: n.id, type: 'note' })}>
       <span className="t">{n.title}</span>
-      {n.snippet && <span className="s">{n.snippet}</span>}
-      <span className="chips" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}><NoteChips n={n} /></span>
+      {s && <span className="s">{s}</span>}
       <span className="foot">
         <span>{relTime(n.updated)}</span>
+        <NoteChips n={n} />
         <span className="grow" />
         {n.conflicted && <span className="chip warn">conflict</span>}
-        {n.pinned && <span aria-label="Pinned">★</span>}
+        {n.pinned && <Star size={13} aria-label="Pinned" fill="currentColor" />}
       </span>
     </a>
   );

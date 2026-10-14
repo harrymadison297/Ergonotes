@@ -3,7 +3,7 @@
 import MarkdownIt from 'markdown-it';
 import MiniSearch from 'minisearch';
 import type {
-  CalendarData, ConflictChoice, ConflictDetail, ExportResult, FileBlob, HeadInfo, ImportFile, ItemSummary, NoteDoc,
+  CalendarData, ConflictChoice, ConflictDetail, ExportResult, FileBlob, HeadInfo, ImportFile, ItemSummary, NoteDoc, SearchHit,
   Settings, StoreConfig, SyncReport, TaskEntry, VaultApi, VaultState, VaultStatus, VersionInfo,
 } from './api.ts';
 import {
@@ -567,6 +567,39 @@ export class Vault implements VaultApi {
     if (!q) return [];
     const c = this.counts();
     return this.searchIndex.search(q).map(r => this.views.get(String(r.id))).filter((v): v is View => !!v && !this.inTrash(v)).map(v => this.summary(v, c)).slice(0, 50);
+  }
+
+  async searchHits(query: string): Promise<SearchHit[]> {
+    this.ready();
+    const q = query.trim();
+    if (!q) return [];
+    const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const hit = (v: View, where: SearchHit['in'], context: string): SearchHit => ({
+      id: v.id, type: v.type, title: v.title, path: this.path(v.id), tags: v.tags, in: where, context, updated: v.updated,
+    });
+    const out: SearchHit[] = [];
+    const seen = new Set<string>();
+    for (const v of this.views.values()) {
+      if (v.type !== 'folder' || this.inTrash(v)) continue;
+      const t = v.title.toLowerCase();
+      if (terms.every(x => t.includes(x))) { out.push(hit(v, 'title', '')); seen.add(v.id); }
+    }
+    for (const r of this.searchIndex.search(q)) {
+      const v = this.views.get(String(r.id));
+      if (!v || seen.has(v.id) || this.inTrash(v)) continue;
+      seen.add(v.id);
+      const titleLow = v.title.toLowerCase();
+      if (terms.some(x => titleLow.includes(x))) { out.push(hit(v, 'title', v.snippet)); continue; }
+      const text = plainSnippet(v.body, 1_000_000);
+      const low = text.toLowerCase();
+      let at = -1;
+      for (const x of terms) { const i = low.indexOf(x); if (i >= 0 && (at < 0 || i < at)) at = i; }
+      if (at < 0) { out.push(hit(v, v.tags.some(t => terms.some(x => t.toLowerCase().includes(x))) ? 'tag' : 'content', v.snippet)); continue; }
+      const from = Math.max(0, at - 40);
+      const ctx = (from > 0 ? '…' : '') + text.slice(from, at + 110).trim() + (at + 110 < text.length ? '…' : '');
+      out.push(hit(v, 'content', ctx));
+    }
+    return out.slice(0, 40);
   }
 
   async linkTargets(query: string): Promise<{ id: string; title: string }[]> {

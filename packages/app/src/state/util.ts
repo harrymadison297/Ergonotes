@@ -59,3 +59,23 @@ export function download(filename: string, mime: string, content: string) {
 export function classNames(...c: (string | false | null | undefined)[]): string {
   return c.filter(Boolean).join(' ');
 }
+
+/** The first sentence of a note's plain-text snippet, for one-line previews. */
+export function firstSentence(text: string, max = 140): string {
+  const t = text.trim();
+  if (!t) return '';
+  const m = /^(.+?[.!?…。])(\s|$)/.exec(t);
+  const s = m ? m[1] : t;
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
+/**
+ * Focus rings are for keyboard users only: after a Tab/arrow key the root gets `kbd`
+ * (CSS shows a ring), and any pointer press removes it again.
+ */
+export function installFocusMode(): void {
+  const root = document.documentElement;
+  const keys = new Set(['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+  window.addEventListener('keydown', e => { if (keys.has(e.key)) root.classList.add('kbd'); }, true);
+  window.addEventListener('pointerdown', () => root.classList.remove('kbd'), true);
+}

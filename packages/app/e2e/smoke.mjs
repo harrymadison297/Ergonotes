@@ -25,15 +25,14 @@ await page.getByLabel('Repeat password').fill(PASSWORD);
 await page.getByRole('button', { name: 'Create vault' }).click();
 await page.getByRole('navigation', { name: 'Main' }).waitFor({ timeout: 30000 });
 check('vault created and shell visible', true);
-await page.getByText('Ready to start taking notes?').waitFor();
+await page.getByRole('heading', { name: 'Home', exact: true }).waitFor();
 check('home screen rendered', true);
 check('default folders listed', (await page.getByRole('link', { name: 'Inbox' }).count()) > 0);
 await page.waitForTimeout(500);
 await page.screenshot({ path: `${shots}/01-home.png` });
 
 // new note
-await page.getByRole('button', { name: /New/ }).first().click();
-await page.getByRole('menuitem', { name: /New note/ }).click();
+await page.getByRole('button', { name: 'New note (Ctrl+N)' }).click();
 await page.getByLabel('Title').waitFor();
 await page.getByLabel('Title').fill('Property listings');
 await page.getByLabel('Title').press('Enter');
@@ -57,7 +56,7 @@ const tagInput = page.getByLabel('Add tag');
 await tagInput.fill('Business');
 await tagInput.press('Enter');
 await page.waitForTimeout(400);
-check('tag chip shown', (await page.locator('.editor-foot .chip', { hasText: 'Business' }).count()) === 1);
+check('tag shown as a coloured pill', (await page.locator('.editor-foot .tag-pill', { hasText: 'Business' }).count()) === 1);
 await page.screenshot({ path: `${shots}/02-note.png` });
 
 // persisted through the server: reload and reopen
@@ -86,10 +85,21 @@ check('task completes', (await page.getByText('Call the agent').count()) > 0);
 
 // search
 await page.goto(`${base}/#/notes`);
-await page.getByLabel('Search notes').fill('silver');
-await page.getByLabel('Search notes').press('Enter');
-await page.getByText('Search: silver').waitFor();
-check('search finds the note', (await page.locator('.note-row', { hasText: 'Property listings' }).count()) > 0);
+await page.keyboard.press('Control+k');
+const combo = page.getByRole('combobox', { name: 'Search' });
+await combo.fill('silver');
+await page.locator('.palette-item', { hasText: 'Property listings' }).waitFor({ timeout: 10000 });
+check('search popup shows the note with the matching passage', (await page.locator('.palette-item mark').count()) > 0);
+await page.screenshot({ path: `${shots}/04a-search.png` });
+await combo.press('Enter');
+await page.getByLabel('Title').waitFor();
+check('Enter opens the result', (await page.getByLabel('Title').inputValue()) === 'Property listings');
+await page.keyboard.press('Control+k');
+await combo.fill('inbox');
+await page.locator('.palette-item .ico.folder').first().waitFor({ timeout: 10000 });
+check('folders are found by name in the popup', true);
+await page.keyboard.press('Escape');
+
 
 // calendar + folders
 await page.goto(`${base}/#/calendar`);
@@ -161,6 +171,21 @@ await page.keyboard.type(' edited');
 await page.waitForTimeout(1500);
 const unkBody = (await call('getNote', unk.id)).body;
 check('unknown ergonote block round-trips through an edit', unkBody.includes('```ergonote-future\n{"a":1,"b":[1,2,3]}\n```') && unkBody.includes('after edited'), JSON.stringify(unkBody));
+
+// folder explorer, drag and drop, icon-only sidebar
+await page.goto(`${base}/#/notes`);
+await page.locator('.ex-tile', { hasText: 'Inbox' }).dblclick();
+await page.locator('.ex-tile', { hasText: 'Property listings' }).waitFor({ timeout: 10000 });
+check('an open folder fills the right pane like a file manager', true);
+await page.screenshot({ path: `${shots}/05a-explorer.png` });
+await page.locator('.ex-tile', { hasText: 'Property listings' }).dragTo(page.locator('.nav-item', { has: page.getByRole('link', { name: 'Projects' }) }).first());
+await page.locator('.ex-tile', { hasText: 'Property listings' }).waitFor({ state: 'detached', timeout: 10000 });
+check('dragging a note onto a sidebar folder moves it', true);
+await page.getByRole('button', { name: 'Collapse sidebar' }).click();
+await page.waitForTimeout(300);
+check('sidebar collapses to icons', (await page.locator('.sidebar.rail').count()) === 1 && (await page.locator('.sidebar.rail .brand-name').isVisible()) === false);
+await page.screenshot({ path: `${shots}/05b-rail.png` });
+await page.getByRole('button', { name: 'Expand sidebar' }).click();
 
 // mobile
 const m = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Edit3, FilePlus2, Send } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, FilePlus2, LayoutTemplate, Send } from 'lucide-react';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { isoDay } from '../state/util';
-import { NoteCard } from '../components/ui';
+import { IconBtn, NoteCard } from '../components/ui';
+import { tagColor } from '../state/tags';
 import { TaskRow } from './Tasks';
 
 export function MiniCalendar({ onPick }: { onPick?: (day: string) => void }) {
@@ -58,8 +59,7 @@ export function Home() {
 
   return (
     <div className="home">
-      <p className="greet">Ready to start taking notes?</p>
-      <h1>{app.status.deviceName}’s Home</h1>
+      <h1>Home</h1>
 
       <section className="widget" aria-labelledby="w-notes">
         <h2 id="w-notes">Notes
@@ -68,10 +68,10 @@ export function Home() {
             <button aria-pressed={tab === 'recent'} onClick={() => setTab('recent')}>Recent</button>
             <button aria-pressed={tab === 'inbox'} onClick={() => setTab('inbox')}>Inbox</button>
           </span>
-          <button className="icon-btn" aria-label="New note" onClick={() => void app.newNote()}><FilePlus2 size={18} /></button>
+          <IconBtn label="New note" variant="primary" icon={<FilePlus2 size={18} />} onClick={() => void app.newNote()} />
         </h2>
         {shown.length === 0
-          ? <div className="empty" style={{ padding: 24 }}>Nothing here yet. Press <b>New</b> to write your first note.</div>
+          ? <div className="empty" style={{ padding: 24 }}>Nothing here yet. Press the green + to write your first note.</div>
           : <div className="cards row">{shown.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })} />)}</div>}
       </section>
 
@@ -83,7 +83,7 @@ export function Home() {
               onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void saveScratch(); }} />
             <div className="foot">
               <span>{scratch.length}/600</span>
-              <button className="btn" onClick={() => void saveScratch()} disabled={!scratch.trim()}><Send size={14} /> Save to Inbox</button>
+              <IconBtn label="Save to Inbox (Ctrl+Enter)" variant="primary" icon={<Send size={16} />} onClick={() => void saveScratch()} disabled={!scratch.trim()} />
             </div>
           </div>
         </section>
@@ -94,7 +94,7 @@ export function Home() {
         </section>
 
         <section className="widget" aria-labelledby="w-tasks">
-          <h2 id="w-tasks">My Tasks<span className="grow" /><a href={href({ name: 'tasks' })} className="btn ghost">All tasks</a></h2>
+          <h2 id="w-tasks">My Tasks<span className="grow" /><a href={href({ name: 'tasks' })} className="icon-btn" title="All tasks" aria-label="All tasks"><ArrowRight size={18} /></a></h2>
           {open.length === 0 ? <div className="empty" style={{ padding: 16 }}>No open tasks. Add a checklist to any note.</div>
             : open.map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} compact />)}
         </section>
@@ -110,10 +110,10 @@ export function Home() {
       {app.tags.length > 0 && (
         <section className="widget" aria-labelledby="w-tags">
           <h2 id="w-tags">Tags</h2>
-          <div className="tag-cloud">{app.tags.slice(0, 30).map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })}>{t.tag}<small>{t.count}</small></a>)}</div>
+          <div className="tag-cloud">{app.tags.slice(0, 30).map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })} style={{ ['--c' as string]: tagColor(t.tag) }}><i className="tag-dot" />{t.tag}<small>{t.count}</small></a>)}</div>
         </section>
       )}
-      <button className="btn ghost" onClick={() => app.setDialog({ kind: 'templates' })} style={{ marginTop: 8 }}><Edit3 size={14} /> Start from a template</button>
+      <IconBtn label="Start from a template" variant="soft" icon={<LayoutTemplate size={18} />} onClick={() => app.setDialog({ kind: 'templates' })} />
     </div>
   );
 }

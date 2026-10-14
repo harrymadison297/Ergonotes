@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { FilePlus2, KeyRound, Link2, Loader2, ShieldCheck } from 'lucide-react';
+import { FilePlus2, KeyRound, Link2, Loader2 } from 'lucide-react';
 import type { StoreConfig, VaultStatus } from '@ergonotes/core';
 import type { Backend } from '../backend';
 import { classNames } from '../state/util';
@@ -46,7 +46,7 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
   return (
     <div className="gate">
       <form className="gate-card" onSubmit={submit}>
-        <div className="logo"><ShieldCheck size={26} /></div>
+        <img src="./icon.svg" width={48} height={48} alt="" style={{ borderRadius: 12 }} />
         {!noVault ? (
           <>
             <h1>{remote ? 'Sign in' : 'Unlock your notes'}</h1>

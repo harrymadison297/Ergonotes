@@ -110,6 +110,21 @@ export interface CalendarData {
 
 export interface FileBlob { name: string; mime: string; data: string }
 export interface ImportFile { path: string; content: string }
+/** One row of the search popup: where it lives and the passage that matched. */
+export interface SearchHit {
+  id: string;
+  type: ItemType;
+  title: string;
+  /** folder titles from the root down to the item's folder */
+  path: { id: string; title: string }[];
+  tags: string[];
+  /** where the query matched */
+  in: 'title' | 'content' | 'tag';
+  /** passage around the first match in the body (empty for folders and title matches) */
+  context: string;
+  updated: string;
+}
+
 export interface ExportResult { filename: string; mime: string; content: string }
 
 export interface VaultApi {
@@ -138,6 +153,8 @@ export interface VaultApi {
   emptyTrash(): Promise<void>;
 
   search(query: string): Promise<ItemSummary[]>;
+  /** Notes (with the matching passage) and folders whose name matches; for the search popup. */
+  searchHits(query: string): Promise<SearchHit[]>;
   linkTargets(query: string): Promise<{ id: string; title: string }[]>;
   tags(): Promise<{ tag: string; count: number }[]>;
   tasks(): Promise<TaskEntry[]>;
@@ -171,7 +188,7 @@ export interface VaultApi {
 export const VAULT_METHODS = [
   'status', 'createVault', 'joinVault', 'unlock', 'lock', 'changePassword', 'setDeviceName',
   'listItems', 'getNote', 'createNote', 'saveNote', 'createFolder', 'capture', 'rename', 'move', 'setTags',
-  'renameTag', 'setPinned', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'linkTargets', 'tags', 'tasks', 'toggleTask',
+  'renameTag', 'setPinned', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'searchHits', 'linkTargets', 'tags', 'tasks', 'toggleTask',
   'calendar', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
   'resolveConflict', 'history', 'versionText', 'restoreVersion', 'getSettings', 'setSettings', 'setStore',
   'sync', 'flush', 'addFile', 'getFile', 'importMarkdown', 'exportNote',

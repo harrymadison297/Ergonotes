@@ -1,13 +1,16 @@
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, ChevronDown, ChevronRight, CloudOff, FileText, Folder as FolderIcon, FolderPlus, Home, Keyboard, LayoutTemplate,
-  Loader2, MoreHorizontal, Plus, RefreshCw, Search, Settings as SettingsIcon, Star, Tag as TagIcon, Trash2, CheckCircle2, FilePlus2, Upload, Cloud,
+  Loader2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, Settings as SettingsIcon, Star, Tag as TagIcon, Trash2,
+  CheckCircle2, FilePlus2, Upload, Cloud,
 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames, isoDay, relTime } from '../state/util';
-import { useMenu, type MenuEntry } from './ui';
+import { tagColor } from '../state/tags';
+import { dragSource, dropZone, type Dragged } from '../state/dnd';
+import { IconBtn, useMenu, type MenuEntry } from './ui';
 
 const ROLE_ORDER = ['inbox', 'projects', 'areas', 'resources', 'archive', 'templates'];
 const sortFolders = (a: ItemSummary, b: ItemSummary) => {
@@ -49,44 +52,43 @@ export function useNewMenu() {
   return { open, node: m.node };
 }
 
-function SyncPill() {
+export function useSync() {
   const app = useApp();
   const st = app.status;
   const noStore = !st.store;
-  let icon = <Cloud size={14} />;
+  let icon = <Cloud size={18} />;
   let text = 'Synced';
+  let dot: 'ok' | 'err' | 'busy' | null = null;
   let err = false;
-  if (st.syncing) { icon = <Loader2 size={14} className="spin" />; text = 'Syncing…'; }
-  else if (noStore) { icon = <CloudOff size={14} />; text = 'Local only'; }
-  else if (st.lastSyncError) { icon = <AlertTriangle size={14} />; text = 'Sync problem'; err = true; }
-  else if (st.pending > 0) { icon = <RefreshCw size={14} />; text = `${st.pending} waiting`; }
-  else if (st.lastSyncAt) text = `Synced ${relTime(st.lastSyncAt)}`;
-  return (
-    <button className={classNames('sync-pill', err && 'err')} title={st.lastSyncError ?? (noStore ? 'Choose storage to sync between devices' : 'Sync now')}
-      onClick={async () => {
-        if (noStore) return app.setDialog({ kind: 'settings', tab: 'sync' });
-        const r = await app.run(app.api.sync());
-        await app.refresh();
-        if (r?.error) app.toast(r.error, 'error'); else if (r) app.toast(r.pulled || r.pushed ? `Synced: ${r.pulled} received, ${r.pushed} sent` : 'Everything is up to date');
-      }}>
-      {icon}<span>{text}</span>
-    </button>
-  );
+  if (st.syncing) { icon = <Loader2 size={18} className="spin" />; text = 'Syncing…'; dot = 'busy'; }
+  else if (noStore) { icon = <CloudOff size={18} />; text = 'Local only'; }
+  else if (st.lastSyncError) { icon = <AlertTriangle size={18} />; text = 'Sync problem'; err = true; dot = 'err'; }
+  else if (st.pending > 0) { icon = <RefreshCw size={18} />; text = `${st.pending} waiting`; dot = 'busy'; }
+  else if (st.lastSyncAt) { text = `Synced ${relTime(st.lastSyncAt)}`; dot = 'ok'; }
+  const label = st.lastSyncError ?? (noStore ? 'Choose storage to sync between devices' : `${text}. Sync now`);
+  const run = async () => {
+    if (noStore) return app.setDialog({ kind: 'settings', tab: 'sync' });
+    const r = await app.run(app.api.sync());
+    await app.refresh();
+    if (r?.error) app.toast(r.error, 'error'); else if (r) app.toast(r.pulled || r.pushed ? `Synced: ${r.pulled} received, ${r.pushed} sent` : 'Everything is up to date');
+  };
+  return { icon, text, dot, err, label, run };
 }
 
 export function Sidebar() {
   const app = useApp();
-  const { items, route, tags, conflicts, status, go } = app;
+  const { items, route, tags, conflicts, go, rail, toggleRail } = app;
   const [openFolders, toggleFolder] = useStoredSet('ergo.openFolders');
   const [openTags, toggleTag] = useStoredSet('ergo.openTags');
   const [foldersOpen, setFoldersOpen] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(true);
-  const [q, setQ] = useState('');
   const newMenu = useNewMenu();
   const folderMenu = useMenu();
   const tagMenu = useMenu();
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const sync = useSync();
+  const [hover, setHover] = useState<string | null>(null);
+  const drop = { key: hover, set: setHover };
 
   const folders = useMemo(() => items.filter(i => i.type === 'folder' && !i.inTrash), [items]);
   const childrenOf = useMemo(() => {
@@ -107,31 +109,50 @@ export function Sidebar() {
     return { names: [...names].sort(), count };
   }, [tags]);
 
-  const isActive = (r: string, extra?: boolean) => route.name === r && extra !== false;
+  const isActive = (r: string) => route.name === r;
+
+  // ---- what dropping an item on a row does
+  const moveTo = (parent: string | null) => async (d: Dragged) => {
+    if (d.id === parent) return;
+    await app.run(app.api.move(d.id, parent));
+    await app.refresh();
+  };
+  const trashIt = async (d: Dragged) => { await app.run(app.api.trash(d.id)); await app.refresh(); app.toast('Moved to Trash'); };
+  const pinIt = async (d: Dragged) => { await app.run(app.api.setPinned(d.id, true)); await app.refresh(); };
+  const tagIt = (tag: string) => async (d: Dragged) => {
+    const cur = app.byId.get(d.id)?.tags ?? [];
+    if (cur.includes(tag)) return;
+    await app.run(app.api.setTags(d.id, [...cur, tag]));
+    await app.refresh();
+    app.toast(`Tagged “${tag}”`);
+  };
+  const notesOnly = (d: Dragged) => d.type === 'note';
+
+  /** a row's empty space is part of the link: pressing anywhere on it navigates */
+  const rowClick = (to: () => void) => (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('a, button')) return;
+    to();
+  };
 
   const folderNode = (f: ItemSummary, depth: number): JSX.Element => {
     const kids = childrenOf.get(f.id) ?? [];
     const open = openFolders.has(f.id);
     const active = route.name === 'notes' && route.folder === f.id;
+    const key = `f:${f.id}`;
     return (
       <div key={f.id}>
-        <div className={classNames('nav-item', active && 'active')} style={{ paddingLeft: 8 + depth * 14, outline: dropTarget === f.id ? '2px solid var(--blue)' : undefined }}
-          onContextMenu={e => { e.preventDefault(); folderMenu.open({ currentTarget: e.currentTarget }, folderEntries(f)); }}
-          onDragOver={e => { if (e.dataTransfer.types.includes('application/x-ergo-item')) { e.preventDefault(); setDropTarget(f.id); } }}
-          onDragLeave={() => setDropTarget(null)}
-          onDrop={async e => {
-            e.preventDefault(); setDropTarget(null);
-            const id = e.dataTransfer.getData('application/x-ergo-item');
-            if (id && id !== f.id) { await app.run(app.api.move(id, f.id)); await app.refresh(); }
-          }}>
+        <div className={classNames('nav-item', active && 'active', hover === key && 'drop-over')} style={{ paddingLeft: depth * 14 }} title={f.title}
+          {...dragSource({ id: f.id, type: 'folder' })} {...dropZone(key, drop, moveTo(f.id))}
+          onClick={rowClick(() => go({ name: 'notes', folder: f.id }))}
+          onContextMenu={e => { e.preventDefault(); folderMenu.open({ currentTarget: e.currentTarget }, folderEntries(f)); }}>
           <button className="nav-chevron" aria-label={open ? 'Collapse' : 'Expand'} onClick={() => toggleFolder(f.id)} style={{ visibility: kids.length ? 'visible' : 'hidden' }}>
             {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
-          <a className="label" href={href({ name: 'notes', folder: f.id })} style={{ color: 'inherit', textDecoration: 'none', display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
-            <FolderIcon size={16} /><span className="label">{f.title}</span>
+          <a className="nav-link" href={href({ name: 'notes', folder: f.id })} draggable={false}>
+            <FolderIcon size={18} /><span className="label">{f.title}</span>
           </a>
           <span className="count">{f.childCount || ''}</span>
-          <button className="nav-chevron" aria-label={`Actions for ${f.title}`} onClick={e => folderMenu.open(e, folderEntries(f), 'right')}><MoreHorizontal size={14} /></button>
+          <button className="nav-more" aria-label={`Actions for ${f.title}`} onClick={e => folderMenu.open(e, folderEntries(f), 'right')}><MoreHorizontal size={16} /></button>
         </div>
         {open && kids.map(k => folderNode(k, depth + 1))}
       </div>
@@ -151,90 +172,114 @@ export function Sidebar() {
     ];
   }
 
-  const initial = (status.deviceName || 'E').trim().charAt(0).toUpperCase();
+  const topTags = tagTree.names.filter(n => !n.includes('/'));
+  const tagsMenuEntries = (): MenuEntry[] => topTags.length
+    ? tagTree.names.map(n => ({ label: n, icon: <i className="tag-dot" style={{ ['--c' as string]: tagColor(n) }} />, onClick: () => go({ name: 'notes', tag: n }) }))
+    : [{ label: 'No tags yet', disabled: true, onClick: () => undefined }];
+
+  const link = (to: string, icon: JSX.Element, label: string, active: boolean, extra?: React.ReactNode) => (
+    <a className={classNames('nav-item', active && 'active')} href={to} title={label} aria-current={active ? 'page' : undefined}>
+      <span className="nav-chevron blank" aria-hidden />{icon}<span className="label">{label}</span>{extra}
+    </a>
+  );
+
   return (
-    <aside className="sidebar" aria-label="Sidebar">
-      <div className="account">
-        <div className="avatar" aria-hidden>{initial}</div>
-        <div className="names"><b>{status.deviceName}</b><span>{status.store ? status.store.label : 'This device only'}</span></div>
-        <button className="icon-btn" aria-label="Settings" onClick={() => app.setDialog({ kind: 'settings' })}><SettingsIcon size={18} /></button>
+    <aside className={classNames('sidebar', rail && 'rail')} aria-label="Sidebar">
+      <div className="sidebar-head">
+        <a className="brand" href={href({ name: 'home' })} title="Home" aria-label="Ergonotes home">
+          <img src="./icon.svg" alt="" /><span className="brand-name">Ergonotes</span>
+        </a>
+        <IconBtn label={rail ? 'Expand sidebar' : 'Collapse sidebar'} icon={rail ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />} onClick={toggleRail} />
       </div>
 
-      <form className="search-box" role="search" onSubmit={e => { e.preventDefault(); go({ name: 'notes', q: q.trim() || undefined }); }}>
-        <Search size={16} />
-        <input id="global-search" aria-label="Search notes" placeholder="Search" value={q} onChange={e => setQ(e.target.value)} />
-        <kbd>Ctrl K</kbd>
-      </form>
-
-      <button className="new-btn" onClick={e => newMenu.open(e)} aria-haspopup="menu">
-        <span><Plus size={18} /> New</span><ChevronDown size={16} />
-      </button>
+      <div className="quick">
+        <IconBtn label="Search (Ctrl+K)" variant="soft" icon={<Search size={18} />} onClick={() => app.setDialog({ kind: 'search' })} />
+        <IconBtn label="New note (Ctrl+N)" variant="primary" icon={<Plus size={20} />} onClick={() => void app.newNote()} />
+        <IconBtn label="New folder" variant="soft" icon={<FolderPlus size={18} />} onClick={() => app.setDialog({ kind: 'newFolder', parent: null })} />
+        <IconBtn label="More: template, daily note, import" variant="soft" haspopup icon={<LayoutTemplate size={18} />} onClick={e => newMenu.open(e)} />
+      </div>
       {newMenu.node}
       {folderMenu.node}
       {tagMenu.node}
 
       <nav className="nav" aria-label="Main">
-        <a className={classNames('nav-item', isActive('home') && 'active')} href={href({ name: 'home' })}><span className="nav-chevron" /><Home size={18} /><span className="label">Home</span></a>
+        {link(href({ name: 'home' }), <Home size={18} />, 'Home', isActive('home'))}
 
-        <div className="nav-item" role="button" tabIndex={0} onClick={() => setShortcutsOpen(o => !o)} onKeyDown={e => { if (e.key === 'Enter') setShortcutsOpen(o => !o); }}>
+        <div className={classNames('nav-item', hover === 'shortcuts' && 'drop-over')} role="button" tabIndex={0} title="Shortcuts"
+          {...dropZone('shortcuts', drop, pinIt, notesOnly)}
+          onClick={() => setShortcutsOpen(o => !o)} onKeyDown={e => { if (e.key === 'Enter') setShortcutsOpen(o => !o); }}>
           <span className="nav-chevron">{shortcutsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
           <Star size={18} /><span className="label">Shortcuts</span>
         </div>
         {shortcutsOpen && (
           <div className="nav-children">
-            {pinned.length === 0 && <div className="nav-item" style={{ color: 'var(--text-3)', fontSize: 12.5 }}>Star a note to pin it here</div>}
+            {pinned.length === 0 && <div className="nav-hint">Star a note, or drop one here, to pin it</div>}
             {pinned.map(p => (
-              <a key={p.id} className="nav-item" href={href({ name: 'notes', note: p.id, folder: p.parent ?? undefined })}><FileText size={16} /><span className="label">{p.title}</span></a>
+              <a key={p.id} className="nav-item" href={href({ name: 'notes', note: p.id, folder: p.parent ?? undefined })} title={p.title}
+                {...dragSource({ id: p.id, type: 'note' })}>
+                <span className="nav-chevron blank" aria-hidden /><FileText size={16} /><span className="label">{p.title}</span>
+              </a>
             ))}
           </div>
         )}
         <div className="nav-sep" />
-        <a className={classNames('nav-item', route.name === 'notes' && !route.folder && !route.tag && 'active')} href={href({ name: 'notes' })}><span className="nav-chevron" /><FileText size={18} /><span className="label">Notes</span></a>
-        <a className={classNames('nav-item', isActive('tasks') && 'active')} href={href({ name: 'tasks' })}><span className="nav-chevron" /><CheckCircle2 size={18} /><span className="label">Tasks</span></a>
-        <a className={classNames('nav-item', isActive('calendar') && 'active')} href={href({ name: 'calendar' })}><span className="nav-chevron" /><CalendarDays size={18} /><span className="label">Calendar</span></a>
+        {link(href({ name: 'notes' }), <FileText size={18} />, 'Notes', route.name === 'notes' && !route.folder && !route.tag)}
+        {link(href({ name: 'tasks' }), <CheckCircle2 size={18} />, 'Tasks', isActive('tasks'))}
+        {link(href({ name: 'calendar' }), <CalendarDays size={18} />, 'Calendar', isActive('calendar'))}
         <div className="nav-sep" />
 
-        <div className={classNames('nav-item', route.name === 'folders' && 'active')}>
+        <div className={classNames('nav-item', route.name === 'folders' && 'active', hover === 'root' && 'drop-over')} title="Folders"
+          {...dropZone('root', drop, moveTo(null))}
+          onClick={rowClick(() => go({ name: 'folders' }))}>
           <button className="nav-chevron" aria-label="Toggle folders" onClick={() => setFoldersOpen(o => !o)}>{foldersOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
-          <a className="label" href={href({ name: 'folders' })} style={{ color: 'inherit', textDecoration: 'none', display: 'flex', gap: 10, alignItems: 'center' }}><FolderIcon size={18} /><span className="label">Folders</span></a>
+          <a className="nav-link" href={href({ name: 'folders' })}><FolderIcon size={18} /><span className="label">Folders</span></a>
         </div>
         {foldersOpen && <div className="nav-children" style={{ marginLeft: 6 }}>{(childrenOf.get(null) ?? []).map(f => folderNode(f, 0))}</div>}
 
-        <div className="nav-item">
-          <button className="nav-chevron" aria-label="Toggle tags" onClick={() => setTagsOpen(o => !o)}>{tagsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
-          <span className="label" style={{ display: 'flex', gap: 10, alignItems: 'center' }} onClick={() => setTagsOpen(o => !o)}><TagIcon size={18} /> Tags</span>
+        <div className="nav-item" role="button" tabIndex={0} title="Tags"
+          onClick={e => { if (rail) tagMenu.open(e, tagsMenuEntries(), 'left'); else setTagsOpen(o => !o); }}
+          onKeyDown={e => { if (e.key === 'Enter') setTagsOpen(o => !o); }}>
+          <span className="nav-chevron">{tagsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+          <TagIcon size={18} /><span className="label">Tags</span>
         </div>
         {tagsOpen && (
           <div className="nav-children">
-            {tagTree.names.length === 0 && <div className="nav-item" style={{ color: 'var(--text-3)', fontSize: 12.5 }}>No tags yet</div>}
+            {tagTree.names.length === 0 && <div className="nav-hint">No tags yet</div>}
             {tagTree.names.filter(n => { const p = n.split('/'); return p.length === 1 || openTags.has(p.slice(0, -1).join('/')); }).map(n => {
               const depth = n.split('/').length - 1;
               const hasKids = tagTree.names.some(x => x.startsWith(n + '/'));
+              const key = `t:${n}`;
+              const rename = () => app.setDialog({ kind: 'renameTag', tag: n });
               return (
-                <div key={n} className={classNames('nav-item', route.name === 'notes' && route.tag === n && 'active')} style={{ paddingLeft: 8 + depth * 14 }}>
+                <div key={n} className={classNames('nav-item', route.name === 'notes' && route.tag === n && 'active', hover === key && 'drop-over')} style={{ paddingLeft: depth * 14 }} title={n}
+                  {...dropZone(key, drop, tagIt(n), notesOnly)}
+                  onClick={rowClick(() => go({ name: 'notes', tag: n }))}
+                  onContextMenu={e => { e.preventDefault(); tagMenu.open({ currentTarget: e.currentTarget }, [{ label: 'Rename tag…', onClick: rename }]); }}>
                   <button className="nav-chevron" style={{ visibility: hasKids ? 'visible' : 'hidden' }} aria-label="Toggle" onClick={() => toggleTag(n)}>{openTags.has(n) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
-                  <a className="label" href={href({ name: 'notes', tag: n })} style={{ color: 'inherit', textDecoration: 'none' }}
-                    onContextMenu={e => { e.preventDefault(); tagMenu.open({ currentTarget: e.currentTarget }, [{ label: 'Rename tag…', onClick: () => app.setDialog({ kind: 'renameTag', tag: n }) }]); }}>{n.split('/').pop()}</a>
+                  <a className="nav-link" href={href({ name: 'notes', tag: n })}>
+                    <i className="tag-dot" style={{ ['--c' as string]: tagColor(n) }} /><span className="label">{n.split('/').pop()}</span>
+                  </a>
                   <span className="count">{tagTree.count(n)}</span>
-                  <button className="nav-chevron" aria-label={`Actions for tag ${n}`} onClick={e => tagMenu.open(e, [{ label: 'Rename tag…', onClick: () => app.setDialog({ kind: 'renameTag', tag: n }) }], 'right')}><MoreHorizontal size={14} /></button>
+                  <button className="nav-more" aria-label={`Actions for tag ${n}`} onClick={e => tagMenu.open(e, [{ label: 'Rename tag…', onClick: rename }], 'right')}><MoreHorizontal size={16} /></button>
                 </div>
               );
             })}
           </div>
         )}
         <div className="nav-sep" />
-        {conflicts.length > 0 && (
-          <a className={classNames('nav-item', isActive('conflicts') && 'active')} href={href({ name: 'conflicts' })}>
-            <span className="nav-chevron" /><AlertTriangle size={18} style={{ color: 'var(--red)' }} /><span className="label">Conflicts</span><span className="badge">{conflicts.length}</span>
-          </a>
-        )}
-        <a className={classNames('nav-item', isActive('trash') && 'active')} href={href({ name: 'trash' })}><span className="nav-chevron" /><Trash2 size={18} /><span className="label">Trash</span>{trashCount > 0 && <span className="count">{trashCount}</span>}</a>
+        {conflicts.length > 0 && link(href({ name: 'conflicts' }), <AlertTriangle size={18} style={{ color: 'var(--danger)' }} />, 'Conflicts', isActive('conflicts'),
+          <><span className="badge">{conflicts.length}</span><i className="alert-dot" /></>)}
+        <a className={classNames('nav-item', isActive('trash') && 'active', hover === 'trash' && 'drop-over')} href={href({ name: 'trash' })} title="Trash"
+          {...dropZone('trash', drop, trashIt)}>
+          <span className="nav-chevron blank" aria-hidden /><Trash2 size={18} /><span className="label">Trash</span>{trashCount > 0 && <span className="count">{trashCount}</span>}
+        </a>
       </nav>
 
       <div className="sidebar-foot">
-        <SyncPill />
-        <span className="grow" />
-        <button className="icon-btn" aria-label="Keyboard shortcuts" title="Keyboard shortcuts" onClick={() => app.setDialog({ kind: 'shortcuts' })}><Keyboard size={18} /></button>
+        <IconBtn label={sync.label} icon={sync.icon} dot={sync.dot} onClick={() => void sync.run()} />
+        <span className={classNames('grow', 'sync-text', sync.err && 'err')} title={sync.label}>{sync.text}</span>
+        <IconBtn label="Keyboard shortcuts" icon={<Keyboard size={18} />} onClick={() => app.setDialog({ kind: 'shortcuts' })} />
+        <IconBtn label="Settings" icon={<SettingsIcon size={18} />} onClick={() => app.setDialog({ kind: 'settings' })} />
       </div>
     </aside>
   );

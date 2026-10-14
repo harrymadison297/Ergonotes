@@ -66,8 +66,8 @@ export function ConflictDialog({ id, onClose }: { id: string; onClose: () => voi
         </div>
       )}
       <div className="compare-cols" style={{ marginBottom: 12 }}>
-        <div><b>This device</b><div className="hint" style={{ color: 'var(--text-3)' }}>{when(local)}</div></div>
-        {other && <div><b>{other.deviceName}</b><div className="hint" style={{ color: 'var(--text-3)' }}>{other.purge ? 'Deleted this note' : when(other)}</div></div>}
+        <div><b>This device</b><div className="hint" style={{ color: 'var(--text-2)' }}>{when(local)}</div></div>
+        {other && <div><b>{other.deviceName}</b><div className="hint" style={{ color: 'var(--text-2)' }}>{other.purge ? 'Deleted this note' : when(other)}</div></div>}
       </div>
       {other?.purge ? (
         <div className="banner" style={{ borderRadius: 6 }}>The other device deleted this note. Keep your version to cancel the deletion, or delete it everywhere.
@@ -80,7 +80,7 @@ export function ConflictDialog({ id, onClose }: { id: string; onClose: () => voi
               {differing.map(k => (
                 <label key={k} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '3px 0' }}>
                   <input type="checkbox" checked={!!props[k]} onChange={e => setProps({ ...props, [k]: e.target.checked })} />
-                  <span><b>{k}</b>: {JSON.stringify(lDoc.fm[k] ?? null)} → <b>{JSON.stringify(oDoc.fm[k] ?? null)}</b> <span style={{ color: 'var(--text-3)' }}>(use {other?.deviceName}’s)</span></span>
+                  <span><b>{k}</b>: {JSON.stringify(lDoc.fm[k] ?? null)} → <b>{JSON.stringify(oDoc.fm[k] ?? null)}</b> <span style={{ color: 'var(--text-2)' }}>(use {other?.deviceName}’s)</span></span>
                 </label>
               ))}
             </fieldset>
@@ -88,8 +88,8 @@ export function ConflictDialog({ id, onClose }: { id: string; onClose: () => voi
           <div className="diff" role="region" aria-label="Differences">
             {ops.map((op, i) => {
               if (op.type === 'same') { inChange = false; return op.lines.length > 6
-                ? <div key={i}>{[...op.lines.slice(0, 2), '…', ...op.lines.slice(-2)].map((l, j) => <div key={j} className="diff-line"><span className="mark" /><span style={{ color: 'var(--text-3)' }}>{l}</span></div>)}</div>
-                : <div key={i}>{op.lines.map((l, j) => <div key={j} className="diff-line"><span className="mark" /><span style={{ color: 'var(--text-3)' }}>{l}</span></div>)}</div>; }
+                ? <div key={i}>{[...op.lines.slice(0, 2), '…', ...op.lines.slice(-2)].map((l, j) => <div key={j} className="diff-line"><span className="mark" /><span style={{ color: 'var(--text-2)' }}>{l}</span></div>)}</div>
+                : <div key={i}>{op.lines.map((l, j) => <div key={j} className="diff-line"><span className="mark" /><span style={{ color: 'var(--text-2)' }}>{l}</span></div>)}</div>; }
               const first = !inChange;
               if (first) { hunk++; inChange = true; }
               const h = hunk;
@@ -143,7 +143,7 @@ export function HistoryDialog({ id, onClose }: { id: string; onClose: () => void
               <button key={v.commit} role="option" aria-selected={sel === v.commit} className="menu-item" style={{ background: sel === v.commit ? 'var(--bg-active)' : undefined }} onClick={() => setSel(v.commit)}>
                 <HistoryIcon size={15} />
                 <span className="grow"><span style={{ display: 'block' }}>{new Date(v.ts).toLocaleString('en', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                  <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{v.deviceName}{v.current ? ' · current' : ''}</span></span>
+                  <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{v.deviceName}{v.current ? ' · current' : ''}</span></span>
               </button>
             ))}
           </div>
@@ -202,7 +202,7 @@ export function TemplatesDialog({ onClose }: { onClose: () => void }) {
             const n = await app.run(app.api.createFromTemplate(t.id));
             if (n) { await app.refresh(); onClose(); app.go({ name: 'notes', note: n.id, folder: n.parent ?? undefined }); }
           }}>
-          <b>{t.title}</b><span style={{ color: 'var(--text-3)', fontSize: 12.5 }}>{t.snippet.slice(0, 90)}</span>
+          <b>{t.title}</b><span style={{ color: 'var(--text-2)', fontSize: 12.5 }}>{t.snippet.slice(0, 90)}</span>
         </button>
       ))}
     </Dialog>
@@ -348,13 +348,13 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
           }}>Change password</button>
           <hr style={{ margin: '24px 0', border: 0, borderTop: '1px solid var(--border)' }} />
           <button className="btn" onClick={async () => { await app.run(app.api.lock()); location.reload(); }}><LogOut size={16} /> Lock now</button>
-          <p className="hint" style={{ color: 'var(--text-3)' }}>Forgetting the password means your notes cannot be recovered; there is no reset.</p>
+          <p className="hint" style={{ color: 'var(--text-2)' }}>Forgetting the password means your notes cannot be recovered; there is no reset.</p>
         </div>
       )}
       {tab === 'data' && (
         <div style={{ maxWidth: 520 }}>
           <button className="btn" onClick={() => { onClose(); app.setDialog({ kind: 'import' }); }}><FileUp size={16} /> Import Markdown files…</button>
-          <p className="hint" style={{ color: 'var(--text-3)' }}>Export any note from its Export menu (Markdown, HTML, PDF).</p>
+          <p className="hint" style={{ color: 'var(--text-2)' }}>Export any note from its Export menu (Markdown, HTML, PDF).</p>
           <button className="btn" onClick={async () => { await app.run(app.api.emptyTrash()); await app.refresh(); app.toast('Trash emptied'); }}>Empty Trash now</button>
         </div>
       )}
@@ -396,7 +396,7 @@ function AgentsPanel() {
           <tr key={t.id}><td className="name">{t.name}</td><td>{new Date(t.created).toLocaleDateString()}</td><td>{t.lastUsed ? relTime(t.lastUsed) : 'never'}</td>
             <td style={{ textAlign: 'right' }}><button className="icon-btn" aria-label={`Revoke ${t.name}`} onClick={async () => { await post({ revoke: t.id }); await load(); }}><Trash2 size={16} /></button></td></tr>
         ))}
-        {tokens.length === 0 && <tr><td colSpan={4} style={{ color: 'var(--text-3)' }}>No tokens yet.</td></tr>}
+        {tokens.length === 0 && <tr><td colSpan={4} style={{ color: 'var(--text-2)' }}>No tokens yet.</td></tr>}
       </tbody></table>
     </div>
   );
