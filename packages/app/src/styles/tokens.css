@@ -50,8 +50,11 @@
   --fs-xs: 12px;
   --fs-s: 14px;
   --fs-m: 16px;
+  --fs-lg: 18px;
   --fs-l: 20px;
+  --fs-h: 22px;
   --fs-xl: 24px;
+  --fs-title: 30px;
   --fs-editor: var(--fs-s);
   --font: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

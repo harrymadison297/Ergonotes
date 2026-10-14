@@ -156,8 +156,9 @@ export function NoteChips({ n }: { n: ItemSummary }) {
   );
 }
 
-export function NoteRow({ n, active, href, onClick }: { n: ItemSummary; active?: boolean; href: string; onClick?: () => void }) {
-  const s = firstSentence(n.snippet);
+export function NoteRow({ n, active, href, onClick, cards }: { n: ItemSummary; active?: boolean; href: string; onClick?: () => void; cards?: boolean }) {
+  // cards show the opening of the note over a few lines; list rows only its first sentence
+  const s = cards ? n.snippet : firstSentence(n.snippet);
   return (
     <a className={classNames('note-row', active && 'active')} href={href} onClick={onClick} aria-current={active ? 'true' : undefined}
       {...dragSource({ id: n.id, type: 'note' })}>

@@ -396,6 +396,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       <div className="editor-main">
       <div className="editor-scroll" ref={scrollRef} onScroll={trackHeading}>
         <div className="editor-page">
+          <div className="edited">Edited {new Date(doc.updated).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</div>
           <input className="title-input" aria-label="Title" placeholder="Untitled" value={title} readOnly={locked}
             onChange={e => { setTitle(e.target.value); setSaveState('saving'); saveTitle(id, e.target.value); }}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); editor.commands.focus('start'); } }} />

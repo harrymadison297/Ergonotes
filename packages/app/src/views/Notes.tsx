@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownUp, FileText, FilePlus2, FolderPlus, Trash2 } from 'lucide-react';
+import { ArrowDownUp, FileText, FilePlus2, FolderPlus, ListFilter, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
@@ -7,6 +7,8 @@ import { NoteEditor } from '../components/NoteEditor';
 import { IconBtn, NoteCard, NoteRow, useMenu } from '../components/ui';
 import { Explorer } from './Explorer';
 import { folderChain } from '../state/tree';
+import { setPrefs, usePrefs } from '../state/prefs';
+import { classNames } from '../state/util';
 import { Resizer } from '../components/Resizer';
 
 
@@ -55,6 +57,8 @@ export function NotesView({ noteId }: { noteId?: string }) {
   const { list, sort, changeSort, q } = useNoteList({});
   const [tab, setTab] = useState<'notes' | 'reminders'>('notes');
   const sortMenu = useMenu();
+  const viewMenu = useMenu();
+  const prefs = usePrefs();
   const folder = route.name === 'notes' && route.folder ? app.byId.get(route.folder) : undefined;
   const heading = q ? `Search: ${q}` : folder ? folder.title : route.name === 'notes' && route.tag ? `Tag: ${route.tag}` : 'Notes';
   const shown = tab === 'reminders' ? list.filter(n => n.nextReminder) : list;
@@ -80,25 +84,29 @@ export function NotesView({ noteId }: { noteId?: string }) {
     <div className="pane-list">
       <Resizer pane="listW" edge="right" label="Resize list" />
       <div className="list-head">
-        <h2>{heading}</h2>
-        <div className="meta">
-          <span>{list.length} note{list.length === 1 ? '' : 's'}</span><span className="grow" />
-          <IconBtn label="Sort notes" icon={<ArrowDownUp size={18} />} haspopup onClick={e => sortMenu.open(e, sortEntries(), 'right')} />
+        <h2><span className="ttl">{heading}</span><span className="count" aria-label={`${list.length} note${list.length === 1 ? '' : 's'}`}>{list.length}</span></h2>
+        <div className="list-tools">
+          <IconBtn label="New note" icon={<FilePlus2 size={18} />} onClick={() => void app.newNote({ parent: folder?.id })} />
           {folder && <IconBtn label="New folder here" icon={<FolderPlus size={18} />} onClick={() => app.setDialog({ kind: 'newFolder', parent: folder.id })} />}
-          <IconBtn label="New note" variant="primary" icon={<FilePlus2 size={18} />} onClick={() => void app.newNote({ parent: folder?.id })} />
+          <IconBtn label="Sort notes" icon={<ListFilter size={18} />} haspopup onClick={e => sortMenu.open(e, sortEntries(), 'right')} />
+          <IconBtn label="View options" icon={<SlidersHorizontal size={18} />} haspopup onClick={e => viewMenu.open(e, [
+            { title: 'Layout' },
+            { label: 'Cards', checked: prefs.listView === 'cards', onClick: () => setPrefs({ listView: 'cards' }) },
+            { label: 'List', checked: prefs.listView === 'list', onClick: () => setPrefs({ listView: 'list' }) },
+          ], 'right')} />
         </div>
       </div>
-      {sortMenu.node}
+      {sortMenu.node}{viewMenu.node}
       <div className="tabs" role="tablist">
         <button className="tab" role="tab" aria-selected={tab === 'notes'} onClick={() => setTab('notes')}>Notes</button>
         <button className="tab" role="tab" aria-selected={tab === 'reminders'} onClick={() => setTab('reminders')}>Reminders</button>
       </div>
-      <div className="list-scroll">
+      <div className={classNames('list-scroll', prefs.listView === 'cards' && 'as-cards')}>
         {shown.length === 0 && (
           <div className="empty"><FileText size={32} /><h3>{q ? 'No notes match' : tab === 'reminders' ? 'No reminders' : 'No notes here yet'}</h3>
-            <p>{q ? 'Try different words.' : 'Create one with the + button above.'}</p></div>
+            <p>{q ? 'Try different words.' : 'Create one with the New note button.'}</p></div>
         )}
-        {shown.map(n => <NoteRow key={n.id} n={n} active={n.id === noteId} href={href({ name: 'notes', ...base, note: n.id })} />)}
+        {shown.map(n => <NoteRow key={n.id} n={n} cards={prefs.listView === 'cards'} active={n.id === noteId} href={href({ name: 'notes', ...base, note: n.id })} />)}
       </div>
     </div>
   );

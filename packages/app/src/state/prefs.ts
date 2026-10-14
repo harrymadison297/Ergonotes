@@ -4,6 +4,8 @@ import { useSyncExternalStore } from 'react';
 export interface Prefs {
   /** show the table of contents beside an open note */
   toc: boolean;
+  /** note list layout */
+  listView: 'cards' | 'list';
   /** pane widths in CSS px; null = built-in default */
   sidebarW: number | null;
   listW: number | null;
@@ -18,7 +20,7 @@ export const WIDTHS: Record<Width, { min: number; max: number; cssVar: string }>
 };
 
 const KEY = 'ergo.prefs';
-const DEFAULTS: Prefs = { toc: true, sidebarW: null, listW: null, tocW: null };
+const DEFAULTS: Prefs = { toc: true, listView: 'cards', sidebarW: null, listW: null, tocW: null };
 const clampWidth = (k: Width, v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) ? Math.min(WIDTHS[k].max, Math.max(WIDTHS[k].min, Math.round(v))) : null;
 
@@ -27,6 +29,7 @@ function load(): Prefs {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Prefs>;
     return {
       toc: raw.toc !== false,
+      listView: raw.listView === 'list' ? 'list' : 'cards',
       sidebarW: clampWidth('sidebarW', raw.sidebarW),
       listW: clampWidth('listW', raw.listW),
       tocW: clampWidth('tocW', raw.tocW),
