@@ -7,3 +7,5 @@ Ergonotes is single-user, so two devices editing the same note while both offlin
 - Sync becomes a union of immutable Commits, so it is idempotent and needs no coordination.
 - Each device keeps showing its own Head until a person resolves a conflicted revision.
 - Character-level auto-merge is not available; text merging is line/hunk based, and `ergonote-*` blocks are atomic.
+- Automatic merge Commits must be deterministic: author `auto`, timestamp equal to the latest parent timestamp, parents sorted by id. Two Devices that merge the same divergence concurrently then produce the same Commit. With per-device author or time they keep merging each other's merges and never settle.
+- When two Heads have several maximal common ancestors (criss-cross), the merge base is a virtual base built by merging those ancestors, as git's recursive strategy does. Picking one of them silently duplicated lines in the spike.
