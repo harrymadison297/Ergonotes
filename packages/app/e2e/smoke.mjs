@@ -161,6 +161,8 @@ await page.getByRole('button', { name: /Insert/ }).click();
 await page.getByRole('menuitem', { name: 'Drawing' }).click();
 await page.getByRole('dialog', { name: 'Drawing' }).waitFor({ timeout: 30000 });
 // keys go to the drawing board (rectangle tool), not to the note under it; then draw and finish
+await page.locator('.excalidraw canvas').first().waitFor({ timeout: 30000 });
+await page.waitForTimeout(300);
 await page.keyboard.press('r');
 const board = await page.locator('.excalidraw canvas').last().boundingBox();
 await page.mouse.move(board.x + 420, board.y + 300); await page.mouse.down();
