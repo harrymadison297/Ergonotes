@@ -178,7 +178,8 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     return () => { live = false; };
   }, [summary?.updated, doc, summary, api, id, editor, external, saveBody]);
 
-  useEffect(() => { editor?.setEditable(!locked); }, [editor, locked]);
+  // the note stays read-only while the drawing board is open, so stray keys cannot replace the drawing
+  useEffect(() => { editor?.setEditable(!locked && !drawing); }, [editor, locked, drawing]);
 
   const insertDrawing = useCallback(() => {
     if (!editor) return;
@@ -445,7 +446,9 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
           if (n?.type.name === 'excalidraw' && !n.attrs.data) editor.chain().focus().deleteRange({ from: drawing.pos, to: drawing.pos + n.nodeSize }).run();
           setDrawing(null);
         }} onSave={json => {
-          editor.chain().focus().command(({ tr }) => { tr.setNodeMarkup(drawing.pos, undefined, { data: json }); return true; }).run();
+          const node = editor.state.doc.nodeAt(drawing.pos);
+          if (node?.type.name === 'excalidraw') editor.chain().focus().command(({ tr }) => { tr.setNodeMarkup(drawing.pos, undefined, { data: json }); return true; }).run();
+          else editor.chain().focus().insertContent({ type: 'excalidraw', attrs: { data: json } }).run(); // the block moved or went away: put the drawing where the cursor is
           setDrawing(null);
         }} />
       )}

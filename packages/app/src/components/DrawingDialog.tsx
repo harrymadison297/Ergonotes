@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
 import { download } from '../state/util';
 import '@excalidraw/excalidraw/index.css';
@@ -12,6 +12,17 @@ type Scene = { elements: unknown[]; appState: Record<string, unknown>; files: Re
 
 export function DrawingDialog({ initial, onSave, onClose }: { initial: string; onSave: (json: string) => void; onClose: () => void }) {
   const latest = useRef<Scene | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  // keys must reach the drawing board, not the note underneath (typing there replaces the selected drawing)
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose; // the parent re-renders often; this effect must run once
+  useEffect(() => {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    box.current?.focus();
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) closeRef.current(); };
+    document.addEventListener('keydown', key);
+    return () => document.removeEventListener('keydown', key);
+  }, []);
   let parsed: Partial<Scene> = {};
   try { if (initial) parsed = JSON.parse(initial) as Partial<Scene>; } catch { /* start empty */ }
   const dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
@@ -47,8 +58,8 @@ export function DrawingDialog({ initial, onSave, onClose }: { initial: string; o
 
   return (
     <div className="scrim" style={{ padding: 0 }}>
-      <div className="dialog wide" style={{ width: '100vw', height: '100dvh', maxHeight: 'none', borderRadius: 0 }} role="dialog" aria-modal="true" aria-label="Drawing">
-        <header>
+      <div ref={box} tabIndex={-1} className="dialog wide" style={{ width: '100vw', height: '100dvh', maxHeight: 'none', borderRadius: 0 }} role="dialog" aria-modal="true" aria-label="Drawing">
+        <header style={{ flexWrap: 'wrap', rowGap: 6 }}>
           <h2>Drawing</h2>
           <button className="btn" onClick={() => void exportAs('svg')}><Download size={14} /> SVG</button>
           <button className="btn" onClick={() => void exportAs('png')}><Download size={14} /> PNG</button>
@@ -58,6 +69,7 @@ export function DrawingDialog({ initial, onSave, onClose }: { initial: string; o
         <div style={{ flex: 1, minHeight: 0 }}>
           <Suspense fallback={<div className="empty">Loading the drawing board…</div>}>
             <Excalidraw
+              autoFocus
               initialData={{ elements: (parsed.elements ?? []) as never, appState: { ...(parsed.appState ?? {}), collaborators: new Map() } as never, files: (parsed.files ?? {}) as never }}
               theme={dark ? 'dark' : 'light'}
               onChange={(elements, appState, files) => { latest.current = { elements: elements as unknown[], appState: appState as unknown as Record<string, unknown>, files: files as unknown as Record<string, unknown> }; }}
