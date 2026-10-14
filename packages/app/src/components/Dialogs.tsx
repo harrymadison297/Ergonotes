@@ -249,7 +249,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
       <input ref={dir} type="file" hidden multiple {...({ webkitdirectory: '' } as object)} onChange={e => void run(e.target.files)} />
       <input ref={files} type="file" hidden multiple accept=".md,.markdown,.txt" onChange={e => void run(e.target.files)} />
       {busy && <p><Loader2 size={16} className="spin" /> Importing…</p>}
-      {result && <p role="status" style={{ color: 'var(--green-btn)' }}><Check size={16} style={{ verticalAlign: -3 }} /> {result}</p>}
+      {result && <p role="status" style={{ color: 'var(--green-ink)' }}><Check size={16} style={{ verticalAlign: -3 }} /> {result}</p>}
     </Dialog>
   );
 }
@@ -355,7 +355,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
         <div style={{ maxWidth: 520 }}>
           <button className="btn" onClick={() => { onClose(); app.setDialog({ kind: 'import' }); }}><FileUp size={16} /> Import Markdown files…</button>
           <p className="hint" style={{ color: 'var(--text-2)' }}>Export any note from its Export menu (Markdown, HTML, PDF).</p>
-          <button className="btn" onClick={async () => { await app.run(app.api.emptyTrash()); await app.refresh(); app.toast('Trash emptied'); }}>Empty Trash now</button>
+          <button className="btn" onClick={async () => { await app.run(app.api.emptyTrash()); await app.refresh(); app.toast('Trash emptied'); }}>Empty trash now</button>
         </div>
       )}
     </Dialog>

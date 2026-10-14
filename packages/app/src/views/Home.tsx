@@ -4,7 +4,7 @@ import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { isoDay } from '../state/util';
 import { IconBtn, NoteCard } from '../components/ui';
-import { tagColor } from '../state/tags';
+import { tagStyle } from '../state/tags';
 import { TaskRow } from './Tasks';
 
 export function MiniCalendar({ onPick }: { onPick?: (day: string) => void }) {
@@ -71,7 +71,7 @@ export function Home() {
           <IconBtn label="New note" variant="primary" icon={<FilePlus2 size={18} />} onClick={() => void app.newNote()} />
         </h2>
         {shown.length === 0
-          ? <div className="empty" style={{ padding: 24 }}>Nothing here yet. Press the green + to write your first note.</div>
+          ? <div className="empty" style={{ padding: 24 }}>Nothing here yet. Press + to write your first note.</div>
           : <div className="cards row">{shown.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })} />)}</div>}
       </section>
 
@@ -94,7 +94,7 @@ export function Home() {
         </section>
 
         <section className="widget" aria-labelledby="w-tasks">
-          <h2 id="w-tasks">My Tasks<span className="grow" /><a href={href({ name: 'tasks' })} className="icon-btn" title="All tasks" aria-label="All tasks"><ArrowRight size={18} /></a></h2>
+          <h2 id="w-tasks">My tasks<span className="grow" /><a href={href({ name: 'tasks' })} className="icon-btn" title="All tasks" aria-label="All tasks"><ArrowRight size={18} /></a></h2>
           {open.length === 0 ? <div className="empty" style={{ padding: 16 }}>No open tasks. Add a checklist to any note.</div>
             : open.map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} compact />)}
         </section>
@@ -110,7 +110,7 @@ export function Home() {
       {app.tags.length > 0 && (
         <section className="widget" aria-labelledby="w-tags">
           <h2 id="w-tags">Tags</h2>
-          <div className="tag-cloud">{app.tags.slice(0, 30).map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })} style={{ ['--c' as string]: tagColor(t.tag) }}><i className="tag-dot" />{t.tag}<small>{t.count}</small></a>)}</div>
+          <div className="tag-cloud">{app.tags.slice(0, 30).map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })} style={tagStyle(t.tag)}><i className="tag-dot" />{t.tag}<small>{t.count}</small></a>)}</div>
         </section>
       )}
       <IconBtn label="Start from a template" variant="soft" icon={<LayoutTemplate size={18} />} onClick={() => app.setDialog({ kind: 'templates' })} />

@@ -95,7 +95,7 @@ export function NotesView({ noteId }: { noteId?: string }) {
       <div className="list-scroll">
         {shown.length === 0 && (
           <div className="empty"><FileText size={32} /><h3>{q ? 'No notes match' : tab === 'reminders' ? 'No reminders' : 'No notes here yet'}</h3>
-            <p>{q ? 'Try different words.' : 'Create one with the green button above.'}</p></div>
+            <p>{q ? 'Try different words.' : 'Create one with the + button above.'}</p></div>
         )}
         {shown.map(n => <NoteRow key={n.id} n={n} active={n.id === noteId} href={href({ name: 'notes', ...base, note: n.id })} />)}
       </div>
@@ -109,7 +109,7 @@ export function NotesView({ noteId }: { noteId?: string }) {
           <IconBtn label="Sort notes" icon={<ArrowDownUp size={18} />} haspopup onClick={e => sortMenu.open(e, sortEntries(), 'right')} /></div>
         {sortMenu.node}
         {shown.length === 0
-          ? <div className="empty"><FileText size={32} /><h3>{q ? 'No notes match' : 'No notes here yet'}</h3><p>{q ? 'Try different words.' : 'Tap the green button to write one.'}</p></div>
+          ? <div className="empty"><FileText size={32} /><h3>{q ? 'No notes match' : 'No notes here yet'}</h3><p>{q ? 'Try different words.' : 'Tap + to write one.'}</p></div>
           : <div className="m-cards">{shown.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', ...base, note: n.id })} />)}</div>}
       </div>
     );
@@ -145,7 +145,7 @@ export function TrashView({ noteId }: { noteId?: string }) {
       <div className="list-head">
         <h2>Trash</h2>
         <div className="meta"><span>{rows.length} item{rows.length === 1 ? '' : 's'} · removed after 30 days</span><span className="grow" />
-          <IconBtn label="Empty Trash" variant="danger" disabled={rows.length === 0} icon={<Trash2 size={18} />} onClick={() => void emptyAll()} /></div>
+          <button className="btn danger" disabled={rows.length === 0} onClick={() => void emptyAll()}><Trash2 size={16} /> Empty trash</button></div>
       </div>
       <div className="list-scroll">
         {rows.length === 0 && <div className="empty"><Trash2 size={32} /><h3>Trash is empty</h3></div>}

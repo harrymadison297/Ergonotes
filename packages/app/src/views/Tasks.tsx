@@ -10,7 +10,7 @@ export function TaskRow({ t, compact, active }: { t: TaskEntry; compact?: boolea
   const app = useApp();
   const due = t.due ? dueLabel(t.due) : null;
   return (
-    <div className={classNames('task-row', t.done && 'done')} style={compact ? { padding: '8px 0', borderBottom: 0 } : active ? { background: 'var(--bg)' } : undefined}>
+    <div className={classNames('task-row', t.done && 'done', compact && 'compact')} style={compact ? { padding: '8px 0', borderBottom: 0 } : active ? { background: 'var(--bg)' } : undefined}>
       <button className={classNames('task-check', t.done && 'done')} role="checkbox" aria-checked={t.done} aria-label={`${t.done ? 'Reopen' : 'Complete'} ${t.text}`}
         onClick={async () => { await app.run(app.api.toggleTask(t.noteId, t.index, !t.done)); await app.refresh(); }}>
         {t.done && <Check size={14} />}

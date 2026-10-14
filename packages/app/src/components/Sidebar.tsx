@@ -8,7 +8,7 @@ import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames, isoDay, relTime } from '../state/util';
-import { tagColor } from '../state/tags';
+import { tagStyle } from '../state/tags';
 import { dragSource, dropZone, type Dragged } from '../state/dnd';
 import { IconBtn, useMenu, type MenuEntry } from './ui';
 
@@ -86,6 +86,7 @@ export function Sidebar() {
   const newMenu = useNewMenu();
   const folderMenu = useMenu();
   const tagMenu = useMenu();
+  const shortcutMenu = useMenu();
   const sync = useSync();
   const [hover, setHover] = useState<string | null>(null);
   const drop = { key: hover, set: setHover };
@@ -172,9 +173,13 @@ export function Sidebar() {
     ];
   }
 
+  const pinnedEntries = (): MenuEntry[] => pinned.length
+    ? pinned.map(p => ({ label: p.title, icon: <FileText size={16} />, onClick: () => go({ name: 'notes', note: p.id, folder: p.parent ?? undefined }) }))
+    : [{ label: 'Star a note to pin it here', disabled: true, onClick: () => undefined }];
+
   const topTags = tagTree.names.filter(n => !n.includes('/'));
   const tagsMenuEntries = (): MenuEntry[] => topTags.length
-    ? tagTree.names.map(n => ({ label: n, icon: <i className="tag-dot" style={{ ['--c' as string]: tagColor(n) }} />, onClick: () => go({ name: 'notes', tag: n }) }))
+    ? tagTree.names.map(n => ({ label: n, icon: <i className="tag-dot" style={tagStyle(n)} />, onClick: () => go({ name: 'notes', tag: n }) }))
     : [{ label: 'No tags yet', disabled: true, onClick: () => undefined }];
 
   const link = (to: string, icon: JSX.Element, label: string, active: boolean, extra?: React.ReactNode) => (
@@ -201,13 +206,15 @@ export function Sidebar() {
       {newMenu.node}
       {folderMenu.node}
       {tagMenu.node}
+      {shortcutMenu.node}
 
       <nav className="nav" aria-label="Main">
         {link(href({ name: 'home' }), <Home size={18} />, 'Home', isActive('home'))}
 
         <div className={classNames('nav-item', hover === 'shortcuts' && 'drop-over')} role="button" tabIndex={0} title="Shortcuts"
           {...dropZone('shortcuts', drop, pinIt, notesOnly)}
-          onClick={() => setShortcutsOpen(o => !o)} onKeyDown={e => { if (e.key === 'Enter') setShortcutsOpen(o => !o); }}>
+          onClick={e => { if (rail) shortcutMenu.open(e, pinnedEntries(), 'left'); else setShortcutsOpen(o => !o); }}
+          onKeyDown={e => { if (e.key === 'Enter') setShortcutsOpen(o => !o); }}>
           <span className="nav-chevron">{shortcutsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
           <Star size={18} /><span className="label">Shortcuts</span>
         </div>
@@ -257,7 +264,7 @@ export function Sidebar() {
                   onContextMenu={e => { e.preventDefault(); tagMenu.open({ currentTarget: e.currentTarget }, [{ label: 'Rename tag…', onClick: rename }]); }}>
                   <button className="nav-chevron" style={{ visibility: hasKids ? 'visible' : 'hidden' }} aria-label="Toggle" onClick={() => toggleTag(n)}>{openTags.has(n) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
                   <a className="nav-link" href={href({ name: 'notes', tag: n })}>
-                    <i className="tag-dot" style={{ ['--c' as string]: tagColor(n) }} /><span className="label">{n.split('/').pop()}</span>
+                    <i className="tag-dot" style={tagStyle(n)} /><span className="label">{n.split('/').pop()}</span>
                   </a>
                   <span className="count">{tagTree.count(n)}</span>
                   <button className="nav-more" aria-label={`Actions for tag ${n}`} onClick={e => tagMenu.open(e, [{ label: 'Rename tag…', onClick: rename }], 'right')}><MoreHorizontal size={16} /></button>

@@ -4,7 +4,7 @@ import { Check, Star, X } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { Bell, Flag } from 'lucide-react';
 import { classNames, dueLabel, firstSentence, relTime } from '../state/util';
-import { tagColor } from '../state/tags';
+import { tagStyle } from '../state/tags';
 import { dragSource } from '../state/dnd';
 import { FileImg } from './FileImg';
 
@@ -125,19 +125,18 @@ export function TagDots({ tags, max = 4 }: { tags: string[]; max?: number }) {
   const rest = tags.length - shown.length;
   return (
     <span className="tag-dots" role="img" aria-label={`Tags: ${tags.join(', ')}`} title={tags.join(', ')}>
-      {shown.map(t => <i key={t} className="tag-dot" style={{ ['--c' as string]: tagColor(t) }} />)}
+      {shown.map(t => <i key={t} className="tag-dot" style={tagStyle(t)} />)}
       {rest > 0 && <small>+{rest}</small>}
     </span>
   );
 }
 
 /** A tag with its colour dot and name, for roomy views. */
-export function TagPill({ tag, onRemove, href }: { tag: string; onRemove?: () => void; href?: string }) {
-  const style = { ['--c' as string]: tagColor(tag) };
-  const body = <><i className="tag-dot" style={style} />{tag}</>;
+export function TagPill({ tag, onRemove }: { tag: string; onRemove?: () => void }) {
+  const style = tagStyle(tag);
   return (
     <span className="tag-pill" style={style}>
-      {href ? <a href={href} style={{ color: 'inherit', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>{body}</a> : body}
+      <i className="tag-dot" />{tag}
       {onRemove && <button type="button" aria-label={`Remove tag ${tag}`} onClick={onRemove}><X size={12} /></button>}
     </span>
   );

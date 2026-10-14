@@ -5,7 +5,6 @@ export const ITEM_MIME = 'application/x-ergo-item';
 
 export interface Dragged { id: string; type: 'note' | 'folder' }
 let current: Dragged | null = null;
-export const dragged = (): Dragged | null => current;
 
 export function dragSource(item: Dragged) {
   return {

@@ -6,7 +6,7 @@ import {
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames, isoDay } from '../state/util';
-import { tagColor } from '../state/tags';
+import { tagStyle } from '../state/tags';
 import { CalendarView } from '../views/Calendar';
 import { ConflictsView } from '../views/Conflicts';
 import { FoldersView } from '../views/Folders';
@@ -166,7 +166,7 @@ function MoreView() {
       {app.tags.length > 0 && (
         <div style={{ padding: 16 }}>
           <h3 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--text-2)' }}><TagIcon size={14} /> Tags</h3>
-          <div className="tag-cloud">{app.tags.map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })} style={{ ['--c' as string]: tagColor(t.tag) }}><i className="tag-dot" />{t.tag}<small>{t.count}</small></a>)}</div>
+          <div className="tag-cloud">{app.tags.map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })} style={tagStyle(t.tag)}><i className="tag-dot" />{t.tag}<small>{t.count}</small></a>)}</div>
         </div>
       )}
     </div>
@@ -208,7 +208,7 @@ function MobileHome() {
   const app = useApp();
   const notes = app.items.filter(i => i.type === 'note' && !i.inTrash && !i.template).sort((a, b) => b.updated.localeCompare(a.updated));
   return <div className="m-content">
-    <div style={{ padding: '4px 16px', color: 'var(--text-2)', fontSize: 12.5, textTransform: 'uppercase' }}>{notes.length} notes</div>
+    <div style={{ padding: '4px 16px', color: 'var(--text-2)', fontSize: 12.5 }}>{notes.length} notes</div>
     <div className="m-cards">
       {notes.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })} />)}
     </div>

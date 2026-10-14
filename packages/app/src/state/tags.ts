@@ -1,6 +1,9 @@
 /** Tag colours (docs/brand-guidelines.md). A tag's colour comes from its top-level name, so every device agrees. */
 export const TAG_COLORS = ['#2dbe60', '#1fa59a', '#3d8bd9', '#6a70d6', '#a063d1', '#d9667f', '#e8892f', '#c9a21f'] as const;
 
+/** Inline style that exposes a tag's colour to CSS as `--c`. */
+export const tagStyle = (tag: string) => ({ ['--c' as string]: tagColor(tag) });
+
 export function tagColor(tag: string): string {
   const root = tag.split('/')[0].toLowerCase();
   let h = 2166136261;

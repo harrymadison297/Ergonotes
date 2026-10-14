@@ -121,7 +121,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
         <div className="palette-foot">
           <span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span>
           <span className="grow" />
-          {query && <button className="btn ghost" onClick={seeAll} style={{ minHeight: 28, padding: '0 8px' }}>Show all results <ArrowRight size={14} /></button>}
+          {query && <button className="btn ghost" onClick={seeAll} style={{ padding: '0 10px' }}>Show all results <ArrowRight size={14} /></button>}
         </div>
       </div>
     </div>,

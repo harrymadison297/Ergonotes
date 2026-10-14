@@ -75,7 +75,7 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
     const key = `x:${it.id}`;
     const isFolder = it.type === 'folder';
     return (
-      <button key={it.id} className={classNames('ex-tile', sel === it.id && 'sel', hover === key && 'drop-over')} title={it.title}
+      <div key={it.id} role="button" tabIndex={0} className={classNames('ex-tile', sel === it.id && 'sel', hover === key && 'drop-over')} title={it.title}
         {...dragSource({ id: it.id, type: it.type === 'folder' ? 'folder' : 'note' })}
         {...(isFolder ? dropZone(key, drop, moveInto(it.id)) : {})}
         onClick={() => activate(it)} onDoubleClick={() => open(it)}
@@ -93,7 +93,7 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
           {isFolder ? `${it.childCount} item${it.childCount === 1 ? '' : 's'}` : relTime(it.updated)}
           {!isFolder && <TagDots tags={it.tags} max={3} />}
         </span>
-      </button>
+      </div>
     );
   };
 

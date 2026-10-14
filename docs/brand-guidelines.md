@@ -33,7 +33,7 @@ is derived from these nine values.
 
 | Token | Hex | Role |
 |---|---|---|
-| `--green` | `#2dbe60` | Brand accent: primary buttons, selected-row marker, checkmarks, focus-visible ring |
+| `--green` | `#2dbe60` | Brand accent: primary buttons, selected-row marker, checkmarks |
 | `--ink` | `#000000` | Titles, primary button label |
 | `--slate-900` | `#3b4446` | Body text |
 | `--slate-700` | `#525e61` | Secondary text, icons, timestamps |
@@ -160,7 +160,7 @@ things that float: menus, dialogs, toasts, the search popup.
 | **Round icon** | none / `--slate-100` / `--green` | icon only | Most commands. Always has a tooltip and an `aria-label` |
 
 Prefer a round icon button to a text button when the icon is a convention (search, new
-note, new folder, sort, settings, sync, more). Keep a text label when the action is
+note, new folder, sort, save, template, settings, sync, more). Keep a text label when the action is
 rare, destructive or needs a sentence ("Empty trash", "Delete forever").
 
 Every button's **whole box** is its hit target: padding belongs to the button, not to

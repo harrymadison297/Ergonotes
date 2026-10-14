@@ -369,7 +369,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
           <EditorContent editor={editor} />
           {doc.backlinks.length > 0 && (
             <section aria-label="Backlinks" style={{ marginTop: 40, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-              <h3 style={{ fontSize: 13, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '.04em', margin: '0 0 8px' }}>Linked from</h3>
+              <h3 style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 8px' }}>Linked from</h3>
               {doc.backlinks.map(b => <a key={b.id} href={`#/notes/${b.id}`} className="chip reminder" style={{ marginRight: 6 }}>{b.title}</a>)}
             </section>
           )}
