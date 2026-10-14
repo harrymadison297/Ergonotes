@@ -10,26 +10,20 @@ import TableRow from '@tiptap/extension-table-row';
 import { Markdown } from 'tiptap-markdown';
 import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
-  ChevronsLeft, ChevronsRight, Maximize2, Minimize2, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, X, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
+  ChevronsLeft, ChevronsRight, Maximize2, Minimize2, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
 } from 'lucide-react';
-import { mergeText, type NoteDoc } from '@ergonotes/core';
+import { mergeText, toB64, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
-import { classNames, debounce, download } from '../state/util';
+import { classNames, debounce, download, isoDay } from '../state/util';
 import { currentTaskTokens, ExcalidrawBlock, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, Wikilink } from '../editor/extensions';
 import { DrawingDialog } from './DrawingDialog';
-import { IconBtn, TagPill, useMenu, type MenuEntry } from './ui';
+import { Dialog, IconBtn, TagPill, useMenu, type MenuEntry } from './ui';
 import { Resizer } from './Resizer';
 import { href } from '../state/router';
 import { setPrefs, usePrefs } from '../state/prefs';
 
 type SaveState = 'saved' | 'saving' | 'error';
 
-async function fileToBase64(file: File): Promise<string> {
-  const buf = new Uint8Array(await file.arrayBuffer());
-  let s = '';
-  for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-  return btoa(s);
-}
 
 export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () => void; readOnly?: boolean }) {
   const app = useApp();
@@ -213,7 +207,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
 
   const attach = async (files: FileList | File[]) => {
     for (const f of Array.from(files)) {
-      const data = await fileToBase64(f);
+      const data = toB64(new Uint8Array(await f.arrayBuffer()));
       const mime = f.type || 'application/octet-stream';
       const r = await app.run(api.addFile({ name: f.name, mime, data }));
       if (!r) continue;
@@ -484,22 +478,18 @@ function TB({ on, label, onClick, children, disabled, locked }: { on?: boolean; 
 }
 
 function TaskDateDialog({ kind, value, onSet, onClose }: { kind: 'due' | 'remind'; value?: string; onSet: (v: string | null) => void; onClose: () => void }) {
-  const [date, setDate] = useState(value?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(value?.slice(0, 10) ?? isoDay());
   const [time, setTime] = useState(value && value.length > 10 ? value.slice(11, 16) : kind === 'remind' ? '09:00' : '');
   return (
-    <div className="scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-label={kind === 'due' ? 'Due date' : 'Reminder'} style={{ width: 360 }}>
-        <header><h2>{kind === 'due' ? 'Due date' : 'Reminder'}</h2><IconBtn label="Close" icon={<X size={18} />} onClick={onClose} /></header>
-        <div className="content">
-          <div className="field"><label htmlFor="td-d">Date</label><input id="td-d" type="date" className="input" value={date} onChange={e => setDate(e.target.value)} autoFocus /></div>
-          <div className="field"><label htmlFor="td-t">Time {kind === 'due' && <span className="hint">(optional)</span>}</label><input id="td-t" type="time" className="input" value={time} onChange={e => setTime(e.target.value)} /></div>
-        </div>
-        <footer>
-          {value && <button className="btn" onClick={() => onSet(null)}>Remove</button>}
-          <button className="btn primary" disabled={!date} onClick={() => onSet(time ? `${date}T${time}` : date)}>Set</button>
-        </footer>
-      </div>
-    </div>
+    <Dialog title={kind === 'due' ? 'Due date' : 'Reminder'} onClose={onClose} footer={
+      <>
+        {value && <button className="btn" onClick={() => onSet(null)}>Remove</button>}
+        <button className="btn primary" disabled={!date} onClick={() => onSet(time ? `${date}T${time}` : date)}>Set</button>
+      </>
+    }>
+      <div className="field"><label htmlFor="td-d">Date</label><input id="td-d" type="date" className="input" value={date} onChange={e => setDate(e.target.value)} /></div>
+      <div className="field"><label htmlFor="td-t">Time {kind === 'due' && <span className="hint">(optional)</span>}</label><input id="td-t" type="time" className="input" value={time} onChange={e => setTime(e.target.value)} /></div>
+    </Dialog>
   );
 }
 

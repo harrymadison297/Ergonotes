@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
-import type { FileBlob } from '@ergonotes/core';
+import { fromB64, type FileBlob } from '@ergonotes/core';
+import { downloadBlob } from '../state/util';
 import { useApp } from '../state/app';
 import { Dialog } from './ui';
 
-function b64ToBytes(b64: string): Uint8Array {
-  const s = atob(b64);
-  const out = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
-  return out;
-}
 
 /** RFC 4180 CSV parser (quotes, escaped quotes, CRLF). */
 export function parseCsv(text: string): string[][] {
@@ -40,7 +35,7 @@ export type Preview =
 
 async function buildPreview(f: FileBlob): Promise<Preview> {
   const name = f.name.toLowerCase();
-  const bytes = b64ToBytes(f.data);
+  const bytes = fromB64(f.data);
   if (f.mime.startsWith('image/')) return { kind: 'image', url: `data:${f.mime};base64,${f.data}` };
   if (f.mime === 'application/pdf' || name.endsWith('.pdf')) return { kind: 'pdf', url: URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' })) };
   if (name.endsWith('.csv') || name.endsWith('.tsv') || f.mime === 'text/csv') return { kind: 'table', sheets: [{ name: f.name, rows: parseCsv(new TextDecoder().decode(bytes)) }] };
@@ -87,10 +82,7 @@ export function useFilePreview(id: string) {
   }, [id, app.api]);
   const save = () => {
     if (!file) return;
-    const url = URL.createObjectURL(new Blob([b64ToBytes(file.data) as BlobPart], { type: file.mime }));
-    const a = document.createElement('a');
-    a.href = url; a.download = file.name; document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    downloadBlob(file.name, new Blob([fromB64(file.data) as BlobPart], { type: file.mime }));
   };
   return { file, pv, err, save };
 }

@@ -32,10 +32,7 @@ export function CalendarView({ noteId }: { noteId?: string }) {
     return m;
   }, [data]);
 
-  const openDaily = async (day: string) => {
-    const d = await app.run(app.api.dailyNote(day));
-    if (d) { await app.refresh(); app.go({ name: 'calendar', note: d.id }); }
-  };
+  const openDaily = (day: string) => app.openDaily(day, 'calendar');
   const today = isoDay();
   const selEvents = byDay.get(sel) ?? [];
 

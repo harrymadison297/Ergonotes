@@ -3,7 +3,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, stat } from 'node:fs/promises';
-import { extname, join, normalize, sep } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 import { Vault, VAULT_METHODS, type StoreConfig, type VaultStatus } from '@ergonotes/core';
 import { FilePersist, FolderStore } from '@ergonotes/core/node';
 import { Mirror } from './mirror.ts';
@@ -24,6 +24,8 @@ export interface ServerOptions {
   setupToken?: string;
   kdf?: { m: number; t: number; p: number };
   mirrorDir?: string | null;
+  /** folder storage chosen from the web UI must live inside this directory (default: the data directory) */
+  folderStoreRoot?: string;
   log?: (msg: string) => void;
 }
 
@@ -53,7 +55,13 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     defaultDeviceName: 'Server',
     storeFactory: (cfg: StoreConfig) => {
       if (cfg.type !== 'folder') throw new Error('unsupported');
-      return new FolderStore(cfg.path);
+      // a signed-in browser must not be able to point the server at any directory it can reach
+      const root = resolve(o.folderStoreRoot ?? o.dataDir);
+      const want = resolve(cfg.path);
+      if (want !== root && !want.startsWith(root + sep)) {
+        throw new Error(`Folder storage has to be inside ${root} (the server's ERGONOTES_FOLDER_STORE_ROOT setting allows another place).`);
+      }
+      return new FolderStore(want);
     },
   });
   const tokens = new TokenStore(join(o.dataDir, 'api-tokens.json'));
@@ -80,11 +88,21 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     sessions.set(t, Date.now() + SESSION_MS);
     return true;
   };
+  // behind one reverse proxy we control, the address it saw is the LAST entry it appended; earlier ones are client-supplied
   const clientIp = (req: IncomingMessage) =>
-    (o.trustProxy && String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
+    (o.trustProxy && String(req.headers['x-forwarded-for'] ?? '').split(',').map(s => s.trim()).filter(Boolean).at(-1)) || req.socket.remoteAddress || '?';
+  // "localhost" means the connection itself comes from this machine; the Host header alone proves nothing
   const isLocalHost = (req: IncomingMessage) => {
+    const peer = req.socket.remoteAddress ?? '';
+    const loopback = peer === '::1' || peer === '127.0.0.1' || peer.startsWith('::ffff:127.');
     const host = (req.headers.host ?? '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    const named = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    return loopback && named && !req.headers['x-forwarded-for'] && !req.headers.forwarded;
+  };
+  const sameOrigin = (req: IncomingMessage) => {
+    const origin = req.headers.origin;
+    if (!origin) return true;
+    try { return new URL(origin).host === req.headers.host; } catch { return false; } // "null" and malformed origins are refused
   };
   const viaTls = (req: IncomingMessage) =>
     !!(req.socket as unknown as { encrypted?: boolean }).encrypted || (o.trustProxy === true && req.headers['x-forwarded-proto'] === 'https');
@@ -106,6 +124,12 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   // only failures count, so a signed-in owner is never locked out by someone else's guesses on a shared address
   const failures = (req: IncomingMessage) => (attempts.get(clientIp(req)) ?? []).filter(t => Date.now() - t < RATE_WINDOW_MS);
   const rateLimited = (req: IncomingMessage) => failures(req).length >= RATE_MAX;
+  /** Take an attempt slot BEFORE the slow password check, so parallel guesses cannot all slip in; success gives it back. */
+  const reserveAttempt = (req: IncomingMessage) => {
+    const t = Date.now() + Math.random() / 1000;
+    attempts.set(clientIp(req), [...failures(req), t]);
+    return () => attempts.set(clientIp(req), failures(req).filter(x => x !== t));
+  };
   const recordFailure = (req: IncomingMessage) => attempts.set(clientIp(req), [...failures(req), Date.now()]);
   const statusFor = async (req: IncomingMessage): Promise<VaultStatus> => {
     const st = await vault.status();
@@ -129,8 +153,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     }
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
     if (!/^application\/json/.test(req.headers['content-type'] ?? '')) return json(res, 415, { error: 'JSON only' });
-    const origin = req.headers.origin;
-    if (origin && new URL(origin).host !== req.headers.host) return json(res, 403, { error: 'Cross-origin request refused' });
+    if (!sameOrigin(req)) return json(res, 403, { error: 'Cross-origin request refused' });
 
     if (url.pathname === '/api/logout') {
       const t = cookieOf(req);
@@ -142,8 +165,12 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     if (!m) return json(res, 404, { error: 'Not found' });
     const method = m[1] as (typeof VAULT_METHODS)[number];
     if (!(VAULT_METHODS as readonly string[]).includes(method)) return json(res, 404, { error: 'Unknown method' });
+    // before a session exists only sign-in and first-run setup are possible, and their bodies are small:
+    // never read a large body for someone who is not signed in
+    const preAuth = method === 'status' || method === 'unlock' || method === 'createVault' || method === 'joinVault';
+    if (!preAuth && !authed(req)) return json(res, 401, { error: 'Sign in first' });
     let args: unknown[];
-    try { args = JSON.parse((await readBody(req)) || '[]'); if (!Array.isArray(args)) throw new Error('args must be an array'); } catch (e) {
+    try { args = JSON.parse((await readBody(req, preAuth ? 64 * 1024 : 64 * 1024 * 1024)) || '[]'); if (!Array.isArray(args)) throw new Error('args must be an array'); } catch (e) {
       return json(res, 400, { error: String(e instanceof Error ? e.message : e) });
     }
     const st = await vault.status();
@@ -153,14 +180,15 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     if (method === 'unlock') {
       if (rateLimited(req)) return json(res, 429, { error: 'Too many attempts. Wait a minute.' });
       const password = String(args[0] ?? '');
+      const giveBack = reserveAttempt(req);
       try {
         if (st.state === 'locked') { await vault.unlock(password, { remember: false }); startWork(); }
         else if (st.state === 'ready') await vault.verifyPassword(password);
-        else return json(res, 409, { error: 'No vault yet' });
+        else { giveBack(); return json(res, 409, { error: 'No vault yet' }); }
       } catch (e) {
-        recordFailure(req);
         return json(res, 401, { error: e instanceof Error ? e.message : 'Wrong password' });
       }
+      giveBack();
       const token = randomBytes(32).toString('hex');
       sessions.set(token, Date.now() + SESSION_MS);
       return json(res, 200, true, { 'set-cookie': `ergo_session=${token}; Path=/; Max-Age=${SESSION_MS / 1000}; HttpOnly; SameSite=Strict${secureCookie(req)}` });
@@ -250,9 +278,9 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
         if (req.method === 'GET') return json(res, 200, await tokens.list());
         if (req.method === 'POST') {
           if (!/^application\/json/.test(req.headers['content-type'] ?? '')) return json(res, 415, { error: 'JSON only' });
-          const origin = req.headers.origin;
-          if (origin && new URL(origin).host !== req.headers.host) return json(res, 403, { error: 'Cross-origin request refused' });
-          const b = JSON.parse((await readBody(req)) || '{}') as { name?: string; revoke?: string };
+          if (!sameOrigin(req)) return json(res, 403, { error: 'Cross-origin request refused' });
+          let b: { name?: string; revoke?: string };
+          try { b = JSON.parse((await readBody(req, 64 * 1024)) || '{}'); } catch { return json(res, 400, { error: 'Bad JSON' }); }
           if (b.revoke) { await tokens.revoke(b.revoke); return json(res, 200, { ok: true }); }
           return json(res, 200, await tokens.create(b.name ?? 'Agent'));
         }

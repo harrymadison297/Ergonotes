@@ -1,5 +1,6 @@
 // One-way export of the current notes as plain Markdown files, so the vault is readable outside the app (ADR 0002).
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Vault } from '@ergonotes/core';
 
@@ -25,6 +26,8 @@ export class Mirror {
     this.timer = setTimeout(() => void this.write(), 2000);
   }
 
+  private lastDigest = '';
+
   async write() {
     if (this.running) { this.schedule(); return; }
     this.running = true;
@@ -38,24 +41,37 @@ export class Mirror {
         while (cur && !seen.has(cur)) { seen.add(cur); const p = byId.get(cur); if (!p) break; parts.unshift(safe(p.title)); cur = p.parent; }
         return parts.join('/');
       };
-      // only ever wipe a folder this mirror created (marker file), or an empty one
-      const marker = join(this.dir, MARKER);
+      // everything is built in memory first, so a failure half way never leaves a half-written mirror behind
+      const dirs: string[] = [];
+      const files = new Map<string, string>();
+      for (const it of items) {
+        if (it.type === 'folder') { dirs.push(join(pathOf(it.id), safe(it.title))); continue; }
+        const ex = await this.vault.exportNote(it.id, 'md');
+        const name = `${safe(ex.filename.replace(/\.md$/, ''))}.md`;
+        let rel = join(pathOf(it.id), name);
+        for (let n = 2; files.has(rel); n++) rel = join(pathOf(it.id), name.replace(/\.md$/, ` (${n}).md`));
+        files.set(rel, ex.content);
+      }
+      // nothing changed since the last write: leave the folder alone
+      const digest = createHash('sha256').update(JSON.stringify([dirs.sort(), [...files].sort()])).digest('hex');
+      if (digest === this.lastDigest) return;
+
+      // only ever replace a folder this mirror created (marker file), or an empty one
       const existing = await readdir(this.dir).catch(() => null);
       if (existing && existing.length > 0 && !existing.includes(MARKER)) return;
-      await rm(this.dir, { recursive: true, force: true });
-      await mkdir(this.dir, { recursive: true });
-      await writeFile(marker, 'Written by Ergonotes; the contents of this folder are replaced on every change.\n');
-      const used = new Set<string>();
-      for (const it of items) {
-        if (it.type === 'folder') { await mkdir(join(this.dir, pathOf(it.id), safe(it.title)), { recursive: true }); continue; }
-        const ex = await this.vault.exportNote(it.id, 'md');
-        let rel = join(pathOf(it.id), ex.filename);
-        for (let n = 2; used.has(rel); n++) rel = join(pathOf(it.id), ex.filename.replace(/\.md$/, ` (${n}).md`));
-        used.add(rel);
-        const full = join(this.dir, rel);
+      const tmp = `${this.dir}.writing-${process.pid}`;
+      await rm(tmp, { recursive: true, force: true });
+      await mkdir(tmp, { recursive: true });
+      await writeFile(join(tmp, MARKER), 'Written by Ergonotes; the contents of this folder are replaced on every change.\n');
+      for (const d of dirs) await mkdir(join(tmp, d), { recursive: true });
+      for (const [rel, content] of files) {
+        const full = join(tmp, rel);
         await mkdir(dirname(full), { recursive: true });
-        await writeFile(full, ex.content);
+        await writeFile(full, content);
       }
+      await rm(this.dir, { recursive: true, force: true });
+      await rename(tmp, this.dir);
+      this.lastDigest = digest;
     } catch { /* locked or mid-change: next event retries */ } finally { this.running = false; }
   }
 }

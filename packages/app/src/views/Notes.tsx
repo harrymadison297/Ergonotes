@@ -17,7 +17,7 @@ type Sort = 'updated' | 'created' | 'title';
 export function useNoteList(opts: { trashed?: boolean }) {
   const app = useApp();
   const { route } = app;
-  const [sort, setSort] = useState<Sort>(() => (localStorage.getItem('ergo.sort') as Sort) || 'updated');
+  const [sort, setSort] = useState<Sort>(() => { try { return (localStorage.getItem('ergo.sort') as Sort) || 'updated'; } catch { return 'updated'; } });
   const [found, setFound] = useState<ItemSummary[] | null>(null);
   const q = route.name === 'notes' ? route.q : undefined;
 

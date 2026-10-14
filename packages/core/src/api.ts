@@ -129,8 +129,9 @@ export interface ExportResult { filename: string; mime: string; content: string 
 
 export interface VaultApi {
   status(): Promise<VaultStatus>;
-  createVault(password: string, opts?: { deviceName?: string; remember?: boolean }): Promise<void>;
-  joinVault(store: StoreConfig, password: string, opts?: { deviceName?: string; remember?: boolean }): Promise<void>;
+  /** `setupToken` is only read by a Server peer that was started with one */
+  createVault(password: string, opts?: { deviceName?: string; remember?: boolean; setupToken?: string }): Promise<void>;
+  joinVault(store: StoreConfig, password: string, opts?: { deviceName?: string; remember?: boolean; setupToken?: string }): Promise<void>;
   unlock(password: string, opts?: { remember?: boolean }): Promise<void>;
   lock(): Promise<void>;
   changePassword(oldPassword: string, newPassword: string): Promise<void>;

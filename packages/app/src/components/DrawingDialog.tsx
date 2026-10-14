@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
-import { download } from '../state/util';
+import { download, downloadBlob } from '../state/util';
 import '@excalidraw/excalidraw/index.css';
 
 const Excalidraw = lazy(async () => {
@@ -49,10 +49,7 @@ export function DrawingDialog({ initial, onSave, onClose }: { initial: string; o
       download('drawing.svg', 'image/svg+xml', new XMLSerializer().serializeToString(svg));
     } else {
       const blob = await mod.exportToBlob({ ...common, mimeType: 'image/png' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'drawing.png'; document.body.append(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      downloadBlob('drawing.png', blob);
     }
   };
 

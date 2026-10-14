@@ -7,7 +7,7 @@ import {
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
-import { activateKeys, classNames, isoDay, rowClick } from '../state/util';
+import { activateKeys, classNames, rowClick } from '../state/util';
 import { tagStyle } from '../state/tags';
 import { dragSource, dropZone, useDropState, useMoveInto, type Dragged } from '../state/dnd';
 import { IconBtn, useMenu, type MenuEntry } from './ui';
@@ -139,10 +139,7 @@ export function Sidebar() {
       app.go({ name: 'notes', note: n.id, folder: n.parent ?? undefined });
     } },
     { sep: true },
-    { label: 'Today’s daily note', icon: <CalendarDays size={16} />, onClick: async () => {
-      const d = await app.run(app.api.dailyNote(isoDay()));
-      if (d) { await app.refresh(); app.go({ name: 'notes', note: d.id, folder: d.parent ?? undefined }); }
-    } },
+    { label: 'Today’s daily note', icon: <CalendarDays size={16} />, onClick: () => void app.openDaily() },
     { label: 'Import Markdown files…', icon: <Upload size={16} />, onClick: () => app.setDialog({ kind: 'import' }) },
   ];
 
@@ -164,7 +161,7 @@ export function Sidebar() {
           <FilePlus2 size={20} /><span className="new-pill-label">New note</span>
         </button>
         <IconBtn label="Search (Ctrl+K)" className="ring ring-search" icon={<Search size={18} />} onClick={() => app.setDialog({ kind: 'search' })} />
-        <IconBtn label="Create…" className="ring ring-more" haspopup icon={<MoreHorizontal size={18} />} onClick={e => createMenu.open(e, createEntries())} />
+        <IconBtn label="Create…" className="ring ring-more" haspopup icon={<MoreHorizontal size={18} />} onClick={e => createMenu.open(e, createEntries(), 'left', 'create')} />
       </div>
       {createMenu.node}
       {folderMenu.node}

@@ -1,14 +1,15 @@
 // Node-only pieces: file persistence for the Server peer and a plain-folder Store.
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import type { Commit } from './graph.ts';
 import type { Persist, PersistedState } from './persist.ts';
 import type { Store, StoredKey } from './store.ts';
 
-async function writeAtomic(path: string, data: string | Uint8Array) {
-  await mkdir(dirname(path), { recursive: true });
+/** Write via a temporary file. `priv` keeps the result readable by this user only (the replica holds secrets). */
+async function writeAtomic(path: string, data: string | Uint8Array, priv = false) {
+  await mkdir(dirname(path), priv ? { recursive: true, mode: 0o700 } : { recursive: true });
   const tmp = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-  await writeFile(tmp, data);
+  await writeFile(tmp, data, priv ? { mode: 0o600 } : undefined);
   await rename(tmp, path);
 }
 
@@ -60,7 +61,7 @@ export class FilePersist implements Persist {
     return { commits, pushed, heads: { ...this.heads }, meta: structuredClone(this.meta) };
   }
 
-  async putCommit(c: Commit, pushed: boolean) { await writeAtomic(this.path(c), JSON.stringify({ c, pushed })); }
+  async putCommit(c: Commit, pushed: boolean) { await writeAtomic(this.path(c), JSON.stringify({ c, pushed }), true); }
 
   async removeCommits(cs: Commit[]) { for (const c of cs) await rm(this.path(c), { force: true }); }
 
@@ -68,7 +69,7 @@ export class FilePersist implements Persist {
     for (const c of cs) {
       try {
         const o = JSON.parse(await readFile(this.path(c), 'utf8')) as { c: Commit; pushed: boolean };
-        if (!o.pushed) await writeAtomic(this.path(c), JSON.stringify({ c: o.c, pushed: true }));
+        if (!o.pushed) await writeAtomic(this.path(c), JSON.stringify({ c: o.c, pushed: true }), true);
       } catch { /* the commit was replaced or removed meanwhile */ }
     }
   }
@@ -80,12 +81,12 @@ export class FilePersist implements Persist {
   async setHead(item: string, id: string) {
     await this.ensure();
     this.heads[item] = id;
-    await this.queue(() => writeAtomic(join(this.dir, 'heads.json'), JSON.stringify(this.heads)));
+    await this.queue(() => writeAtomic(join(this.dir, 'heads.json'), JSON.stringify(this.heads), true));
   }
   async setMeta(key: string, value: unknown) {
     await this.ensure();
     if (value === undefined) delete this.meta[key]; else this.meta[key] = value;
-    await this.queue(() => writeAtomic(join(this.dir, 'meta.json'), JSON.stringify(this.meta)));
+    await this.queue(() => writeAtomic(join(this.dir, 'meta.json'), JSON.stringify(this.meta), true));
   }
 }
 
@@ -94,8 +95,10 @@ export class FolderStore implements Store {
   private root: string;
   constructor(root: string) { this.root = root; }
   private p(key: string) {
-    if (key.includes('..')) throw new Error('bad key');
-    return join(this.root, key);
+    const base = resolve(this.root);
+    const full = resolve(base, key);
+    if (full !== base && !full.startsWith(base + sep)) throw new Error('bad key');
+    return full;
   }
   async put(key: string, data: Uint8Array) { await writeAtomic(this.p(key), data); }
   async get(key: string) {

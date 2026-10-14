@@ -15,6 +15,7 @@ const running = await startServer({
   allowInsecure: env.ERGONOTES_ALLOW_INSECURE === '1',
   trustProxy: env.ERGONOTES_TRUST_PROXY === '1',
   setupToken: env.ERGONOTES_SETUP_TOKEN || undefined,
+  folderStoreRoot: env.ERGONOTES_FOLDER_STORE_ROOT ? resolve(env.ERGONOTES_FOLDER_STORE_ROOT) : undefined,
   log: m => console.log(`[ergonotes] ${m}`),
 });
 console.log(`[ergonotes] data: ${dataDir}`);

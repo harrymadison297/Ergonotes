@@ -72,7 +72,7 @@ export function ConflictDialog({ id, onClose }: { id: string; onClose: () => voi
       </div>
       {other?.purge ? (
         <div className="banner" style={{ borderRadius: 6 }}>The other device deleted this note. Keep your version to cancel the deletion, or delete it everywhere.
-          <span className="grow" /><button className="btn danger" onClick={() => void resolve({ kind: 'delete' })}>Delete everywhere</button></div>
+          <span className="grow" /><button className="btn danger" onClick={() => void resolve({ kind: 'delete' })}>Delete forever</button></div>
       ) : (
         <>
           {differing.length > 0 && (
@@ -326,7 +326,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
             <select id="s-cap" className="input" value={app.settings.captureFolder ?? ''} onChange={async e => { await app.run(app.api.setSettings({ captureFolder: e.target.value || null })); await app.refresh(); }}>
               <option value="">Inbox (created when needed)</option>
               {folders.map(f => <option key={f.id} value={f.id}>{f.title}</option>)}</select>
-            <span className="hint">Share-to-app, quick notes and Quick capture all land here.</span></div>
+            <span className="hint">Share-to-app, quick notes and the Scratch pad all land here.</span></div>
           <div className="field"><label htmlFor="s-daily">Daily notes folder</label>
             <select id="s-daily" className="input" value={app.settings.dailyFolder ?? ''} onChange={async e => { await app.run(app.api.setSettings({ dailyFolder: e.target.value || null })); await app.refresh(); }}>
               <option value="">Areas / Daily</option>
@@ -355,13 +355,13 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
           <h3 style={{ marginTop: 0 }}>Change vault password</h3>
           <div className="field"><label htmlFor="pw-old">Current password</label><input id="pw-old" type="password" className="input" autoComplete="current-password" value={oldPw} onChange={e => setOldPw(e.target.value)} /></div>
           <div className="field"><label htmlFor="pw-new">New password</label><input id="pw-new" type="password" className="input" autoComplete="new-password" value={newPw} onChange={e => setNewPw(e.target.value)} />
-            <span className="hint">At least 12 characters. Only the key wrapper changes; your notes are not re-encrypted. Other devices keep working with the old password until they unlock again.</span></div>
+            <span className="hint">At least 12 characters. Only the key wrapper changes; your notes are not re-encrypted. Other devices pick up the new password the next time they are unlocked while online.</span></div>
           {msg && <p role="status" className={msg === 'Password changed' ? undefined : 'error-text'}>{msg}</p>}
           <button className="btn primary" disabled={!oldPw || !newPw} onClick={async () => {
             try { await app.api.changePassword(oldPw, newPw); setMsg('Password changed'); setOldPw(''); setNewPw(''); } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); }
           }}>Change password</button>
           <hr style={{ margin: '24px 0', border: 0, borderTop: '1px solid var(--border)' }} />
-          <button className="btn" onClick={async () => { await app.run(app.api.lock()); location.reload(); }}><LogOut size={16} /> Lock now</button>
+          <button className="btn" onClick={async () => { await app.run(app.api.lock()); location.reload(); }}><LogOut size={16} /> {app.mode === 'remote' ? 'Sign out' : 'Lock now'}</button>
           <p className="hint">Forgetting the password means your notes can't be recovered; there is no reset.</p>
         </div>
       )}
@@ -369,7 +369,10 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
         <div style={{ maxWidth: 520 }}>
           <button className="btn" onClick={() => { onClose(); app.setDialog({ kind: 'import' }); }}><FileUp size={16} /> Import Markdown files…</button>
           <p className="hint">Export any note from its Export menu (Markdown, HTML, PDF).</p>
-          <button className="btn" onClick={async () => { await app.run(app.api.emptyTrash()); await app.refresh(); app.toast('Trash emptied'); }}>Empty trash now</button>
+          <button className="btn danger" onClick={async () => {
+            if (!confirm('Delete everything in the Trash forever? This can’t be undone.')) return;
+            await app.run(app.api.emptyTrash()); await app.refresh(); app.toast('Trash emptied');
+          }}>Empty trash now</button>
         </div>
       )}
     </Dialog>

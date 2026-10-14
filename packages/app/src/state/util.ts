@@ -18,7 +18,7 @@ export function relTime(iso: string | number | null | undefined, now = Date.now(
 }
 
 export function dueLabel(due: string, now = new Date()): { text: string; overdue: boolean; today: boolean } {
-  const d = new Date(due.length <= 10 ? due + 'T23:59:59' : due);
+  const d = new Date(parseDue(due));
   if (Number.isNaN(d.getTime())) return { text: due, overdue: false, today: false };
   const hasTime = due.length > 10;
   const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -45,8 +45,9 @@ export function isoDay(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export function download(filename: string, mime: string, content: string) {
-  const url = URL.createObjectURL(new Blob([content], { type: `${mime};charset=utf-8` }));
+/** Save a Blob as a file through a temporary link. */
+export function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
@@ -54,6 +55,18 @@ export function download(filename: string, mime: string, content: string) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+export function download(filename: string, mime: string, content: string) {
+  downloadBlob(filename, new Blob([content], { type: `${mime};charset=utf-8` }));
+}
+
+/**
+ * Milliseconds for a task's `@due(...)` / `@remind(...)` value: a date alone means a time of day
+ * (end of the day for due dates, 09:00 for reminders), a date with time is used as written.
+ */
+export function parseDue(value: string, dayOnlyAt = 'T23:59:59'): number {
+  return Date.parse(value.length <= 10 ? value + dayOnlyAt : value);
 }
 
 export function classNames(...c: (string | false | null | undefined)[]): string {

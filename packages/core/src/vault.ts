@@ -96,7 +96,6 @@ export class Vault implements VaultApi {
   private meta: Record<string, unknown> = {};
   private replica: Replica | null = null;
   private sealer: Sealer | null = null;
-  private masterKey: Uint8Array | null = null;
   private vaultFile: VaultFile | null = null;
   private views = new Map<string, View>();
   private files = new Map<string, { name: string; mime: string; body: string; size: number; created: string }>();
@@ -168,7 +167,6 @@ export class Vault implements VaultApi {
   }
 
   private async activate(masterKey: Uint8Array): Promise<void> {
-    this.masterKey = masterKey;
     this.sealer = new Sealer(masterKey);
     this.replica = await Replica.open(this.persist, this.deviceId, this.deviceName);
     this.unsub = this.replica.onChange(items => { this.refresh(items); this.emit({ type: 'items', ids: items }); this.noteLocalChange(); });
@@ -249,7 +247,6 @@ export class Vault implements VaultApi {
     this.unsub?.();
     this.replica = null;
     this.sealer = null;
-    this.masterKey = null;
     this.views.clear();
     this.files.clear(); // attachments are plaintext in memory
     this.fileBySha.clear();
@@ -1134,7 +1131,7 @@ export class Vault implements VaultApi {
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${md.utils.escapeHtml(v.title)}</title>
 <style>body{font:16px/1.6 -apple-system,Segoe UI,Inter,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;color:#2d2d2d}
 h1{font-size:2em}code,pre{background:#f4f4f6;border-radius:4px}pre{padding:12px;overflow:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:6px 10px}
-blockquote{border-left:3px solid #00a82d;margin-left:0;padding-left:16px;color:#555}img{max-width:100%}</style></head>
+blockquote{border-left:3px solid #2dbe60;margin-left:0;padding-left:16px;color:#555}img{max-width:100%}</style></head>
 <body><h1>${md.utils.escapeHtml(v.title)}</h1>${v.tags.length ? `<p>${v.tags.map(t => `<code>${md.utils.escapeHtml(t)}</code>`).join(' ')}</p>` : ''}
 ${md.render(prepared)}</body></html>`;
     return { filename: `${safe}.html`, mime: 'text/html', content: html };

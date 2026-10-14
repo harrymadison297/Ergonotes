@@ -103,7 +103,7 @@ Red is excluded: it means "danger".
 | Paper | `#1b2022` |
 | Sidebar | `#161a1c` |
 | Hover / active | `#252c2f` / `#2e3639` |
-| Text | `#eff2f3`, secondary `#aeb6b8`, tertiary `#7b868a` |
+| Text | strong `#ffffff`, normal `#eff2f3`, secondary `#aeb6b8`, tertiary `#7b868a` |
 | Borders | `#3b4446` hairline, `#525e61` strong |
 | Accent | `--green-ink` becomes `#2dbe60` (6.8 : 1 on `#1b2022`); filled controls keep `--green-fill` with white text |
 | Tints | `--green-tint` `#17301f`, `--danger-bg` `#3d1f25` |
@@ -150,7 +150,7 @@ rounded square in brand green. File: `packages/app/public/icon.svg`. (The raster
 | Spacing scale | 4 · 8 · 12 · 16 · 24 · 32 · 48 |
 | Controls (buttons, inputs, rows) | radius 6 px, min height 34 px (40 px touch); 40 px circles in the rail |
 | Inline breadcrumbs and path segments | min height 32 px (they sit in a 38 px bar) |
-| Note top bar and formatting toolbar | 38 px bar; toolbar buttons 34 px; icon buttons 36 px on phones (dense, always-visible chrome) |
+| Note top bar and formatting toolbar | top bar 44 px; toolbar buttons 34 px; icon buttons 36 px on phones (dense, always-visible chrome) |
 | Cards | radius 8 px, 1 px `--slate-200` border (not a shadow ring, so scrollers never clip it) |
 | Dialogs, search popup, empty drop areas | radius 10 px; the first two have a soft pop shadow |
 | Icon buttons | **fully round**, 34 px (40 px on touch, 38 px in the quick row, 44 px for Home actions) |
@@ -198,18 +198,19 @@ order from the top in the rail; in the labelled sidebar the New note pill comes 
 - The sidebar, the note list and the table of contents can be resized by dragging their edge
   (arrow keys nudge by 16 px, Shift 48 px; double-click or Home resets). Widths are per device
   and never exceed half the window.
-- Defaults are 264 / 352 / 240 px and shrink with the window (240 / 320 / 210 below 1280 px,
-  224 / 296 / 190 below 1024 px). The collapsed sidebar is 68 px.
+- Defaults are 264 / 370 / 240 px (sidebar / note list / contents) and shrink with the window
+  (240 / 340 / 210 below 1280 px, 224 / 296 / 190 below 1024 px). The icon rail is 94 px.
 - The table of contents sits to the right of an open note, is on by default, and is toggled from
   the note toolbar or Settings. It is hidden below 900 px (and on phones), together with its toggle.
 - There is no interface scale setting: use the browser or webview zoom (Ctrl + / Ctrl −).
 
 ### Home
 
-A greeting and four large round actions (New note, Daily note, From template, Import), then
-Quick capture, Notes (Recent or Inbox), Pinned and Tags. Tasks and a compact calendar (max 320 px)
-sit in a right column on wide windows. On a phone everything is one column: capture, tasks, notes,
-pinned, calendar, tags; Home is the first tab of the bottom bar.
+The Notes row (Recent or Inbox) with a "Create new note" card at its end and the yellow
+Scratch pad beside it, then Pinned and Tags. Tasks and a compact calendar (max 320 px) sit in a right
+column on wide windows. On a phone everything is one column: scratch pad, tasks, notes, pinned,
+calendar, tags; Home is the first tab of the bottom bar. The daily note, template and import entries
+live in the Create menu.
 
 ### Note list and note page
 
@@ -278,7 +279,7 @@ Rules: sentence case, no exclamation marks, no emoji in UI, say "device" not "cl
 use the glossary terms in `CONTEXT.md` (Vault, Note, Folder, Tag, Commit…).
 
 Fixed wording: **Pinned** for notes kept in the sidebar ("Pin to sidebar", "Unpin"); **Keyboard
-shortcuts** only for keys; **Quick capture** for the Home box; **New from template** for the
+shortcuts** only for keys; **Scratch pad** for the Home box; **New from template** for the
 template action; **Move to trash**, **Empty trash** (the place itself is "Trash").
 
 | Context | Example |

@@ -33,7 +33,11 @@ tools/bundle-server.sh                 # dist/server/server.mjs + web build
 node dist/server/server.mjs            # PORT, HOST, ERGONOTES_DATA, ERGONOTES_WEB
 ```
 
-* Serves HTTPS-only (or localhost); put it behind Caddy/nginx for TLS, or set `ERGONOTES_ALLOW_INSECURE=1` on a trusted LAN.
+* Serves HTTPS-only (or localhost: a connection from this machine). Put it behind Caddy/nginx for TLS and set
+  `ERGONOTES_TRUST_PROXY=1` so the secure cookie and the sign-in rate limit use the proxy's view of the client; or set
+  `ERGONOTES_ALLOW_INSECURE=1` on a trusted LAN (plain HTTP: the password crosses the network in clear).
+* On a server reachable by strangers set `ERGONOTES_SETUP_TOKEN` before first run, or the first visitor can claim it.
+* Folder storage chosen in the web UI has to be inside the data directory unless `ERGONOTES_FOLDER_STORE_ROOT` says otherwise.
 * The vault is unlocked at the first sign-in and the key stays in memory. `ERGONOTES_PASSWORD` unlocks at start-up
   (unattended restarts) at the cost of keeping the password in the environment.
 * A plain-Markdown mirror of every note is written to `$ERGONOTES_DATA/markdown`.

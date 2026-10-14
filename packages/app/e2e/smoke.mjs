@@ -209,7 +209,7 @@ const board = await page.locator('.excalidraw canvas').last().boundingBox();
 await page.mouse.move(board.x + 420, board.y + 300); await page.mouse.down();
 await page.mouse.move(board.x + 600, board.y + 400, { steps: 5 }); await page.mouse.up();
 await page.getByRole('button', { name: 'Done' }).click();
-await page.locator('.excalidraw-block svg').first().waitFor({ timeout: 10000 });
+await page.locator('.excalidraw-block img.drawing').first().waitFor({ timeout: 10000 });
 check('first drawing saves with its strokes, and keys did not touch the note', !(await page.locator('.prose').innerText()).split('\n').some(l => l.trim() === 'r'));
 await page.waitForTimeout(500);
 check('drawing block present', (await page.locator('.excalidraw-block').count()) === 1);

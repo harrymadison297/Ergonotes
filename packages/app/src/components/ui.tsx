@@ -14,17 +14,17 @@ export type MenuEntry =
   | { label: string; icon?: ReactNode; onClick: () => void; danger?: boolean; kbd?: string; disabled?: boolean; checked?: boolean };
 
 export function useMenu() {
-  const [state, setState] = useState<{ x: number; y: number; w: number; entries: MenuEntry[] } | null>(null);
-  const open = useCallback((e: { currentTarget: Element }, entries: MenuEntry[], align: 'left' | 'right' = 'left') => {
+  const [state, setState] = useState<{ x: number; y: number; w: number; entries: MenuEntry[]; variant?: string } | null>(null);
+  const open = useCallback((e: { currentTarget: Element }, entries: MenuEntry[], align: 'left' | 'right' = 'left', variant?: string) => {
     const r = e.currentTarget.getBoundingClientRect();
-    setState({ x: align === 'left' ? r.left : r.right, y: r.bottom + 4, w: align === 'left' ? 0 : 1, entries });
+    setState({ x: align === 'left' ? r.left : r.right, y: r.bottom + 4, w: align === 'left' ? 0 : 1, entries, variant });
   }, []);
   const close = useCallback(() => setState(null), []);
   const node = state ? <MenuView {...state} onClose={close} /> : null;
   return { open, node };
 }
 
-function MenuView({ x, y, w, entries, onClose }: { x: number; y: number; w: number; entries: MenuEntry[]; onClose: () => void }) {
+function MenuView({ x, y, w, entries, variant, onClose }: { x: number; y: number; w: number; entries: MenuEntry[]; variant?: string; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
   useLayoutEffect(() => {
@@ -46,7 +46,7 @@ function MenuView({ x, y, w, entries, onClose }: { x: number; y: number; w: numb
     return () => { document.removeEventListener('mousedown', down, true); document.removeEventListener('keydown', key); };
   }, [onClose]);
   return createPortal(
-    <div ref={ref} className="menu" role="menu" style={pos}>
+    <div ref={ref} className={classNames('menu', variant)} role="menu" style={pos}>
       {entries.map((e, i) =>
         'sep' in e ? <div key={i} className="menu-sep" role="separator" />
         : 'title' in e ? <div key={i} className="menu-title">{e.title}</div>
@@ -71,7 +71,11 @@ export function Dialog({ title, onClose, children, footer, wide }: { title: stri
   closeRef.current = onClose; // parents re-render often; focus and typed text must not reset when they do
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
-    ref.current?.querySelector<HTMLElement>('input, textarea, select, button.primary, button')?.focus();
+    // the first field, else the main action; never the header's Close button
+    const root = ref.current;
+    (root?.querySelector<HTMLElement>('.content input, .content textarea, .content select')
+      ?? root?.querySelector<HTMLElement>('footer button.primary, .content button.primary')
+      ?? root?.querySelector<HTMLElement>('.content button, footer button'))?.focus();
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRef.current(); };
     document.addEventListener('keydown', key);
     return () => { document.removeEventListener('keydown', key); prev?.focus?.(); };

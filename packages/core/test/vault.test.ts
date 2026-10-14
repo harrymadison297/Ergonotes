@@ -8,7 +8,7 @@ const KDF = { m: 256, t: 1, p: 1 };
 const PASSWORD = 'correct horse battery staple';
 const shared = new Map<string, MemStore>();
 
-async function open(name: string, _unused?: MemStore, now?: () => number) {
+async function open(name: string, now?: () => number) {
   const persist = new MemPersist();
   const v = await Vault.open({
     persist, kdf: KDF, now, defaultDeviceName: name,
@@ -112,7 +112,7 @@ describe('Vault', () => {
   });
 
   it('daily note is created once per date from the daily template', async () => {
-    const v = await open('A', undefined, () => Date.parse('2026-10-14T09:30:00'));
+    const v = await open('A', () => Date.parse('2026-10-14T09:30:00'));
     await v.createVault(PASSWORD);
     const d1 = await v.dailyNote('2026-10-14');
     const d2 = await v.dailyNote('2026-10-14');
@@ -190,7 +190,7 @@ describe('Vault fixes from review', () => {
   });
 
   it('puts notes on the local creation day in the calendar', async () => {
-    const v = await open('A', undefined, () => new Date(2026, 9, 14, 23, 30).getTime());
+    const v = await open('A', () => new Date(2026, 9, 14, 23, 30).getTime());
     await v.createVault(PASSWORD);
     const n = await v.createNote({ title: 'Late' });
     const cal = await v.calendar('2026-10-14T00:00', '2026-10-14T23:59');
@@ -201,7 +201,7 @@ describe('Vault fixes from review', () => {
     const store = new MemStore();
     shared.set('s4', store);
     let skew = 0;
-    const v = await open('A', undefined, () => Date.now() + skew);
+    const v = await open('A', () => Date.now() + skew);
     await v.createVault(PASSWORD);
     const n = await v.createNote({ title: 'Keep me' });
     await v.trash(n.id);

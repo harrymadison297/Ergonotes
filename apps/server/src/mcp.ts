@@ -13,6 +13,7 @@ export class TokenStore {
   private tokens: TokenRecord[] | null = null;
   constructor(file: string) { this.file = file; }
 
+  private lastSaved = 0;
   private async load(): Promise<TokenRecord[]> {
     if (this.tokens) return this.tokens;
     try { this.tokens = JSON.parse(await readFile(this.file, 'utf8')) as TokenRecord[]; } catch { this.tokens = []; }
@@ -41,7 +42,9 @@ export class TokenStore {
     const h = hash(token);
     const rec = (await this.load()).find(t => t.hash === h);
     if (!rec) return false;
-    rec.lastUsed = new Date().toISOString();
+    const now = Date.now();
+    rec.lastUsed = new Date(now).toISOString();
+    if (now - this.lastSaved > 60_000) { this.lastSaved = now; await this.save().catch(() => undefined); }
     return true;
   }
 }

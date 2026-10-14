@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react';
 import type { VaultApi } from '@ergonotes/core';
 import { popupRenderer, type PopupItem } from './suggest';
 import { FileImg } from '../components/FileImg';
+import { parseDue } from '../state/util';
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const WIKI_RE = /^\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\|([^\]\n]*)\]\]/;
@@ -79,7 +80,7 @@ function DrawingView({ node, selected, getPos }: NodeViewProps) {
   return (
     <NodeViewWrapper className={`excalidraw-block${svg ? '' : ' empty'}${selected ? ' ProseMirror-selectednode' : ''}`} data-drag-handle>
       <div role="button" tabIndex={0} aria-label="Edit drawing" onClick={open} onKeyDown={e => { if (e.key === 'Enter') open(); }}>
-        {svg ? <div dangerouslySetInnerHTML={{ __html: svg }} /> : <div style={{ padding: 28 }}>Empty drawing — click to draw</div>}
+        {svg ? <img className="drawing" alt="Drawing" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`} draggable={false} /> : <div style={{ padding: 28 }}>Empty drawing — click to draw</div>}
         <span className="hint">Click to edit</span>
       </div>
     </NodeViewWrapper>
@@ -148,7 +149,7 @@ export const InlineDecorations = Extension.create({
             TOKEN_RE.lastIndex = 0;
             let m: RegExpExecArray | null;
             while ((m = TOKEN_RE.exec(node.text))) {
-              const overdue = m[1] === 'due' && Date.parse(m[2].length <= 10 ? m[2] + 'T23:59:59' : m[2]) < now;
+              const overdue = m[1] === 'due' && parseDue(m[2]) < now;
               decos.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length, { class: `task-meta${overdue ? ' overdue' : ''}` }));
             }
           });

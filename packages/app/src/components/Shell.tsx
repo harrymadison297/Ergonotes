@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
-import { classNames, isoDay } from '../state/util';
+import { classNames, parseDue } from '../state/util';
 import { CalendarView } from '../views/Calendar';
 import { ConflictsView } from '../views/Conflicts';
 import { FilesView } from '../views/Files';
@@ -80,8 +80,7 @@ function useGlobalShortcuts() {
       if ((mod && e.key.toLowerCase() === 'n') || (e.altKey && e.key.toLowerCase() === 'n')) { e.preventDefault(); void app.newNote(); return; }
       if (mod && e.altKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
-        const d = await app.run(app.api.dailyNote(isoDay()));
-        if (d) { await app.refresh(); app.go({ name: 'notes', note: d.id, folder: d.parent ?? undefined }); }
+        void app.openDaily();
         return;
       }
       if (mod && e.shiftKey && e.key.toLowerCase() === 's') {
@@ -122,19 +121,30 @@ function useShareIntent() {
 }
 
 /** Local reminder notifications for tasks with @remind(...). */
+const FIRED_KEY = 'ergo.fired';
+const MISSED_WINDOW_MS = 7 * 24 * 3600e3;
+function readFired(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(FIRED_KEY) ?? '[]') as string[]); } catch { return new Set(); }
+}
 function useReminders() {
   const app = useApp();
-  const fired = useRef(new Set<string>());
+  // the interval must survive re-renders, and a restart must not fire the same reminder again
+  const latest = useRef({ tasks: app.tasks, toast: app.toast });
+  latest.current = { tasks: app.tasks, toast: app.toast };
+  const fired = useRef<Set<string>>(readFired());
   useEffect(() => {
     const tick = async () => {
       const now = Date.now();
-      for (const t of app.tasks) {
+      let changed = false;
+      for (const t of latest.current.tasks) {
         if (t.done || !t.remind) continue;
-        const at = Date.parse(t.remind.length <= 10 ? t.remind + 'T09:00' : t.remind);
+        const at = parseDue(t.remind, 'T09:00');
         const key = `${t.noteId}:${t.index}:${t.remind}`;
-        if (Number.isNaN(at) || at > now || now - at > 6 * 3600e3 || fired.current.has(key)) continue;
+        // a reminder that came due while the app was closed still shows once (within a week)
+        if (Number.isNaN(at) || at > now || now - at > MISSED_WINDOW_MS || fired.current.has(key)) continue;
         fired.current.add(key);
-        app.toast(`Reminder: ${t.text}`);
+        changed = true;
+        latest.current.toast(`Reminder: ${t.text}`);
         try {
           if ('__TAURI_INTERNALS__' in window) {
             const n = await import(/* @vite-ignore */ '@tauri-apps/plugin-notification');
@@ -142,11 +152,12 @@ function useReminders() {
           } else if ('Notification' in window && Notification.permission === 'granted') new Notification('Reminder', { body: t.text });
         } catch { /* notifications unavailable */ }
       }
+      if (changed) { try { localStorage.setItem(FIRED_KEY, JSON.stringify([...fired.current].slice(-500))); } catch { /* private mode */ } }
     };
     const id = setInterval(() => void tick(), 20_000);
     void tick();
     return () => clearInterval(id);
-  }, [app.tasks, app]);
+  }, []);
 }
 
 function MoreView() {

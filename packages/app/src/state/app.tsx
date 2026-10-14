@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ItemSummary, Settings, TaskEntry, VaultApi, VaultStatus } from '@ergonotes/core';
 import type { Backend } from '../backend';
-import { debounce } from './util';
+import { debounce, isoDay } from './util';
 import { useRoute, type Route } from './router';
 import { setApiRef } from './appRef';
 
@@ -34,6 +34,8 @@ export interface AppCtx {
   dialog: DialogState;
   setDialog: (d: DialogState) => void;
   newNote: (opts?: { parent?: string | null; title?: string; body?: string }) => Promise<void>;
+  /** open (creating when needed) the daily note of a day, today by default */
+  openDaily: (day?: string, where?: 'notes' | 'calendar') => Promise<void>;
 }
 
 export type DialogState =
@@ -148,6 +150,13 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
     if (n) { await refresh(); go({ name: 'notes', note: n.id, folder: n.parent ?? undefined }); }
   }, [api, run, refresh, go]);
 
-  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote };
+  const openDaily = useCallback(async (day: string = isoDay(), where: 'notes' | 'calendar' = 'notes') => {
+    const d = await run(api.dailyNote(day));
+    if (!d) return;
+    await refresh();
+    go(where === 'calendar' ? { name: 'calendar', note: d.id } : { name: 'notes', note: d.id, folder: d.parent ?? undefined });
+  }, [api, run, refresh, go]);
+
+  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

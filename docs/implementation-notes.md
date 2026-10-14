@@ -24,12 +24,11 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 ## Decisions to confirm
 
 - **"Keep this device unlocked" is on by default** in the native apps: it stores the master key in the app's own storage so the password is not asked at every launch. It is not in ADR 0004; untick it (or default it off) if you prefer asking every time. The web build never stores the key in the browser.
-- **`ERGONOTES_PASSWORD`** unlocks the server at start-up (ADR 0004 only mentions a key file). Without it the server stays locked after a restart until someone signs in.
+- **`ERGONOTES_PASSWORD`** unlocks the server at start-up (ADR 0004 now says so). Without it the server stays locked after a restart until someone signs in.
 - UI wording says "Version history" for a note's earlier Commits (glossary: Commit).
 
 ## Not implemented
 
-- Native app icons (`apps/desktop/src-tauri/icons`) still use the previous green; run `tauri icon packages/app/public/icon.svg` before the next desktop release.
 - Tag colour picker and custom folder colours.
 - Folder view (icon/details) on phones: a folder opens its note list there.
 - Keyboard-only drag and drop is covered by the "Move to…" menu entry, not by arrow-key dragging.
@@ -40,6 +39,13 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 - iOS.
 
 ## Known limits
+
+- The Markdown mirror is one way: it is rebuilt in a temporary folder and swapped in when a note changes, so edits made to those files outside the app are replaced. It inlines attachments as base64 `data:` URIs (the same export a person gets from the Export menu).
+- Reminders are checked every 20 s while the app is open; one that came due while the app was closed shows once on the next start (within a week). Which reminders have fired is remembered per device in `localStorage`.
+- Two devices that are offline and both open the same day's daily note each create one; they appear as two notes with the same title.
+- `probe/<device>` objects on the Store hold the clock value used to learn the Store's time offset and are never deleted.
+- The simulation test runs four random seeds (the issue asked for forty) to keep the suite fast; run it with more seeds before a release that changes the merge or compaction code.
+- S3 and WebDAV stores are only exercised by the browser/device end-to-end run against MinIO, not by unit tests.
 
 - The first `Join` of a very large vault downloads every commit; there is no progressive/lazy sync.
 - `overlays/` and `gc/` are announced through the inbox, but a full reconcile lists them (on "Sync now (full check)" and when this device was offline for 25+ days).

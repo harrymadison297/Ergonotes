@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { FilePlus2, KeyRound, Link2, Loader2 } from 'lucide-react';
-import type { StoreConfig, VaultStatus } from '@ergonotes/core';
+import { MIN_PASSWORD_LENGTH, type StoreConfig, type VaultStatus } from '@ergonotes/core';
 import type { Backend } from '../backend';
 import { classNames } from '../state/util';
 import { StoreForm, emptyStore, storeFromForm, type StoreFormState } from './StoreForm';
@@ -19,7 +19,9 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
   const [mode, setMode] = useState<'create' | 'join'>('create');
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
-  const [remember, setRemember] = useState(backend.mode === 'local');
+  // the key is kept on the device only by the installed apps; a browser never stores it (ADR 0004)
+  const canRemember = backend.mode === 'local' && '__TAURI_INTERNALS__' in window;
+  const [remember, setRemember] = useState(canRemember);
   const [deviceName, setDeviceName] = useState(status.deviceName);
   const [setupToken, setSetupToken] = useState('');
   const [store, setStore] = useState<StoreFormState>(emptyStore());
@@ -34,9 +36,9 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
     if (noVault && mode === 'create' && pw !== pw2) return setError('The two passwords do not match.');
     setBusy(true);
     try {
-      if (!noVault) await api.unlock(pw, { remember });
-      else if (mode === 'create') await api.createVault(pw, { ...(remote ? {} : { deviceName }), remember, ...(remote && setupToken ? { setupToken } : {}) } as Parameters<typeof api.createVault>[1]);
-      else await api.joinVault(storeFromForm(store) as StoreConfig, pw, { ...(remote ? {} : { deviceName }), remember, ...(remote && setupToken ? { setupToken } : {}) } as Parameters<typeof api.joinVault>[2]);
+      if (!noVault) await api.unlock(pw, { remember: canRemember && remember });
+      else if (mode === 'create') await api.createVault(pw, { ...(remote ? {} : { deviceName }), remember: canRemember && remember, ...(remote && setupToken ? { setupToken } : {}) });
+      else await api.joinVault(storeFromForm(store) as StoreConfig, pw, { ...(remote ? {} : { deviceName }), remember: canRemember && remember, ...(remote && setupToken ? { setupToken } : {}) });
       onReady();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -88,8 +90,8 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
             value={pw} onChange={e => setPw(e.target.value)} autoFocus required />
           {noVault && mode === 'create' && (
             <>
-              <div className={classNames('strength', strength(pw) > 60 && pw.length >= 12 && 'ok')}><i style={{ width: `${strength(pw)}%` }} /></div>
-              <span className="hint">At least 12 characters; a passphrase of several words is ideal. If you forget it your notes can't be recovered.</span>
+              <div className={classNames('strength', strength(pw) > 60 && pw.length >= MIN_PASSWORD_LENGTH && 'ok')}><i style={{ width: `${strength(pw)}%` }} /></div>
+              <span className="hint">At least {MIN_PASSWORD_LENGTH} characters; a passphrase of several words is ideal. If you forget it your notes can't be recovered.</span>
             </>
           )}
         </div>
@@ -99,7 +101,7 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
             <input id="pw2" type="password" className="input" autoComplete="new-password" value={pw2} onChange={e => setPw2(e.target.value)} required />
           </div>
         )}
-        {!remote && (
+        {canRemember && (
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
             <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
             <span>Keep this device unlocked <span className="hint">(stores the key on this device)</span></span>
