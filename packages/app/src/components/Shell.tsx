@@ -217,7 +217,7 @@ export function Shell() {
   }
   return (
     <>
-      <div className={classNames('app', app.rail && 'rail', prefs.focus && 'focus')}>
+      <div className={classNames('app', app.rail && 'rail', prefs.focus && app.route.name === 'notes' && !!app.route.note && 'focus')}>
         <Sidebar />
         <main className="main"><RouteView /></main>
       </div>

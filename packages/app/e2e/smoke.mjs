@@ -255,6 +255,22 @@ await page.goto(`${base}/#/notes`);
 check('Undo brings the note back', (await page.locator('.note-row', { hasText: 'Property listings' }).count()) > 0);
 await page.getByRole('button', { name: 'Unpin' }).count();
 
+// hide the list and go full screen: the note must stay on screen
+await page.goto(`${base}/#/notes`);
+await page.locator('.note-row', { hasText: 'Property listings' }).first().click();
+await page.getByRole('button', { name: 'Hide the note list' }).click();
+await page.waitForTimeout(250);
+const hiddenBox = await page.locator('.pane-body').boundingBox();
+check('hiding the note list leaves the note visible and wider', !!hiddenBox && hiddenBox.width > 700 && (await page.locator('.pane-list').count()) === 1 && !(await page.locator('.pane-list').isVisible()));
+await page.getByRole('button', { name: 'Full screen' }).click();
+await page.waitForTimeout(250);
+const fullBox = await page.locator('.pane-body').boundingBox();
+check('full screen shows only the note', !!fullBox && fullBox.width > 1300 && !(await page.locator('.sidebar').isVisible()));
+await page.getByRole('button', { name: 'Leave full screen' }).click();
+await page.getByRole('button', { name: 'Show the note list' }).click();
+await page.waitForTimeout(250);
+check('both come back', (await page.locator('.sidebar').isVisible()) && (await page.locator('.pane-list').isVisible()));
+
 // folder explorer, drag and drop, icon-only sidebar
 await page.goto(`${base}/#/notes`);
 await page.locator('.ex-tile', { hasText: 'Inbox' }).dblclick();
