@@ -5,7 +5,7 @@ import { debounce } from './util';
 import { useRoute, type Route } from './router';
 import { setApiRef } from './appRef';
 
-export interface Toast { id: number; msg: string; kind: 'info' | 'error' }
+export interface Toast { id: number; msg: string; kind: 'info' | 'error'; action?: { label: string; run: () => void } }
 
 export interface AppCtx {
   api: VaultApi;
@@ -21,7 +21,9 @@ export interface AppCtx {
   go: (r: Route, replace?: boolean) => void;
   refresh: () => Promise<void>;
   refreshStatus: () => Promise<void>;
-  toast: (msg: string, kind?: 'info' | 'error') => void;
+  toast: (msg: string, kind?: 'info' | 'error', action?: Toast['action']) => void;
+  /** move a note or folder to the Trash, with an Undo in the toast */
+  trashItem: (id: string) => Promise<void>;
   toasts: Toast[];
   isMobile: boolean;
   /** sidebar collapsed to an icon rail */
@@ -89,10 +91,10 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
     return !r;
   }), []);
 
-  const toast = useCallback((msg: string, kind: 'info' | 'error' = 'info') => {
+  const toast = useCallback((msg: string, kind: 'info' | 'error' = 'info', action?: Toast['action']) => {
     const id = ++seq.current;
-    setToasts(t => [...t, { id, msg, kind }]);
-    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), kind === 'error' ? 6000 : 3000);
+    setToasts(t => [...t, { id, msg, kind, action }]);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), kind === 'error' || action ? 7000 : 3000);
   }, []);
 
   const refreshStatus = useCallback(async () => {
@@ -134,11 +136,18 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
 
   const byId = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
 
+  const trashItem = useCallback(async (id: string) => {
+    const done = await run(api.trash(id).then(() => true));
+    if (!done) return;
+    await refresh();
+    toast('Moved to trash', 'info', { label: 'Undo', run: () => { void run(api.restore(id)).then(() => refresh()); } });
+  }, [api, run, refresh, toast]);
+
   const newNote = useCallback(async (opts: { parent?: string | null; title?: string; body?: string } = {}) => {
     const n = await run(api.createNote({ parent: opts.parent, title: opts.title ?? '', body: opts.body ?? '' }));
     if (n) { await refresh(); go({ name: 'notes', note: n.id, folder: n.parent ?? undefined }); }
   }, [api, run, refresh, go]);
 
-  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, route, go, refresh, refreshStatus, toast, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote };
+  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

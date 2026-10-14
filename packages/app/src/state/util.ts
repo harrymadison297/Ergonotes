@@ -79,3 +79,14 @@ export function installFocusMode(): void {
   window.addEventListener('keydown', e => { if (keys.has(e.key)) root.classList.add('kbd'); }, true);
   window.addEventListener('pointerdown', () => root.classList.remove('kbd'), true);
 }
+
+/** A row is one big hit area: pressing anywhere on it opens it, except on the links and buttons inside it. */
+export const rowClick = (open: () => void) => (e: { target: EventTarget | null }) => {
+  if ((e.target as HTMLElement).closest('a, button')) return;
+  open();
+};
+
+/** Enter or Space on a `role="button"` element. */
+export const activateKeys = (run: () => void) => (e: { key: string; preventDefault(): void }) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
+};

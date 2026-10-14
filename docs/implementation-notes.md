@@ -17,8 +17,8 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 | Android share intent | "Share → Inbox capture" (issue 07) | Implemented for `text/plain`: `MainActivity.kt` keeps the shared text and the UI files it with `Vault.capture()` | Images/files shared into the app are not handled. |
 | Tag colours | Brand guidelines: tags are coloured | A tag's colour is a hash of its top-level name into the 8-colour tag palette (`state/tags.ts`); nothing is stored or synced | Same colour on every device without a setting. A person cannot pick a colour yet. |
 | Folder pane | "Folders are the tree a person navigates" | Opening a folder with no note selected shows its contents as large icons or a details list (`views/Explorer.tsx`); tag and search results use the same pane | Replaces the empty "Select a note" half of the screen. |
-| Search popup | Search by title, text, tag | `searchHits` (core) returns folders by name and notes with the folder path and the passage that matched; `Ctrl/Cmd+K` or the round search button opens it. "Show all results" still goes to the filtered list | Needed passages, not just summaries. |
-| Interface size, pane widths, contents panel | Brand guidelines §6 | Per-device preferences in `localStorage` (`state/prefs.ts`), not synced. Size uses CSS `zoom` on the root (default 90 %, 50–200 %), so pointer and rect coordinates are corrected by the zoom factor in menus and resizers | A phone and a desktop want different values. Firefox before 126 ignores `zoom`. |
+| Search popup | Search by title, text, tag | `searchHits` (core) returns folders by name and notes with the folder path and the passage that matched (at most 40); `Ctrl/Cmd+K` or the round search button opens it. "Show all results" still goes to the filtered list | Needed passages, not just summaries. |
+| Pane widths, table of contents | Brand guidelines §6 | Per-device preferences in `localStorage` (`state/prefs.ts`), not synced. Widths are CSS variables on the root, clamped to 50 % of the window by the grid. The contents panel is on by default and hidden below 900 px. There is no interface scale: browser/webview zoom does that | A phone and a desktop want different layouts. |
 | Argon2id cost | 64 MiB, 3 passes | Implemented with `hash-wasm` (WASM). Not measured on a real phone | Measure on a mid-range device and adjust `DEFAULT_KDF`. |
 
 ## Decisions to confirm
@@ -31,6 +31,7 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 
 - Native app icons (`apps/desktop/src-tauri/icons`) still use the previous green; run `tauri icon packages/app/public/icon.svg` before the next desktop release.
 - Tag colour picker and custom folder colours.
+- Folder view (icon/details) on phones: a folder opens its note list there.
 - Keyboard-only drag and drop is covered by the "Move to…" menu entry, not by arrow-key dragging.
 - Editing spreadsheets/decks natively (xlsx/csv/pptx are stored, previewed read-only, and downloadable).
 - Drawing "promote to item", PDF export other than the system print dialog, template default-folder picker (the `folder` frontmatter key is honoured but nothing in the UI sets it).

@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react';
 import { ArrowRight, CalendarPlus, ChevronLeft, ChevronRight, FilePlus2, LayoutTemplate, Send, Upload } from 'lucide-react';
 import { useApp } from '../state/app';
-import { href } from '../state/router';
+import { href, noteHref } from '../state/router';
 import { isoDay } from '../state/util';
-import { IconBtn, NoteCard } from '../components/ui';
-import { tagStyle } from '../state/tags';
+import { IconBtn, NoteCard, TagLink } from '../components/ui';
 import { TaskRow } from './Tasks';
 
 export function MiniCalendar({ onPick }: { onPick?: (day: string) => void }) {
@@ -22,9 +21,9 @@ export function MiniCalendar({ onPick }: { onPick?: (day: string) => void }) {
   return (
     <div className="mini-cal">
       <div className="head">
-        <button className="icon-btn" aria-label="Previous month" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}><ChevronLeft size={18} /></button>
+        <IconBtn label="Previous month" icon={<ChevronLeft size={18} />} onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} />
         <span>{cursor.toLocaleDateString('en', { month: 'long', year: 'numeric' })}</span>
-        <button className="icon-btn" aria-label="Next month" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}><ChevronRight size={18} /></button>
+        <IconBtn label="Next month" icon={<ChevronRight size={18} />} onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} />
       </div>
       <div className="grid">
         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="dow">{d}</div>)}
@@ -47,7 +46,7 @@ function greeting(now = new Date()): string {
 export function Home() {
   const app = useApp();
   const [tab, setTab] = useState<'recent' | 'inbox'>('recent');
-  const [scratch, setScratch] = useState('');
+  const [capture, setCapture] = useState('');
   const notes = useMemo(() => app.items.filter(i => i.type === 'note' && !i.inTrash && !i.template), [app.items]);
   const recent = useMemo(() => [...notes].sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, 10), [notes]);
   const inboxId = app.settings.captureFolder ?? app.items.find(i => i.role === 'inbox')?.id;
@@ -59,10 +58,10 @@ export function Home() {
   const shown = tab === 'recent' ? recent : inbox;
   const today = new Date();
 
-  const saveScratch = async () => {
-    if (!scratch.trim()) return;
-    const n = await app.run(app.api.capture({ text: scratch }));
-    if (n) { setScratch(''); app.toast('Saved to Inbox'); await app.refresh(); }
+  const saveCapture = async () => {
+    if (!capture.trim()) return;
+    const n = await app.run(app.api.capture({ text: capture }));
+    if (n) { setCapture(''); app.toast('Saved to Inbox'); await app.refresh(); }
   };
   const daily = async () => {
     const d = await app.run(app.api.dailyNote(isoDay()));
@@ -86,7 +85,7 @@ export function Home() {
         <div className="home-actions" role="group" aria-label="Quick actions">
           {action('New note', <FilePlus2 size={22} />, () => void app.newNote(), true)}
           {action('Daily note', <CalendarPlus size={22} />, () => void daily())}
-          {action('Template', <LayoutTemplate size={22} />, () => app.setDialog({ kind: 'templates' }))}
+          {action('From template', <LayoutTemplate size={22} />, () => app.setDialog({ kind: 'templates' }))}
           {action('Import', <Upload size={22} />, () => app.setDialog({ kind: 'import' }))}
         </div>
       </header>
@@ -95,12 +94,12 @@ export function Home() {
         <div className="home-main">
           <section className="widget w-capture" aria-labelledby="w-capture">
             <h2 id="w-capture">Quick capture</h2>
-            <div className="scratch">
-              <textarea aria-label="Quick capture" placeholder="Jot something down…" maxLength={600} rows={3} value={scratch} onChange={e => setScratch(e.target.value)}
-                onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void saveScratch(); }} />
+            <div className="capture">
+              <textarea aria-label="Quick capture" placeholder="Jot something down…" maxLength={600} rows={3} value={capture} onChange={e => setCapture(e.target.value)}
+                onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void saveCapture(); }} />
               <div className="foot">
-                <span>{scratch.length ? `${scratch.length}/600` : 'Saved to your Inbox'}</span>
-                <IconBtn label="Save to Inbox (Ctrl+Enter)" variant="primary" icon={<Send size={16} />} onClick={() => void saveScratch()} disabled={!scratch.trim()} />
+                <span>{capture.length ? `${capture.length}/600` : 'Goes to your Inbox'}</span>
+                <IconBtn label="Save to Inbox (Ctrl+Enter)" variant="primary" icon={<Send size={16} />} onClick={() => void saveCapture()} disabled={!capture.trim()} />
               </div>
             </div>
           </section>
@@ -114,21 +113,21 @@ export function Home() {
               </span>
             </h2>
             {shown.length === 0
-              ? <div className="empty" style={{ padding: 24 }}>Nothing here yet. Press + to write your first note.</div>
-              : <div className="cards">{shown.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })} />)}</div>}
+              ? <div className="empty" style={{ padding: 24 }}>Nothing here yet. Use New note to write your first one.</div>
+              : <div className="cards">{shown.map(n => <NoteCard key={n.id} n={n} href={noteHref(n)} />)}</div>}
           </section>
 
           {pinned.length > 0 && (
             <section className="widget w-pinned" aria-labelledby="w-pin">
               <h2 id="w-pin">Pinned</h2>
-              <div className="cards">{pinned.map(n => <NoteCard key={n.id} n={n} href={href({ name: 'notes', note: n.id, folder: n.parent ?? undefined })} />)}</div>
+              <div className="cards">{pinned.map(n => <NoteCard key={n.id} n={n} href={noteHref(n)} />)}</div>
             </section>
           )}
 
           {app.tags.length > 0 && (
             <section className="widget w-tags" aria-labelledby="w-tags">
               <h2 id="w-tags">Tags</h2>
-              <div className="tag-cloud">{app.tags.slice(0, 30).map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })} style={tagStyle(t.tag)}><i className="tag-dot" />{t.tag}<small>{t.count}</small></a>)}</div>
+              <div className="tag-cloud">{app.tags.slice(0, 30).map(t => <TagLink key={t.tag} tag={t.tag} count={t.count} href={href({ name: 'notes', tag: t.tag })} />)}</div>
             </section>
           )}
         </div>

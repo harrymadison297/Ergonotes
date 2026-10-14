@@ -4,6 +4,7 @@ import { ArrowRight, FileText, Folder as FolderIcon, Search, X } from 'lucide-re
 import type { SearchHit } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, relTime } from '../state/util';
+import { folderChain } from '../state/tree';
 import { IconBtn, TagDots } from './ui';
 
 /** Bold the parts of `text` that match any query word. */
@@ -39,18 +40,8 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
   const recent = useMemo<SearchHit[]>(() => app.items
     .filter(i => i.type === 'note' && !i.inTrash && !i.template)
     .sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, 8)
-    .map(n => ({
-      id: n.id, type: 'note' as const, title: n.title, tags: n.tags, in: 'title' as const, context: n.snippet, updated: n.updated,
-      path: pathOf(n.parent),
-    })), [app.items]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function pathOf(parent: string | null): { id: string; title: string }[] {
-    const out: { id: string; title: string }[] = [];
-    const seen = new Set<string>();
-    let cur = parent;
-    while (cur && !seen.has(cur)) { seen.add(cur); const f = app.byId.get(cur); if (!f) break; out.unshift({ id: f.id, title: f.title }); cur = f.parent; }
-    return out;
-  }
+    .map(n => ({ id: n.id, type: 'note' as const, title: n.title, tags: n.tags, context: n.snippet, updated: n.updated, path: folderChain(app.byId, n.parent) })),
+  [app.items, app.byId]);
 
   const rows = hits ?? recent;
   const folders = rows.filter(r => r.type === 'folder');
@@ -108,7 +99,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
           <Search size={20} aria-hidden />
           <input autoFocus value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey} placeholder="Search notes, folders and tags"
             role="combobox" aria-expanded aria-controls="sp-list" aria-activedescendant={ordered[sel] ? `sp-${ordered[sel].id}` : undefined} aria-label="Search" />
-          {q && <IconBtn label="Clear" size="sm" icon={<X size={16} />} onClick={() => setQ('')} />}
+          {q && <IconBtn label="Clear" icon={<X size={16} />} onClick={() => setQ('')} />}
         </div>
         <div className="palette-list" id="sp-list" role="listbox" ref={listRef}>
           {hits && ordered.length === 0 && <div className="palette-empty">No notes or folders match “{query}”.</div>}

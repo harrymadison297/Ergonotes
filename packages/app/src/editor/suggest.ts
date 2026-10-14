@@ -1,6 +1,5 @@
 // Tiny dependency-free popup list used by the `[[` link picker and the `/` command menu.
 import type { SuggestionOptions } from '@tiptap/suggestion';
-import { zoomFactor } from '../state/prefs';
 
 export interface PopupItem { id: string; label: string; hint?: string }
 
@@ -40,12 +39,9 @@ export function popupRenderer<T extends PopupItem>(): SuggestionOptions<T>['rend
     const place = (rect: (() => DOMRect | null) | null | undefined) => {
       const r = rect?.();
       if (!el || !r) return;
-      // rects are real pixels; the menu lives in the zoomed document
-      const z = zoomFactor();
-      const vw = window.innerWidth / z, vh = window.innerHeight / z;
-      el.style.left = `${Math.min(r.left / z, vw - 300)}px`;
-      const below = r.bottom / z + 6;
-      el.style.top = `${below + 240 > vh ? Math.max(8, r.top / z - 6 - (el.offsetHeight || 200)) : below}px`;
+      el.style.left = `${Math.min(r.left, window.innerWidth - 300)}px`;
+      const below = r.bottom + 6;
+      el.style.top = `${below + 240 > window.innerHeight ? Math.max(8, r.top - 6 - (el.offsetHeight || 200)) : below}px`;
     };
     return {
       onStart: props => {

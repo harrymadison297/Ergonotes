@@ -4,8 +4,9 @@ import {
 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
-import { classNames, relTime } from '../state/util';
-import { dragSource, dropZone, type Dragged } from '../state/dnd';
+import { activateKeys, classNames, relTime } from '../state/util';
+import { dragSource, dropZone, useDropState, useMoveInto } from '../state/dnd';
+import { href, noteHref } from '../state/router';
 import { FileImg } from '../components/FileImg';
 import { IconBtn, TagDots, useMenu, type MenuEntry } from '../components/ui';
 
@@ -22,6 +23,8 @@ function folderIcon(f: ItemSummary, size: number) {
  * Fills the right-hand pane when a folder (or tag, or search) is open and no note is selected:
  * the contents laid out like a file manager, with drag and drop.
  */
+const itemCount = (n: number) => `${n} item${n === 1 ? '' : 's'}`;
+
 export function Explorer({ heading, parentId, crumbs, folders, notes }: {
   heading: string;
   /** folder being shown; null = top level; undefined = not a folder (tag or search result) */
@@ -33,8 +36,9 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
   const app = useApp();
   const [mode, setMode] = useState<ViewMode>(() => { try { return localStorage.getItem('ergo.exview') === 'details' ? 'details' : 'icons'; } catch { return 'icons'; } });
   const [sel, setSel] = useState<string | null>(null);
-  const [hover, setHover] = useState<string | null>(null);
-  const drop = { key: hover, set: setHover };
+  const drop = useDropState();
+  const hover = drop.key;
+  const moveInto = useMoveInto();
   const menu = useMenu();
   useEffect(() => { setSel(null); }, [parentId, heading]);
 
@@ -48,23 +52,15 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
   };
   const activate = (it: ItemSummary) => { setSel(it.id); if (coarse()) open(it); };
 
-  const moveInto = (target: string | null) => async (d: Dragged) => {
-    if (d.id === target) return;
-    const cur = app.byId.get(d.id);
-    if ((cur?.parent ?? null) === target) return;
-    await app.run(app.api.move(d.id, target));
-    await app.refresh();
-  };
-
   const entries = (it: ItemSummary): MenuEntry[] => [
     { label: 'Open', icon: <FolderOpen size={16} />, onClick: () => open(it) },
     { sep: true },
     { label: 'Rename…', onClick: () => app.setDialog({ kind: 'rename', id: it.id }) },
     { label: 'Move to…', onClick: () => app.setDialog({ kind: 'move', id: it.id }) },
-    ...(it.type === 'note' ? [{ label: it.pinned ? 'Remove from Shortcuts' : 'Add to Shortcuts', icon: it.pinned ? <PinOff size={16} /> : <Pin size={16} />,
+    ...(it.type === 'note' ? [{ label: it.pinned ? 'Unpin' : 'Pin to sidebar', icon: it.pinned ? <PinOff size={16} /> : <Pin size={16} />,
       onClick: async () => { await app.run(app.api.setPinned(it.id, !it.pinned)); await app.refresh(); } }] : []),
     { sep: true },
-    { label: 'Move to Trash', icon: <Trash2 size={16} />, danger: true, onClick: async () => { await app.run(app.api.trash(it.id)); await app.refresh(); } },
+    { label: 'Move to trash', icon: <Trash2 size={16} />, danger: true, onClick: () => void app.trashItem(it.id) },
   ];
 
   const sortedFolders = useMemo(() => [...folders].sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true })), [folders]);
@@ -76,10 +72,10 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
     const isFolder = it.type === 'folder';
     return (
       <div key={it.id} role="button" tabIndex={0} className={classNames('ex-tile', sel === it.id && 'sel', hover === key && 'drop-over')} title={it.title}
-        {...dragSource({ id: it.id, type: it.type === 'folder' ? 'folder' : 'note' })}
+        {...dragSource({ id: it.id, type: isFolder ? 'folder' : 'note' })}
         {...(isFolder ? dropZone(key, drop, moveInto(it.id)) : {})}
         onClick={() => activate(it)} onDoubleClick={() => open(it)}
-        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); open(it); } }}
+        onKeyDown={activateKeys(() => open(it))}
         onContextMenu={e => { e.preventDefault(); setSel(it.id); menu.open({ currentTarget: e.currentTarget }, entries(it)); }}>
         <span className="ex-icon">
           {isFolder ? folderIcon(it, 68) : (
@@ -90,7 +86,7 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
         </span>
         <span className="ex-name">{it.title}</span>
         <span className="ex-sub">
-          {isFolder ? `${it.childCount} item${it.childCount === 1 ? '' : 's'}` : relTime(it.updated)}
+          {isFolder ? itemCount(it.childCount) : relTime(it.updated)}
           {!isFolder && <TagDots tags={it.tags} max={3} />}
         </span>
       </div>
@@ -107,12 +103,12 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
         onClick={() => activate(it)} onDoubleClick={() => open(it)}
         onContextMenu={e => { e.preventDefault(); setSel(it.id); menu.open({ currentTarget: e.currentTarget }, entries(it)); }}>
         <td className="name"><div className="name-cell">
-          {isFolder ? <FolderIcon size={18} style={{ color: 'var(--green-ink)' }} /> : <span style={{ width: 18 }} />}
-          <a href={isFolder ? `#/notes?folder=${it.id}` : `#/notes/${it.id}${it.parent ? `?folder=${it.parent}` : ''}`} onClick={e => { e.preventDefault(); open(it); }}>{it.title}</a>
+          {isFolder ? <FolderIcon size={18} className="folder-icon" /> : <span className="icon-gap" />}
+          <a href={isFolder ? href({ name: 'notes', folder: it.id }) : noteHref(it)} onClick={e => { e.preventDefault(); open(it); }}>{it.title}</a>
         </div></td>
-        <td>{isFolder ? `${it.childCount} items` : <TagDots tags={it.tags} max={5} />}</td>
+        <td>{isFolder ? itemCount(it.childCount) : <TagDots tags={it.tags} max={5} />}</td>
         <td>{relTime(it.updated)}</td>
-        <td style={{ textAlign: 'right' }}><IconBtn label={`Actions for ${it.title}`} size="sm" icon={<MoreHorizontal size={16} />} onClick={e => { e.stopPropagation(); menu.open(e, entries(it), 'right'); }} /></td>
+        <td style={{ textAlign: 'right' }}><IconBtn label={`Actions for ${it.title}`} icon={<MoreHorizontal size={18} />} onClick={e => { e.stopPropagation(); menu.open(e, entries(it), 'right'); }} /></td>
       </tr>
     );
   };
@@ -128,13 +124,13 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
           {isFolderCtx ? crumbs.map((c, i) => {
             const key = `c:${c.id ?? 'root'}`;
             return (
-              <span key={key} style={{ display: 'inline-flex', alignItems: 'center' }}>
+              <span key={key} className="ex-crumb">
                 {i > 0 && <ChevronRight size={14} aria-hidden />}
                 <button className={hover === key ? 'drop-over' : undefined} {...dropZone(key, drop, moveInto(c.id))}
                   onClick={() => app.go(c.id ? { name: 'notes', folder: c.id } : { name: 'notes' })}>{c.title}</button>
               </span>
             );
-          }) : <button style={{ fontWeight: 600 }}>{heading}</button>}
+          }) : <span className="ex-title">{heading}</span>}
         </nav>
         <IconBtn label="New note here" icon={<FilePlus2 size={18} />} onClick={() => void app.newNote({ parent: parentId ?? undefined })} />
         {isFolderCtx && <IconBtn label="New folder here" icon={<FolderPlus size={18} />} onClick={() => app.setDialog({ kind: 'newFolder', parent: parentId })} />}

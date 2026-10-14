@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Star, X } from 'lucide-react';
+import { Bell, Check, Star, X } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
-import { Bell, Flag } from 'lucide-react';
 import { classNames, dueLabel, firstSentence, relTime } from '../state/util';
 import { tagStyle } from '../state/tags';
 import { dragSource } from '../state/dnd';
-import { zoomFactor } from '../state/prefs';
 import { FileImg } from './FileImg';
 
 // ---------------------------------------------------------------- menus
@@ -23,7 +21,7 @@ export function useMenu() {
   }, []);
   const close = useCallback(() => setState(null), []);
   const node = state ? <MenuView {...state} onClose={close} /> : null;
-  return { open, close, node, isOpen: !!state };
+  return { open, node };
 }
 
 function MenuView({ x, y, w, entries, onClose }: { x: number; y: number; w: number; entries: MenuEntry[]; onClose: () => void }) {
@@ -32,15 +30,11 @@ function MenuView({ x, y, w, entries, onClose }: { x: number; y: number; w: numb
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // rects and the window size are in real pixels, `left`/`top` are in the zoomed document's CSS px
-    const z = zoomFactor();
     const r = el.getBoundingClientRect();
-    const mw = r.width / z, mh = r.height / z;
-    const vw = window.innerWidth / z, vh = window.innerHeight / z;
-    let left = (w ? x - r.width : x) / z;
-    let top = y / z;
-    left = Math.max(8, Math.min(left, vw - mw - 8));
-    if (top + mh > vh - 8) top = Math.max(8, vh - mh - 8);
+    let left = w ? x - r.width : x;
+    let top = y;
+    left = Math.max(8, Math.min(left, window.innerWidth - r.width - 8));
+    if (top + r.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - r.height - 8);
     setPos({ left, top });
   }, [x, y, w]);
   useEffect(() => {
@@ -87,7 +81,7 @@ export function Dialog({ title, onClose, children, footer, wide }: { title: stri
       <div className={classNames('dialog', wide && 'wide')} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <header>
           <h2>{title}</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}><X size={18} /></button>
+          <IconBtn label="Close" icon={<X size={18} />} onClick={onClose} />
         </header>
         <div className="content">{children}</div>
         {footer && <footer>{footer}</footer>}
@@ -97,10 +91,15 @@ export function Dialog({ title, onClose, children, footer, wide }: { title: stri
   );
 }
 
-export function Toasts({ toasts }: { toasts: { id: number; msg: string; kind: string }[] }) {
+export function Toasts({ toasts }: { toasts: { id: number; msg: string; kind: string; action?: { label: string; run: () => void } }[] }) {
   return createPortal(
     <div className="toast-stack" role="status" aria-live="polite">
-      {toasts.map(t => <div key={t.id} className={classNames('toast', t.kind === 'error' && 'error')}>{t.msg}</div>)}
+      {toasts.map(t => (
+        <div key={t.id} className={classNames('toast', t.kind === 'error' && 'error')}>
+          {t.msg}
+          {t.action && <button className="toast-action" onClick={t.action.run}>{t.action.label}</button>}
+        </div>
+      ))}
     </div>,
     document.body,
   );
@@ -110,7 +109,7 @@ export function Toasts({ toasts }: { toasts: { id: number; msg: string; kind: st
 /** Round icon button: the default way to issue a command. Always labelled (tooltip + aria-label). */
 export function IconBtn({ label, icon, onClick, variant, size, active, disabled, dot, haspopup, className }: {
   label: string; icon: ReactNode; onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
-  variant?: 'primary' | 'soft' | 'danger'; size?: 'sm' | 'lg'; active?: boolean; disabled?: boolean;
+  variant?: 'primary' | 'soft'; size?: 'lg'; active?: boolean; disabled?: boolean;
   dot?: 'ok' | 'err' | 'busy' | null; haspopup?: boolean; className?: string;
 }) {
   return (
@@ -192,4 +191,7 @@ export function NoteCard({ n, href }: { n: ItemSummary; href: string }) {
   );
 }
 
-export function FlagIcon() { return <Flag size={14} className="flag" aria-label="Flagged" />; }
+/** A tag as a link, with how many notes carry it: tag cloud on Home and on the phone's More page. */
+export function TagLink({ tag, count, href }: { tag: string; count: number; href: string }) {
+  return <a className="tag-pill" href={href} style={tagStyle(tag)}><i className="tag-dot" />{tag}<small>{count}</small></a>;
+}

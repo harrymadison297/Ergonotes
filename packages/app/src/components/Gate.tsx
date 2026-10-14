@@ -46,7 +46,7 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
   return (
     <div className="gate">
       <form className="gate-card" onSubmit={submit}>
-        <img src="./icon.svg" width={48} height={48} alt="" style={{ borderRadius: 12 }} />
+        <img src="./icon.svg" width={48} height={48} alt="" />
         {!noVault ? (
           <>
             <h1>{remote ? 'Sign in' : 'Unlock your notes'}</h1>
@@ -89,7 +89,7 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
           {noVault && mode === 'create' && (
             <>
               <div className={classNames('strength', strength(pw) > 60 && pw.length >= 12 && 'ok')}><i style={{ width: `${strength(pw)}%` }} /></div>
-              <span className="hint">At least 12 characters; a passphrase of several words is ideal. If you forget it your notes cannot be recovered.</span>
+              <span className="hint">At least 12 characters; a passphrase of several words is ideal. If you forget it your notes can't be recovered.</span>
             </>
           )}
         </div>

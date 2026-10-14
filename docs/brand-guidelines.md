@@ -1,8 +1,8 @@
-# Ergonotes Brand Guidelines v1.0
+# Ergonotes Brand Guidelines v1.1
 
 > Source of truth for the look and voice of Ergonotes. The CSS tokens in
 > `packages/app/src/styles/tokens.css` implement this document; change both together.
-> Last updated: 2026-10-14
+> Last updated: 2026-10-14 (v1.1, consolidated after review)
 
 ## Quick reference
 
@@ -26,15 +26,16 @@ connection, and is encrypted with one password.
 
 ## 2. Colour
 
-The palette is deliberately small: one accent and a cool grey scale. Everything else
-is derived from these nine values.
+The palette is deliberately small: one accent and a cool grey scale. Chrome colours are these
+nine values and tints mixed from them. Three groups sit outside it on purpose: the danger
+red, the two quick-row accents and the tag colours (listed below).
 
 ### Core palette
 
 | Token | Hex | Role |
 |---|---|---|
-| `--green` | `#2dbe60` | Brand accent: primary buttons, selected-row marker, checkmarks |
-| `--ink` | `#000000` | Titles, primary button label |
+| `--green` | `#2dbe60` | Brand accent for thin marks only: selected-row marker, tab underline, drop target, sync dot |
+| `--ink` | `#000000` | Titles and strong text |
 | `--slate-900` | `#3b4446` | Body text |
 | `--slate-700` | `#525e61` | Secondary text, icons, timestamps |
 | `--slate-500` | `#7b868a` | Placeholders, disabled, decorative icons, field borders |
@@ -51,7 +52,9 @@ is derived from these nine values.
 | `--green-fill-hover` | `#2dbe60` mixed 38 % with black | Hover/pressed for filled controls |
 | `--green-ink` | `#196935` (`#2dbe60` 55 % + black) | Green **text** and icons on light surfaces |
 | `--green-tint` | `#e6f7ec` | Soft green backgrounds (reminders, "new" states) |
-| `--danger` | `#c8283a` | Errors, destructive actions, conflicts. The only non-palette hue in the chrome |
+| `--danger` | `#c8283a` (dark theme `#ff7b8a`) | Errors, destructive actions, conflicts. Text on it is `--on-danger`: white in light, `#1b2022` in dark |
+| `--accent-indigo` | `#5a60c8` (dark `#9aa0f2`) | Search icon in the quick row. 5.5 : 1 on white |
+| `--accent-orange` | `#c9650f` (dark `#f0a04d`) | New-from-template icon in the quick row. 4.3 : 1 on white |
 
 ### Contrast rules (WCAG 2.2 AA)
 
@@ -90,8 +93,9 @@ so every device shows the same colour with no setting to sync.
 | Amber | `#e8892f` |
 | Gold | `#c9a21f` |
 
-Use: a 8 px dot in compact views (note lists, cards, sidebar), a tinted pill
-(12 % colour background, `--ink`-level text) in roomy views (editor footer, tag cloud).
+Use: an 8 px dot in compact views (note lists, cards, sidebar, search results), a tinted pill
+(14 % colour in light, 22 % in dark, as the background; `--text-strong` text) in roomy views
+(editor footer, tag cloud).
 Red is excluded: it means "danger".
 
 ### Dark theme
@@ -103,24 +107,28 @@ Red is excluded: it means "danger".
 | Hover / active | `#252c2f` / `#2e3639` |
 | Text | `#eff2f3`, secondary `#aeb6b8`, tertiary `#7b868a` |
 | Borders | `#3b4446` hairline, `#525e61` strong |
-| Accent | `#2dbe60` (green text on dark may use the brand green directly: 6.8 : 1) |
+| Accent | `--green-ink` becomes `#2dbe60` (6.8 : 1 on `#1b2022`); filled controls keep `--green-fill` with white text |
+| Tints | `--green-tint` `#17301f`, `--danger-bg` `#3d1f25` |
 
 ## 3. Typography
 
 - **Family**: Inter Variable. Fallback `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`.
 - **Mono** (code, diff): `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`.
-- Body 14 px in chrome, 16 px / 1.65 in the editor. Minimum 12 px.
+- Body 14 px in chrome, 16 px / 1.65 in the editor. Minimum 12 px everywhere.
 
 | Role | Size | Weight |
 |---|---|---|
+| Home greeting | 30 px | 700 |
 | Page title | 26 px | 700 |
+| Note list heading | 22 px | 700 |
 | Dialog title | 18 px | 600 |
+| New note pill | 15 px | 700 |
 | Section heading | 16–18 px | 600 |
 | Body (chrome) | 14 px | 400 / 500 |
 | Meta, captions | 12.5 px | 400 |
 | Editor title | 32 px | 700 |
 
-Sentence case everywhere ("New note", not "New Note"). No all-caps except 11 px menu group titles.
+Sentence case everywhere ("New note", not "New Note"). No all-caps except the small menu group titles (12 px).
 
 ## 4. Logo
 
@@ -141,13 +149,14 @@ rounded square in brand green. File: `packages/app/public/icon.svg`. (The raster
 |---|---|
 | Spacing scale | 4 · 8 · 12 · 16 · 24 · 32 · 48 |
 | Controls (buttons, inputs, rows) | radius 6 px, min height 36 px (44 px touch) |
+| Inline breadcrumbs and path segments | min height 32 px (they sit in a 38 px bar) |
 | Cards | radius 8 px, 1 px `--slate-200` border (not a shadow ring, so scrollers never clip it) |
-| Dialogs | radius 10 px, soft pop shadow |
-| Icon buttons | **fully round**, 36 px (compact 32 px, touch 44 px) |
-| Icons | Lucide, 1.75 stroke, 18 px in chrome, 22 px in the collapsed sidebar |
+| Dialogs, search popup, empty drop areas | radius 10 px; the first two have a soft pop shadow |
+| Icon buttons | **fully round**, 36 px (44 px on touch, 40 px for the quick row, 44 px for Home actions) |
+| Icons | Lucide, default 2 px stroke, 18 px in chrome, 22 px in the collapsed sidebar; 1.25 px stroke for the large folder icons |
 
 Borders are always full 1 px lines on all intended sides. Elevation is used only for
-things that float: menus, dialogs, toasts, the search popup.
+things that float: menus, dialogs, toasts, the search popup. Cards and the sign-in card use a border only.
 
 ## 6. Components
 
@@ -159,11 +168,12 @@ things that float: menus, dialogs, toasts, the search popup.
 | Secondary | `--white` + `--slate-300` border | `--slate-900` | Other actions |
 | Ghost | none | `--slate-700` | Toolbars, rows |
 | Danger | none + `--danger` border | `--danger` | Delete, purge |
-| **Round icon** | none / `--slate-100` / `--green` | icon only | Most commands. Always has a tooltip and an `aria-label` |
+| **Round icon** | none (default), `--bg-active` (soft), `--green-fill` with white icon (primary), `--white` + 1 px border with a coloured icon (ring) | icon only | Most commands. Always has a tooltip and an `aria-label` |
 
 Prefer a round icon button to a text button when the icon is a convention (search, new
 note, new folder, sort, save, template, settings, sync, more). Keep a text label when the action is
-rare, destructive or needs a sentence ("Empty trash", "Delete forever").
+rare, destructive or needs a sentence ("Empty trash", "Delete forever"). The one exception to
+icon-only is the **New note** pill, which carries its label.
 
 Every button's **whole box** is its hit target: padding belongs to the button, not to
 the text inside it.
@@ -171,9 +181,11 @@ the text inside it.
 ### Focus
 
 - Mouse and touch: **no outline** on buttons, links or text fields. A text field shows its
-  state with a border colour change only.
-- Keyboard (after a Tab or arrow key): a 2 px `--green-ink` ring with a 2 px paper gap.
-- The editing surface itself never shows a ring.
+  state with a border colour change only (inputs, the quick-capture box and the tag field
+  too).
+- Keyboard (after a Tab or arrow key, until the next pointer press): a 2 px `--green-ink`
+  outline offset by 2 px. Text fields, the editing surface and the title keep the border change
+  instead of a ring; checkboxes, sliders, buttons, links and rows get the ring.
 
 ### Quick row
 
@@ -182,18 +194,40 @@ Top of the sidebar: a green **New note** pill (icon + label), then round outline
 accents (indigo, orange). Folders are created from the Folders views, not from this row.
 When the sidebar is collapsed the pill becomes a round green button.
 
-### Panes and size
+### Panes
 
 - The sidebar, the note list and the table of contents can be resized by dragging their edge
-  (arrow keys nudge, double-click resets). Widths are per device.
-- The table of contents sits to the right of an open note and is on by default; it is toggled from
-  the note toolbar or Settings.
-- Interface size defaults to **90 %** and can be set from 50 % to 200 % in Settings. It is per device.
+  (arrow keys nudge by 16 px, Shift 48 px; double-click or Home resets). Widths are per device
+  and never exceed half the window.
+- Defaults are 264 / 352 / 240 px and shrink with the window (240 / 320 / 210 below 1280 px,
+  224 / 296 / 190 below 1024 px). The collapsed sidebar is 68 px.
+- The table of contents sits to the right of an open note, is on by default, and is toggled from
+  the note toolbar or Settings. It is hidden below 900 px (and on phones), together with its toggle.
+- There is no interface scale setting: use the browser or webview zoom (Ctrl + / Ctrl −).
+
+### Home
+
+A greeting and four large round actions (New note, Daily note, From template, Import), then
+Quick capture, Notes (Recent or Inbox), Pinned and Tags. Tasks and a compact calendar (max 320 px)
+sit in a right column on wide windows. On a phone everything is one column: capture, tasks, notes,
+pinned, calendar, tags; Home is the first tab of the bottom bar.
+
+### Compact views
+
+"Compact" means list rows, cards and task rows: every line is cut with an ellipsis instead of
+wrapping, and the preview is the note's first sentence. A row may still have several lines
+(title, preview, meta), each one a single line.
+
+### Drag and drop
+
+Notes and folders can be dragged onto: a folder (move), the top-level "Folders" row (move to the
+top), a tag (add that tag), "Pinned" (pin), or Trash (move to trash, with Undo in the toast).
+Files dropped on a note's body are attached. Every drop has a menu equivalent.
 
 ### Search popup
 
-`Ctrl/Cmd + K` or the round search button opens a centred popup (560 px). Results appear as
-you type, grouped as Folders and Notes. A note row shows `Folder / Sub-folder` above the
+`Ctrl/Cmd + K` or the round search button opens a popup (560 px wide, near the top of the window).
+With nothing typed it lists the most recent notes. Results appear as you type, grouped as Folders and Notes. A note row shows `Folder / Sub-folder` above the
 title, then the matching passage with the query in bold. Up/Down move, Enter opens,
 Esc closes.
 
@@ -219,6 +253,10 @@ move them, double-click or Enter to open.
 Rules: sentence case, no exclamation marks, no emoji in UI, say "device" not "client",
 use the glossary terms in `CONTEXT.md` (Vault, Note, Folder, Tag, Commit…).
 
+Fixed wording: **Pinned** for notes kept in the sidebar ("Pin to sidebar", "Unpin"); **Keyboard
+shortcuts** only for keys; **Quick capture** for the Home box; **New from template** for the
+template action; **Move to trash**, **Empty trash** (the place itself is "Trash").
+
 | Context | Example |
 |---|---|
 | Success toast | "Moved to Projects" |
@@ -228,14 +266,15 @@ use the glossary terms in `CONTEXT.md` (Vault, Note, Folder, Tag, Commit…).
 
 ## 8. Accessibility checklist
 
-- All text ≥ 4.5 : 1, non-text UI ≥ 3 : 1 (field borders use `--slate-500`).
+- All text ≥ 4.5 : 1, non-text UI ≥ 3 : 1 (field borders use `--slate-500`). Placeholders are hints, never the only label.
 - Icon-only buttons carry `aria-label` and a tooltip.
-- Hit targets ≥ 36 px on desktop, ≥ 44 px on touch.
+- Hit targets ≥ 36 px on desktop (32 px for inline breadcrumbs), ≥ 44 px on touch.
 - Respect `prefers-reduced-motion` and `prefers-color-scheme`.
-- Drag and drop always has a keyboard equivalent (menu → "Move to…").
+- Drag and drop always has a keyboard equivalent (menu → "Move to…", "Pin to sidebar", "Move to trash").
 
 ## Changelog
 
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-10-14 | Initial guidelines; palette fixed to green + cool-grey scale |
+| 1.1 | 2026-10-14 | Filled green controls use `--green-fill` with white text; quick row (New note pill, search, template); Home and mobile Home; resizable panes and table of contents; interface scale added and then removed in favour of browser zoom; Pinned wording; documented drag and drop, compact views and focus rules |

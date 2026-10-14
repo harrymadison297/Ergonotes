@@ -21,6 +21,7 @@ import { currentTaskTokens, ExcalidrawBlock, InlineDecorations, LinkSuggest, Mar
 import { DrawingDialog } from './DrawingDialog';
 import { IconBtn, TagPill, useMenu, type MenuEntry } from './ui';
 import { Resizer } from './Resizer';
+import { href } from '../state/router';
 import { setPrefs, usePrefs } from '../state/prefs';
 
 type SaveState = 'saved' | 'saving' | 'error';
@@ -276,12 +277,12 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const flushNow = async () => { saveBody.flush(); saveTitle.flush(); await inflight.current; };
 
   const moreEntries = (): MenuEntry[] => [
-    { label: doc.pinned ? 'Unpin from Shortcuts' : 'Add to Shortcuts', icon: doc.pinned ? <PinOff size={16} /> : <Pin size={16} />, onClick: async () => { await app.run(api.setPinned(id, !doc.pinned)); } },
+    { label: doc.pinned ? 'Unpin' : 'Pin to sidebar', icon: doc.pinned ? <PinOff size={16} /> : <Pin size={16} />, onClick: async () => { await app.run(api.setPinned(id, !doc.pinned)); } },
     { label: 'Move to…', icon: <FolderIcon size={16} />, onClick: () => app.setDialog({ kind: 'move', id }) },
     { label: doc.template ? 'Stop using as template' : 'Use as template', icon: <LayoutTemplate size={16} />, onClick: async () => { await app.run(api.setTemplate(id, !doc.template)); } },
     { label: 'Version history', icon: <HistoryIcon size={16} />, onClick: async () => { await flushNow(); app.setDialog({ kind: 'history', id }); } },
     { sep: true },
-    { label: 'Move to Trash', icon: <Trash2 size={16} />, danger: true, onClick: async () => { await flushNow(); await app.run(api.trash(id)); await app.refresh(); onBack ? onBack() : app.go({ name: 'notes', folder: doc.parent ?? undefined }); } },
+    { label: 'Move to trash', icon: <Trash2 size={16} />, danger: true, onClick: async () => { await flushNow(); await app.trashItem(id); onBack ? onBack() : app.go({ name: 'notes', folder: doc.parent ?? undefined }); } },
   ];
 
   const addTag = async (raw: string) => {
@@ -331,7 +332,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         <div className="banner info" role="status">
           <Trash2 size={16} /><span className="grow">This note is in the Trash.</span>
           <button className="btn" onClick={async () => { await app.run(api.restore(id)); await app.refresh(); }}><RotateCcw size={14} /> Restore</button>
-          <button className="btn danger" onClick={async () => { if (confirm('Delete this note forever? This cannot be undone.')) { await app.run(api.purge(id)); await app.refresh(); app.go({ name: 'trash' }); } }}>Delete forever</button>
+          <button className="btn danger" onClick={async () => { if (confirm('Delete this note forever? This can’t be undone.')) { await app.run(api.purge(id)); await app.refresh(); app.go({ name: 'trash' }); } }}>Delete forever</button>
         </div>
       )}
       {external && (
@@ -360,7 +361,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
           ))}
         </nav>
         {!app.isMobile && <IconBtn label={prefs.toc ? 'Hide table of contents' : 'Show table of contents'} active={prefs.toc} icon={<TableOfContents size={18} />}
-          onClick={() => setPrefs({ toc: !prefs.toc })} />}
+          className="toc-toggle" onClick={() => setPrefs({ toc: !prefs.toc })} />}
         <IconBtn label="Export" variant="soft" haspopup icon={<Share2 size={18} />} onClick={e => exportMenu.open(e, exportEntries(), 'right')} />
         <IconBtn label="More actions" haspopup icon={<MoreHorizontal size={20} />} onClick={e => moreMenu.open(e, moreEntries(), 'right')} />
       </div>
@@ -399,7 +400,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
           {doc.backlinks.length > 0 && (
             <section aria-label="Backlinks" style={{ marginTop: 40, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
               <h3 style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 8px' }}>Linked from</h3>
-              {doc.backlinks.map(b => <a key={b.id} href={`#/notes/${b.id}`} className="chip reminder" style={{ marginRight: 6 }}>{b.title}</a>)}
+              {doc.backlinks.map(b => <a key={b.id} href={href({ name: 'notes', note: b.id })} className="chip reminder" style={{ marginRight: 6 }}>{b.title}</a>)}
             </section>
           )}
         </div>
@@ -407,13 +408,15 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       {showToc && (
         <aside className="toc" aria-label="Table of contents">
           <Resizer pane="tocW" edge="left" label="Resize table of contents" />
-          <h3>Contents</h3>
-          {headings.length === 0
-            ? <p className="toc-empty">Headings you add to this note show up here.</p>
-            : <nav>{headings.map((h, i) => (
-              <button key={`${h.pos}-${i}`} className={classNames('toc-item', i === activeHeading && 'active')} style={{ paddingLeft: 10 + (h.level - 1) * 14 }}
-                title={h.text} onClick={() => gotoHeading(h, i)}>{h.text}</button>
-            ))}</nav>}
+          <div className="toc-scroll">
+            <h3>Contents</h3>
+            {headings.length === 0
+              ? <p className="toc-empty">Headings you add to this note show up here.</p>
+              : <nav>{headings.map((h, i) => (
+                <button key={`${h.pos}-${i}`} className={classNames('toc-item', i === activeHeading && 'active')} style={{ paddingLeft: 10 + (h.level - 1) * 14 }}
+                  title={h.text} onClick={() => gotoHeading(h, i)}>{h.text}</button>
+              ))}</nav>}
+          </div>
         </aside>
       )}
       </div>
@@ -464,7 +467,7 @@ function TaskDateDialog({ kind, value, onSet, onClose }: { kind: 'due' | 'remind
   return (
     <div className="scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="dialog" role="dialog" aria-modal="true" aria-label={kind === 'due' ? 'Due date' : 'Reminder'} style={{ width: 360 }}>
-        <header><h2>{kind === 'due' ? 'Due date' : 'Reminder'}</h2><button className="icon-btn" aria-label="Close" onClick={onClose}><X size={18} /></button></header>
+        <header><h2>{kind === 'due' ? 'Due date' : 'Reminder'}</h2><IconBtn label="Close" icon={<X size={18} />} onClick={onClose} /></header>
         <div className="content">
           <div className="field"><label htmlFor="td-d">Date</label><input id="td-d" type="date" className="input" value={date} onChange={e => setDate(e.target.value)} autoFocus /></div>
           <div className="field"><label htmlFor="td-t">Time {kind === 'due' && <span className="hint">(optional)</span>}</label><input id="td-t" type="time" className="input" value={time} onChange={e => setTime(e.target.value)} /></div>

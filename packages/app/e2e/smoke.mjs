@@ -26,7 +26,6 @@ await page.getByRole('button', { name: 'Create vault' }).click();
 await page.getByRole('navigation', { name: 'Main' }).waitFor({ timeout: 30000 });
 check('vault created and shell visible', true);
 await page.locator('.home-head h1').waitFor();
-check('default interface size is 90%', (await page.evaluate(() => getComputedStyle(document.documentElement).zoom)) === '0.9');
 check('home screen rendered', true);
 check('default folders listed', (await page.getByRole('link', { name: 'Inbox' }).count()) > 0);
 await page.waitForTimeout(500);
@@ -190,13 +189,22 @@ check('sidebar can be resized by dragging its edge', sbW1 > sbW0 + 60, `${Math.r
 await page.getByRole('separator', { name: 'Resize sidebar' }).dblclick();
 check('double-click resets the width', Math.abs((await page.locator('.sidebar').boundingBox()).width - sbW0) < 2);
 
-// interface size from Settings
-await page.getByRole('button', { name: 'Settings' }).click();
-await page.locator('#s-scale').fill('120');
-check('interface size changes', (await page.evaluate(() => getComputedStyle(document.documentElement).zoom)) === '1.2');
-await page.getByRole('button', { name: 'Reset' }).first().click();
-check('interface size resets to 90%', (await page.evaluate(() => getComputedStyle(document.documentElement).zoom)) === '0.9');
-await page.keyboard.press('Escape');
+// pinned and trash with undo
+await page.goto(`${base}/#/notes`);
+await page.locator('.note-row', { hasText: 'Property listings' }).first().click();
+await page.getByRole('button', { name: 'More actions' }).click();
+await page.getByRole('menuitem', { name: 'Pin to sidebar' }).click();
+await page.locator('.nav-children a.nav-item', { hasText: 'Property listings' }).waitFor({ timeout: 10000 });
+check('a pinned note appears under Pinned', true);
+await page.getByRole('button', { name: 'More actions' }).click();
+await page.getByRole('menuitem', { name: 'Move to trash' }).click();
+await page.locator('.toast-action', { hasText: 'Undo' }).waitFor({ timeout: 5000 });
+check('trashing offers Undo', true);
+await page.locator('.toast-action', { hasText: 'Undo' }).click();
+await page.waitForTimeout(600);
+await page.goto(`${base}/#/notes`);
+check('Undo brings the note back', (await page.locator('.note-row', { hasText: 'Property listings' }).count()) > 0);
+await page.getByRole('button', { name: 'Unpin' }).count();
 
 // folder explorer, drag and drop, icon-only sidebar
 await page.goto(`${base}/#/notes`);
@@ -209,7 +217,7 @@ await page.locator('.ex-tile', { hasText: 'Property listings' }).waitFor({ state
 check('dragging a note onto a sidebar folder moves it', true);
 await page.getByRole('button', { name: 'Collapse sidebar' }).click();
 await page.waitForTimeout(300);
-check('sidebar collapses to icons', (await page.locator('.sidebar.rail').count()) === 1 && (await page.locator('.sidebar.rail .brand-name').isVisible()) === false);
+check('sidebar collapses to icons', (await page.locator('.sidebar.rail').count()) === 1 && (await page.locator('.sidebar.rail .new-pill-label').isVisible()) === false);
 await page.screenshot({ path: `${shots}/05b-rail.png` });
 await page.getByRole('button', { name: 'Expand sidebar' }).click();
 

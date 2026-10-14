@@ -3,8 +3,8 @@ import { Bot, Check, Copy, FileUp, History as HistoryIcon, Loader2, LogOut, Rota
 import { applyHunks, joinDoc, lineDiff, splitDoc, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, relTime } from '../state/util';
-import { Dialog } from './ui';
-import { DEFAULT_SCALE, SCALE_MAX, SCALE_MIN, setPrefs, usePrefs } from '../state/prefs';
+import { Dialog, IconBtn } from './ui';
+import { setPrefs, usePrefs } from '../state/prefs';
 import { StoreForm, formFromStore, storeFromForm, type StoreFormState } from './StoreForm';
 
 // ---------------------------------------------------------------- conflicted revision
@@ -57,7 +57,7 @@ export function ConflictDialog({ id, onClose }: { id: string; onClose: () => voi
         <button className="btn" disabled={busy} onClick={() => void resolve({ kind: 'combine' })}>Combine both texts</button>
         <button className="btn primary" disabled={busy} onClick={() => void resolve({ kind: 'text', text: manual ?? picked })}><Check size={16} /> Save {manual !== null ? 'edited text' : 'selection'}</button>
       </>}>
-      <p style={{ marginTop: 0, color: 'var(--text-2)' }}>
+      <p className="muted" style={{ marginTop: 0 }}>
         The same note was changed on more than one device. Nothing is lost: pick a whole version, choose change by change, or edit the result by hand.
         {detail.others.length > 1 && ` There are ${detail.others.length + 1} versions in all: saving here replaces all of them, so compare each one first.`}
       </p>
@@ -67,8 +67,8 @@ export function ConflictDialog({ id, onClose }: { id: string; onClose: () => voi
         </div>
       )}
       <div className="compare-cols" style={{ marginBottom: 12 }}>
-        <div><b>This device</b><div className="hint" style={{ color: 'var(--text-2)' }}>{when(local)}</div></div>
-        {other && <div><b>{other.deviceName}</b><div className="hint" style={{ color: 'var(--text-2)' }}>{other.purge ? 'Deleted this note' : when(other)}</div></div>}
+        <div><b>This device</b><div className="hint">{when(local)}</div></div>
+        {other && <div><b>{other.deviceName}</b><div className="hint">{other.purge ? 'Deleted this note' : when(other)}</div></div>}
       </div>
       {other?.purge ? (
         <div className="banner" style={{ borderRadius: 6 }}>The other device deleted this note. Keep your version to cancel the deletion, or delete it everywhere.
@@ -81,7 +81,7 @@ export function ConflictDialog({ id, onClose }: { id: string; onClose: () => voi
               {differing.map(k => (
                 <label key={k} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '3px 0' }}>
                   <input type="checkbox" checked={!!props[k]} onChange={e => setProps({ ...props, [k]: e.target.checked })} />
-                  <span><b>{k}</b>: {JSON.stringify(lDoc.fm[k] ?? null)} → <b>{JSON.stringify(oDoc.fm[k] ?? null)}</b> <span style={{ color: 'var(--text-2)' }}>(use {other?.deviceName}’s)</span></span>
+                  <span><b>{k}</b>: {JSON.stringify(lDoc.fm[k] ?? null)} → <b>{JSON.stringify(oDoc.fm[k] ?? null)}</b> <span className="muted">(use {other?.deviceName}’s)</span></span>
                 </label>
               ))}
             </fieldset>
@@ -89,8 +89,8 @@ export function ConflictDialog({ id, onClose }: { id: string; onClose: () => voi
           <div className="diff" role="region" aria-label="Differences">
             {ops.map((op, i) => {
               if (op.type === 'same') { inChange = false; return op.lines.length > 6
-                ? <div key={i}>{[...op.lines.slice(0, 2), '…', ...op.lines.slice(-2)].map((l, j) => <div key={j} className="diff-line"><span className="mark" /><span style={{ color: 'var(--text-2)' }}>{l}</span></div>)}</div>
-                : <div key={i}>{op.lines.map((l, j) => <div key={j} className="diff-line"><span className="mark" /><span style={{ color: 'var(--text-2)' }}>{l}</span></div>)}</div>; }
+                ? <div key={i}>{[...op.lines.slice(0, 2), '…', ...op.lines.slice(-2)].map((l, j) => <div key={j} className="diff-line"><span className="mark" /><span className="muted">{l}</span></div>)}</div>
+                : <div key={i}>{op.lines.map((l, j) => <div key={j} className="diff-line"><span className="mark" /><span className="muted">{l}</span></div>)}</div>; }
               const first = !inChange;
               if (first) { hunk++; inChange = true; }
               const h = hunk;
@@ -242,7 +242,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
   };
   return (
     <Dialog title="Import Markdown" onClose={onClose}>
-      <p style={{ marginTop: 0, color: 'var(--text-2)' }}>Import a folder of Markdown files (Obsidian, Logseq, Notion export). Folders are kept, <code>[[wiki links]]</code> are connected, and front-matter tags are used.</p>
+      <p className="muted" style={{ marginTop: 0 }}>Import a folder of Markdown files (Obsidian, Logseq, Notion export). Folders are kept, <code>[[wiki links]]</code> are connected, and front-matter tags are used.</p>
       <div style={{ display: 'flex', gap: 8 }}>
         <button className="btn primary" disabled={busy} onClick={() => dir.current?.click()}><FileUp size={16} /> Choose a folder…</button>
         <button className="btn" disabled={busy} onClick={() => files.current?.click()}>Choose files…</button>
@@ -259,7 +259,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
 export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   const rows: [string, string][] = [
     ['New note', 'Ctrl + N'], ['Search', 'Ctrl + K'], ['Today’s daily note', 'Ctrl + Alt + D'], ['Sync now', 'Ctrl + Shift + S'],
-    ['Home', 'g then h'], ['Notes', 'g then n'], ['Tasks', 'g then t'], ['This help', '?'],
+    ['Home', 'g then h'], ['Notes', 'g then n'], ['Tasks', 'g then t'], ['Calendar', 'g then c'], ['This help', '?'],
     ['Bold / Italic', 'Ctrl + B / I'], ['Insert a block', '/'], ['Link to a note', '[['],
   ];
   return (
@@ -310,16 +310,9 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
           <div className="field"><label htmlFor="s-theme">Appearance</label>
             <select id="s-theme" className="input" value={app.settings.theme} onChange={async e => { await app.run(app.api.setSettings({ theme: e.target.value as 'system' | 'light' | 'dark' })); await app.refresh(); }}>
               <option value="system">Match my system</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
-          <div className="field"><label htmlFor="s-scale">Interface size <b>{prefs.scale}%</b></label>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <input id="s-scale" type="range" min={SCALE_MIN} max={SCALE_MAX} step={5} value={prefs.scale} style={{ flex: 1, accentColor: 'var(--green)' }}
-                onChange={e => setPrefs({ scale: Number(e.target.value) })} />
-              <button className="btn" disabled={prefs.scale === DEFAULT_SCALE} onClick={() => setPrefs({ scale: DEFAULT_SCALE })}>Reset</button>
-            </div>
-            <span className="hint">From {SCALE_MIN}% to {SCALE_MAX}%. The default is {DEFAULT_SCALE}%. Only this device changes.</span></div>
           <div className="field">
             <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontWeight: 600 }}>
-              <input type="checkbox" checked={prefs.toc} onChange={e => setPrefs({ toc: e.target.checked })} style={{ accentColor: 'var(--green)', width: 18, height: 18 }} />
+              <input type="checkbox" checked={prefs.toc} onChange={e => setPrefs({ toc: e.target.checked })} style={{ accentColor: 'var(--green-fill)', width: 18, height: 18 }} />
               Show the table of contents beside a note</label>
             <span className="hint">Lists the note’s headings on the right. You can also toggle it from the note’s toolbar.</span></div>
           <div className="field"><span className="label">Layout</span>
@@ -329,7 +322,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
             <select id="s-cap" className="input" value={app.settings.captureFolder ?? ''} onChange={async e => { await app.run(app.api.setSettings({ captureFolder: e.target.value || null })); await app.refresh(); }}>
               <option value="">Inbox (created when needed)</option>
               {folders.map(f => <option key={f.id} value={f.id}>{f.title}</option>)}</select>
-            <span className="hint">Share-to-app, quick notes and the Scratch Pad all land here.</span></div>
+            <span className="hint">Share-to-app, quick notes and Quick capture all land here.</span></div>
           <div className="field"><label htmlFor="s-daily">Daily notes folder</label>
             <select id="s-daily" className="input" value={app.settings.dailyFolder ?? ''} onChange={async e => { await app.run(app.api.setSettings({ dailyFolder: e.target.value || null })); await app.refresh(); }}>
               <option value="">Areas / Daily</option>
@@ -365,13 +358,13 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
           }}>Change password</button>
           <hr style={{ margin: '24px 0', border: 0, borderTop: '1px solid var(--border)' }} />
           <button className="btn" onClick={async () => { await app.run(app.api.lock()); location.reload(); }}><LogOut size={16} /> Lock now</button>
-          <p className="hint" style={{ color: 'var(--text-2)' }}>Forgetting the password means your notes cannot be recovered; there is no reset.</p>
+          <p className="hint">Forgetting the password means your notes can't be recovered; there is no reset.</p>
         </div>
       )}
       {tab === 'data' && (
         <div style={{ maxWidth: 520 }}>
           <button className="btn" onClick={() => { onClose(); app.setDialog({ kind: 'import' }); }}><FileUp size={16} /> Import Markdown files…</button>
-          <p className="hint" style={{ color: 'var(--text-2)' }}>Export any note from its Export menu (Markdown, HTML, PDF).</p>
+          <p className="hint">Export any note from its Export menu (Markdown, HTML, PDF).</p>
           <button className="btn" onClick={async () => { await app.run(app.api.emptyTrash()); await app.refresh(); app.toast('Trash emptied'); }}>Empty trash now</button>
         </div>
       )}
@@ -392,7 +385,7 @@ function AgentsPanel() {
   const snippet = JSON.stringify({ mcpServers: { ergonotes: { type: 'http', url: endpoint, headers: { Authorization: `Bearer ${fresh ?? '<token>'}` } } } }, null, 2);
   return (
     <div style={{ maxWidth: 620 }}>
-      <p style={{ marginTop: 0, color: 'var(--text-2)' }}>
+      <p className="muted" style={{ marginTop: 0 }}>
         Let an AI assistant search, read and write your notes through the Model Context Protocol. Anything you give a token access to can read every note on this server, so create one per agent and revoke it when you stop using it.
       </p>
       <div className="field"><label>MCP endpoint</label><input className="input" readOnly value={endpoint} onFocus={e => e.currentTarget.select()} /></div>
@@ -411,9 +404,9 @@ function AgentsPanel() {
       <table className="table"><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th /></tr></thead><tbody>
         {tokens.map(t => (
           <tr key={t.id}><td className="name">{t.name}</td><td>{new Date(t.created).toLocaleDateString()}</td><td>{t.lastUsed ? relTime(t.lastUsed) : 'never'}</td>
-            <td style={{ textAlign: 'right' }}><button className="icon-btn" aria-label={`Revoke ${t.name}`} onClick={async () => { await post({ revoke: t.id }); await load(); }}><Trash2 size={16} /></button></td></tr>
+            <td style={{ textAlign: 'right' }}><IconBtn label={`Revoke ${t.name}`} icon={<Trash2 size={16} />} onClick={async () => { await post({ revoke: t.id }); await load(); }} /></td></tr>
         ))}
-        {tokens.length === 0 && <tr><td colSpan={4} style={{ color: 'var(--text-2)' }}>No tokens yet.</td></tr>}
+        {tokens.length === 0 && <tr><td colSpan={4} className="muted">No tokens yet.</td></tr>}
       </tbody></table>
     </div>
   );

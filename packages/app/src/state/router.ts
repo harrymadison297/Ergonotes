@@ -44,6 +44,9 @@ export function href(r: Route): string {
   }
 }
 
+/** Link to a note, opened inside its folder. */
+export const noteHref = (n: { id: string; parent: string | null }): string => href({ name: 'notes', note: n.id, folder: n.parent ?? undefined });
+
 export function useRoute(): [Route, (r: Route, replace?: boolean) => void] {
   const [route, setRoute] = useState<Route>(() => parseHash(location.hash));
   useEffect(() => {

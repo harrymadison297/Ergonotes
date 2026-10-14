@@ -6,7 +6,6 @@ import {
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames, isoDay } from '../state/util';
-import { tagStyle } from '../state/tags';
 import { CalendarView } from '../views/Calendar';
 import { ConflictsView } from '../views/Conflicts';
 import { FoldersView } from '../views/Folders';
@@ -17,7 +16,8 @@ import { FilePreviewDialog } from './FilePreview';
 import { SearchPalette } from './SearchPalette';
 import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, SettingsDialog, ShortcutsDialog, TemplatesDialog } from './Dialogs';
 import { Sidebar } from './Sidebar';
-import { IconBtn, Toasts } from './ui';
+import { IconBtn, TagLink, Toasts } from './ui';
+import { useSync } from './useSync';
 
 function RouteView() {
   const { route } = useApp();
@@ -65,6 +65,8 @@ function DialogHost() {
 
 function useGlobalShortcuts() {
   const app = useApp();
+  const sync = useSync();
+  const runSync = sync.run;
   const pending = useRef<string | null>(null);
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
@@ -81,8 +83,7 @@ function useGlobalShortcuts() {
       }
       if (mod && e.shiftKey && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        const r = await app.run(app.api.sync());
-        app.toast(r?.error ?? 'Synced', r?.error ? 'error' : 'info');
+        void runSync();
         return;
       }
       if (typing || mod || e.altKey) return;
@@ -97,7 +98,7 @@ function useGlobalShortcuts() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [app]);
+  }, [app, runSync]);
 }
 
 /** Android: text shared into the app from another app becomes a Capture in the Inbox. */
@@ -147,13 +148,13 @@ function useReminders() {
 
 function MoreView() {
   const app = useApp();
+  const sync = useSync();
   const rows: { icon: JSX.Element; label: string; to?: string; onClick?: () => void; badge?: number }[] = [
-    { icon: <HomeIcon size={20} />, label: 'Home', to: href({ name: 'home' }) },
     { icon: <CalendarDays size={20} />, label: 'Calendar', to: href({ name: 'calendar' }) },
     { icon: <LayoutTemplate size={20} />, label: 'New from template', onClick: () => app.setDialog({ kind: 'templates' }) },
     { icon: <AlertTriangle size={20} />, label: 'Conflicts', to: href({ name: 'conflicts' }), badge: app.conflicts.length },
     { icon: <Trash2 size={20} />, label: 'Trash', to: href({ name: 'trash' }) },
-    { icon: <Cloud size={20} />, label: 'Sync now', onClick: async () => { const r = await app.run(app.api.sync()); app.toast(r?.error ?? 'Synced', r?.error ? 'error' : 'info'); } },
+    { icon: <Cloud size={20} />, label: 'Sync now', onClick: () => void sync.run() },
     { icon: <SettingsIcon size={20} />, label: 'Settings', onClick: () => app.setDialog({ kind: 'settings' }) },
     { icon: <Keyboard size={20} />, label: 'Keyboard shortcuts', onClick: () => app.setDialog({ kind: 'shortcuts' }) },
   ];
@@ -166,7 +167,7 @@ function MoreView() {
       {app.tags.length > 0 && (
         <div style={{ padding: 16 }}>
           <h3 style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--text-2)' }}><TagIcon size={14} /> Tags</h3>
-          <div className="tag-cloud">{app.tags.map(t => <a key={t.tag} href={href({ name: 'notes', tag: t.tag })} style={tagStyle(t.tag)}><i className="tag-dot" />{t.tag}<small>{t.count}</small></a>)}</div>
+          <div className="tag-cloud">{app.tags.map(t => <TagLink key={t.tag} tag={t.tag} count={t.count} href={href({ name: 'notes', tag: t.tag })} />)}</div>
         </div>
       )}
     </div>
@@ -181,7 +182,7 @@ function MobileShell() {
   return (
     <div className="mobile">
       <div className="m-top">
-        <button className="m-search" onClick={() => app.setDialog({ kind: 'search' })} aria-label="Search"><Search size={18} />Search notes and folders</button>
+        <button className="m-search" onClick={() => app.setDialog({ kind: 'search' })}><Search size={18} />Search notes and folders</button>
         <IconBtn label="Settings" icon={<SettingsIcon size={20} />} onClick={() => app.setDialog({ kind: 'settings' })} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -195,7 +196,7 @@ function MobileShell() {
         <a className={classNames(tab === 'notes' && 'active')} href={href({ name: 'notes' })}><FileText size={22} />Notes</a>
         <a className={classNames(tab === 'folders' && 'active')} href={href({ name: 'folders' })}><FolderIcon size={22} />Folders</a>
         <a className={classNames(tab === 'tasks' && 'active')} href={href({ name: 'tasks' })}><CheckCircle2 size={22} />Tasks</a>
-        <a className={classNames(tab === 'more' && 'active')} href={href({ name: 'more' })}><span style={{ position: 'relative' }}><MoreHorizontal size={22} />{app.conflicts.length > 0 && <i style={{ position: 'absolute', top: -2, right: -4, width: 8, height: 8, borderRadius: 4, background: 'var(--danger)' }} />}</span>More</a>
+        <a className={classNames(tab === 'more' && 'active')} href={href({ name: 'more' })}><span style={{ position: 'relative' }}><MoreHorizontal size={22} />{app.conflicts.length > 0 && <i className="alert-badge" />}</span>More</a>
       </nav>
     </div>
   );

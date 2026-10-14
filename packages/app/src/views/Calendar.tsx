@@ -5,6 +5,7 @@ import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames, isoDay } from '../state/util';
 import { Resizer } from '../components/Resizer';
+import { IconBtn } from '../components/ui';
 import { NoteEditor } from '../components/NoteEditor';
 
 export function CalendarView({ noteId }: { noteId?: string }) {
@@ -63,7 +64,7 @@ export function CalendarView({ noteId }: { noteId?: string }) {
       <h2 style={{ margin: '0 0 8px', fontSize: 16 }}>{new Date(sel + 'T12:00').toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
       <button className="btn" onClick={() => void openDaily(sel)}><CalendarPlus size={15} /> Open daily note</button>
       <div style={{ marginTop: 14 }}>
-        {selEvents.length === 0 && <p className="hint" style={{ color: 'var(--text-2)' }}>Nothing scheduled.</p>}
+        {selEvents.length === 0 && <p className="hint">Nothing scheduled.</p>}
         {selEvents.map((e, i) => <a key={i} className="note-row" href={href({ name: 'calendar', note: e.id })} style={{ padding: '8px 4px' }}><span className="info"><span className="t">{e.label}</span><span className="when">{e.kind === 'task' ? 'Task due' : e.kind === 'daily' ? 'Daily note' : 'Created'}</span></span></a>)}
       </div>
     </aside>
@@ -74,8 +75,8 @@ export function CalendarView({ noteId }: { noteId?: string }) {
       <h1>{cursor.toLocaleDateString('en', { month: 'long', year: 'numeric' })}</h1>
       <span className="grow" />
       <button className="btn" onClick={() => { const d = new Date(); setCursor(new Date(d.getFullYear(), d.getMonth(), 1)); setSel(isoDay()); }}>Today</button>
-      <button className="icon-btn" aria-label="Previous month" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}><ChevronLeft size={20} /></button>
-      <button className="icon-btn" aria-label="Next month" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}><ChevronRight size={20} /></button>
+      <IconBtn label="Previous month" icon={<ChevronLeft size={20} />} onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} />
+      <IconBtn label="Next month" icon={<ChevronRight size={20} />} onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} />
     </div>
   );
 
@@ -84,8 +85,8 @@ export function CalendarView({ noteId }: { noteId?: string }) {
   }
   if (noteId) {
     return (
-      <div className="split" style={{ gridTemplateColumns: '340px minmax(0,1fr)' }}>
-        <div className="pane-list" style={{ overflow: 'auto' }}><Resizer pane="listW" edge="right" label="Resize list" />{head}{side}</div>
+      <div className="split">
+        <div className="pane-list"><Resizer pane="listW" edge="right" label="Resize list" /><div className="list-scroll">{head}{side}</div></div>
         <div className="pane-body"><NoteEditor key={noteId} id={noteId} /></div>
       </div>
     );

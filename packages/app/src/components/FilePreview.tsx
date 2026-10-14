@@ -111,7 +111,7 @@ export function FilePreviewDialog({ id, onClose }: { id: string; onClose: () => 
               ))}</tbody>
             </table>
           </div>
-          {(pv.sheets[sheet]?.rows.length ?? 0) > 500 && <p className="hint" style={{ color: 'var(--text-2)' }}>Showing the first 500 rows.</p>}
+          {(pv.sheets[sheet]?.rows.length ?? 0) > 500 && <p className="hint">Showing the first 500 rows.</p>}
         </>
       )}
       {pv?.kind === 'slides' && (

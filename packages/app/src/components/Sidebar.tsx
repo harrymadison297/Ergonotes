@@ -1,17 +1,18 @@
 import { useMemo, useState } from 'react';
 import {
-  AlertTriangle, CalendarDays, ChevronDown, ChevronRight, CloudOff, FileText, Folder as FolderIcon, FolderPlus, Home, Keyboard, LayoutTemplate,
-  Loader2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Settings as SettingsIcon, Star, Tag as TagIcon, Trash2,
-  CheckCircle2, FilePlus2, Cloud,
+  AlertTriangle, CalendarDays, ChevronDown, ChevronRight, FileText, Folder as FolderIcon, FolderPlus, Home, Keyboard, LayoutTemplate,
+  MoreHorizontal, PanelLeftClose, PanelLeftOpen, Search, Settings as SettingsIcon, Star, Tag as TagIcon, Trash2,
+  CheckCircle2, FilePlus2,
 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
-import { classNames, relTime } from '../state/util';
+import { activateKeys, classNames, rowClick } from '../state/util';
 import { tagStyle } from '../state/tags';
-import { dragSource, dropZone, type Dragged } from '../state/dnd';
+import { dragSource, dropZone, useDropState, useMoveInto, type Dragged } from '../state/dnd';
 import { IconBtn, useMenu, type MenuEntry } from './ui';
 import { Resizer } from './Resizer';
+import { useSync } from './useSync';
 
 const ROLE_ORDER = ['inbox', 'projects', 'areas', 'resources', 'archive', 'templates'];
 const sortFolders = (a: ItemSummary, b: ItemSummary) => {
@@ -33,29 +34,6 @@ function useStoredSet(key: string): [Set<string>, (id: string) => void] {
   return [s, toggle];
 }
 
-export function useSync() {
-  const app = useApp();
-  const st = app.status;
-  const noStore = !st.store;
-  let icon = <Cloud size={18} />;
-  let text = 'Synced';
-  let dot: 'ok' | 'err' | 'busy' | null = null;
-  let err = false;
-  if (st.syncing) { icon = <Loader2 size={18} className="spin" />; text = 'Syncing…'; dot = 'busy'; }
-  else if (noStore) { icon = <CloudOff size={18} />; text = 'Local only'; }
-  else if (st.lastSyncError) { icon = <AlertTriangle size={18} />; text = 'Sync problem'; err = true; dot = 'err'; }
-  else if (st.pending > 0) { icon = <RefreshCw size={18} />; text = `${st.pending} waiting`; dot = 'busy'; }
-  else if (st.lastSyncAt) { text = `Synced ${relTime(st.lastSyncAt)}`; dot = 'ok'; }
-  const label = st.lastSyncError ?? (noStore ? 'Choose storage to sync between devices' : `${text}. Sync now`);
-  const run = async () => {
-    if (noStore) return app.setDialog({ kind: 'settings', tab: 'sync' });
-    const r = await app.run(app.api.sync());
-    await app.refresh();
-    if (r?.error) app.toast(r.error, 'error'); else if (r) app.toast(r.pulled || r.pushed ? `Synced: ${r.pulled} received, ${r.pushed} sent` : 'Everything is up to date');
-  };
-  return { icon, text, dot, err, label, run };
-}
-
 export function Sidebar() {
   const app = useApp();
   const { items, route, tags, conflicts, go, rail, toggleRail } = app;
@@ -63,13 +41,14 @@ export function Sidebar() {
   const [openTags, toggleTag] = useStoredSet('ergo.openTags');
   const [foldersOpen, setFoldersOpen] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(false);
-  const [shortcutsOpen, setShortcutsOpen] = useState(true);
+  const [pinnedOpen, setPinnedOpen] = useState(true);
   const folderMenu = useMenu();
   const tagMenu = useMenu();
-  const shortcutMenu = useMenu();
+  const pinnedMenu = useMenu();
   const sync = useSync();
-  const [hover, setHover] = useState<string | null>(null);
-  const drop = { key: hover, set: setHover };
+  const drop = useDropState();
+  const hover = drop.key;
+  const moveInto = useMoveInto();
 
   const folders = useMemo(() => items.filter(i => i.type === 'folder' && !i.inTrash), [items]);
   const childrenOf = useMemo(() => {
@@ -93,12 +72,7 @@ export function Sidebar() {
   const isActive = (r: string) => route.name === r;
 
   // ---- what dropping an item on a row does
-  const moveTo = (parent: string | null) => async (d: Dragged) => {
-    if (d.id === parent) return;
-    await app.run(app.api.move(d.id, parent));
-    await app.refresh();
-  };
-  const trashIt = async (d: Dragged) => { await app.run(app.api.trash(d.id)); await app.refresh(); app.toast('Moved to Trash'); };
+  const trashIt = (d: Dragged) => app.trashItem(d.id);
   const pinIt = async (d: Dragged) => { await app.run(app.api.setPinned(d.id, true)); await app.refresh(); };
   const tagIt = (tag: string) => async (d: Dragged) => {
     const cur = app.byId.get(d.id)?.tags ?? [];
@@ -109,12 +83,6 @@ export function Sidebar() {
   };
   const notesOnly = (d: Dragged) => d.type === 'note';
 
-  /** a row's empty space is part of the link: pressing anywhere on it navigates */
-  const rowClick = (to: () => void) => (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('a, button')) return;
-    to();
-  };
-
   const folderNode = (f: ItemSummary, depth: number): JSX.Element => {
     const kids = childrenOf.get(f.id) ?? [];
     const open = openFolders.has(f.id);
@@ -123,7 +91,7 @@ export function Sidebar() {
     return (
       <div key={f.id}>
         <div className={classNames('nav-item', active && 'active', hover === key && 'drop-over')} style={{ paddingLeft: depth * 14 }} title={f.title}
-          {...dragSource({ id: f.id, type: 'folder' })} {...dropZone(key, drop, moveTo(f.id))}
+          {...dragSource({ id: f.id, type: 'folder' })} {...dropZone(key, drop, moveInto(f.id))}
           onClick={rowClick(() => go({ name: 'notes', folder: f.id }))}
           onContextMenu={e => { e.preventDefault(); folderMenu.open({ currentTarget: e.currentTarget }, folderEntries(f)); }}>
           <button className="nav-chevron" aria-label={open ? 'Collapse' : 'Expand'} onClick={() => toggleFolder(f.id)} style={{ visibility: kids.length ? 'visible' : 'hidden' }}>
@@ -149,13 +117,13 @@ export function Sidebar() {
       { label: 'Move to…', onClick: () => app.setDialog({ kind: 'move', id: f.id }) },
       { label: 'Use for new captures', onClick: async () => { await app.run(app.api.setSettings({ captureFolder: f.id })); await app.refresh(); app.toast(`New captures go to “${f.title}”`); } },
       { sep: true },
-      { label: 'Move to Trash', danger: true, icon: <Trash2 size={16} />, onClick: async () => { await app.run(app.api.trash(f.id)); await app.refresh(); } },
+      { label: 'Move to trash', danger: true, icon: <Trash2 size={16} />, onClick: () => void app.trashItem(f.id) },
     ];
   }
 
   const pinnedEntries = (): MenuEntry[] => pinned.length
     ? pinned.map(p => ({ label: p.title, icon: <FileText size={16} />, onClick: () => go({ name: 'notes', note: p.id, folder: p.parent ?? undefined }) }))
-    : [{ label: 'Star a note to pin it here', disabled: true, onClick: () => undefined }];
+    : [{ label: 'Pin a note to see it here', disabled: true, onClick: () => undefined }];
 
   const topTags = tagTree.names.filter(n => !n.includes('/'));
   const tagsMenuEntries = (): MenuEntry[] => topTags.length
@@ -179,21 +147,22 @@ export function Sidebar() {
       </div>
       {folderMenu.node}
       {tagMenu.node}
-      {shortcutMenu.node}
+      {pinnedMenu.node}
 
       <nav className="nav" aria-label="Main">
         {link(href({ name: 'home' }), <Home size={18} />, 'Home', isActive('home'))}
 
-        <div className={classNames('nav-item', hover === 'shortcuts' && 'drop-over')} role="button" tabIndex={0} title="Shortcuts"
-          {...dropZone('shortcuts', drop, pinIt, notesOnly)}
-          onClick={e => { if (rail) shortcutMenu.open(e, pinnedEntries(), 'left'); else setShortcutsOpen(o => !o); }}
-          onKeyDown={e => { if (e.key === 'Enter') setShortcutsOpen(o => !o); }}>
-          <span className="nav-chevron">{shortcutsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
-          <Star size={18} /><span className="label">Shortcuts</span>
+        <div className={classNames('nav-item', hover === 'pinned' && 'drop-over')} role="button" tabIndex={0} title="Pinned"
+          aria-expanded={rail ? undefined : pinnedOpen} aria-haspopup={rail ? 'menu' : undefined}
+          {...dropZone('pinned', drop, pinIt, notesOnly)}
+          onClick={e => { if (rail) pinnedMenu.open(e, pinnedEntries(), 'left'); else setPinnedOpen(o => !o); }}
+          onKeyDown={e => activateKeys(() => { if (rail) pinnedMenu.open({ currentTarget: e.currentTarget }, pinnedEntries(), 'left'); else setPinnedOpen(o => !o); })(e)}>
+          <span className="nav-chevron">{pinnedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+          <Star size={18} /><span className="label">Pinned</span>
         </div>
-        {shortcutsOpen && (
+        {pinnedOpen && (
           <div className="nav-children">
-            {pinned.length === 0 && <div className="nav-hint">Star a note, or drop one here, to pin it</div>}
+            {pinned.length === 0 && <div className="nav-hint">Pin a note, or drop one here</div>}
             {pinned.map(p => (
               <a key={p.id} className="nav-item" href={href({ name: 'notes', note: p.id, folder: p.parent ?? undefined })} title={p.title}
                 {...dragSource({ id: p.id, type: 'note' })}>
@@ -209,7 +178,7 @@ export function Sidebar() {
         <div className="nav-sep" />
 
         <div className={classNames('nav-item', route.name === 'folders' && 'active', hover === 'root' && 'drop-over')} title="Folders"
-          {...dropZone('root', drop, moveTo(null))}
+          {...dropZone('root', drop, moveInto(null))}
           onClick={rowClick(() => go({ name: 'folders' }))}>
           <button className="nav-chevron" aria-label="Toggle folders" onClick={() => setFoldersOpen(o => !o)}>{foldersOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
           <a className="nav-link" href={href({ name: 'folders' })}><FolderIcon size={18} /><span className="label">Folders</span></a>
@@ -217,8 +186,9 @@ export function Sidebar() {
         {foldersOpen && <div className="nav-children" style={{ marginLeft: 6 }}>{(childrenOf.get(null) ?? []).map(f => folderNode(f, 0))}</div>}
 
         <div className="nav-item" role="button" tabIndex={0} title="Tags"
+          aria-expanded={rail ? undefined : tagsOpen} aria-haspopup={rail ? 'menu' : undefined}
           onClick={e => { if (rail) tagMenu.open(e, tagsMenuEntries(), 'left'); else setTagsOpen(o => !o); }}
-          onKeyDown={e => { if (e.key === 'Enter') setTagsOpen(o => !o); }}>
+          onKeyDown={e => activateKeys(() => { if (rail) tagMenu.open({ currentTarget: e.currentTarget }, tagsMenuEntries(), 'left'); else setTagsOpen(o => !o); })(e)}>
           <span className="nav-chevron">{tagsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
           <TagIcon size={18} /><span className="label">Tags</span>
         </div>
@@ -247,7 +217,7 @@ export function Sidebar() {
           </div>
         )}
         <div className="nav-sep" />
-        {conflicts.length > 0 && link(href({ name: 'conflicts' }), <AlertTriangle size={18} style={{ color: 'var(--danger)' }} />, 'Conflicts', isActive('conflicts'),
+        {conflicts.length > 0 && link(href({ name: 'conflicts' }), <AlertTriangle size={18} className="warn-icon" />, 'Conflicts', isActive('conflicts'),
           <><span className="badge">{conflicts.length}</span><i className="alert-dot" /></>)}
         <a className={classNames('nav-item', isActive('trash') && 'active', hover === 'trash' && 'drop-over')} href={href({ name: 'trash' })} title="Trash"
           {...dropZone('trash', drop, trashIt)}>

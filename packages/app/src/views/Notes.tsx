@@ -6,8 +6,9 @@ import { href } from '../state/router';
 import { NoteEditor } from '../components/NoteEditor';
 import { IconBtn, NoteCard, NoteRow, useMenu } from '../components/ui';
 import { Explorer } from './Explorer';
+import { folderChain } from '../state/tree';
 import { Resizer } from '../components/Resizer';
-import { classNames } from '../state/util';
+
 
 type Sort = 'updated' | 'created' | 'title';
 
@@ -71,10 +72,8 @@ export function NotesView({ noteId }: { noteId?: string }) {
     const pid = folder?.id ?? null;
     const subs = app.items.filter(i => i.type === 'folder' && !i.inTrash && real(i.parent) === pid);
     const here = app.items.filter(i => i.type === 'note' && !i.inTrash && real(i.parent) === pid && (pid !== null || !i.template));
-    const crumbs: { id: string | null; title: string }[] = [{ id: null, title: 'All folders' }];
-    const chain: { id: string; title: string }[] = [];
-    for (let cur = folder, n = 0; cur && n < 32; cur = cur.parent ? app.byId.get(cur.parent) : undefined, n++) chain.unshift({ id: cur.id, title: cur.title });
-    return <Explorer heading={heading} parentId={pid} crumbs={[...crumbs, ...chain]} folders={subs} notes={here} />;
+    const crumbs: { id: string | null; title: string }[] = [{ id: null, title: 'All folders' }, ...folderChain(app.byId, folder?.id)];
+    return <Explorer heading={heading} parentId={pid} crumbs={crumbs} folders={subs} notes={here} />;
   })();
 
   const listPane = (
@@ -138,7 +137,7 @@ export function TrashView({ noteId }: { noteId?: string }) {
   const folders = app.items.filter(i => i.type === 'folder' && i.trashed);
   const rows = [...folders, ...list];
   const emptyAll = async () => {
-    if (!confirm('Delete everything in the Trash forever? This cannot be undone.')) return;
+    if (!confirm('Delete everything in the Trash forever? This can’t be undone.')) return;
     await app.run(app.api.emptyTrash());
     await app.refresh();
   };
@@ -153,7 +152,7 @@ export function TrashView({ noteId }: { noteId?: string }) {
       <div className="list-scroll">
         {rows.length === 0 && <div className="empty"><Trash2 size={32} /><h3>Trash is empty</h3></div>}
         {rows.map(n => n.type === 'folder' ? (
-          <div key={n.id} className={classNames('note-row')}>
+          <div key={n.id} className="note-row">
             <div className="info"><div className="t">{n.title}</div><div className="when">Folder</div></div>
             <button className="btn" onClick={async () => { await app.run(app.api.restore(n.id)); await app.refresh(); }}>Restore</button>
           </div>

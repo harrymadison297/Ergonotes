@@ -118,9 +118,7 @@ export interface SearchHit {
   /** folder titles from the root down to the item's folder */
   path: { id: string; title: string }[];
   tags: string[];
-  /** where the query matched */
-  in: 'title' | 'content' | 'tag';
-  /** passage around the first match in the body (empty for folders and title matches) */
+  /** passage around the first match in the body, or the note's opening when only the title or a tag matched; empty for folders */
   context: string;
   updated: string;
 }

@@ -1,7 +1,8 @@
-import type { DragEvent } from 'react';
+import { useState, type DragEvent } from 'react';
+import { useApp } from './app';
 
-/** Items (notes, folders) are dragged inside the app with this type; files from the OS use the browser's own. */
-export const ITEM_MIME = 'application/x-ergo-item';
+/** Items (notes, folders) are dragged inside the app. Carried as this type so Firefox starts the drag; the id is read from `current`. */
+const ITEM_MIME = 'application/x-ergo-item';
 
 export interface Dragged { id: string; type: 'note' | 'folder' }
 let current: Dragged | null = null;
@@ -42,5 +43,21 @@ export function dropZone(key: string, state: DropState, onItem: (d: Dragged) => 
       current = null;
       onItem(d);
     },
+  };
+}
+
+/** Which drop target is under the pointer; one per surface. */
+export function useDropState(): DropState {
+  const [key, set] = useState<string | null>(null);
+  return { key, set };
+}
+
+/** The handler every drop target uses to move a dragged item into a folder (null = top level). */
+export function useMoveInto() {
+  const app = useApp();
+  return (target: string | null) => async (d: Dragged) => {
+    if (d.id === target || (app.byId.get(d.id)?.parent ?? null) === target) return;
+    await app.run(app.api.move(d.id, target));
+    await app.refresh();
   };
 }

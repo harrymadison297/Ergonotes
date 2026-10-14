@@ -56,6 +56,7 @@ interface View {
 export type VaultEvent = { type: 'items'; ids: string[] } | { type: 'status' };
 
 const TRASH_DAYS = 30;
+const MAX_SEARCH_HITS = 40;
 const PUSH_DEBOUNCE_MS = 5 * MIN;
 const PULL_EVERY_MS = 45_000;
 
@@ -574,32 +575,30 @@ export class Vault implements VaultApi {
     const q = query.trim();
     if (!q) return [];
     const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
-    const hit = (v: View, where: SearchHit['in'], context: string): SearchHit => ({
-      id: v.id, type: v.type, title: v.title, path: this.path(v.id), tags: v.tags, in: where, context, updated: v.updated,
+    const hit = (v: View, context: string): SearchHit => ({
+      id: v.id, type: v.type, title: v.title, path: this.path(v.id), tags: v.tags, context, updated: v.updated,
     });
     const out: SearchHit[] = [];
     const seen = new Set<string>();
     for (const v of this.views.values()) {
       if (v.type !== 'folder' || this.inTrash(v)) continue;
       const t = v.title.toLowerCase();
-      if (terms.every(x => t.includes(x))) { out.push(hit(v, 'title', '')); seen.add(v.id); }
+      if (terms.every(x => t.includes(x))) { out.push(hit(v, '')); seen.add(v.id); }
     }
     for (const r of this.searchIndex.search(q)) {
       const v = this.views.get(String(r.id));
       if (!v || seen.has(v.id) || this.inTrash(v)) continue;
       seen.add(v.id);
-      const titleLow = v.title.toLowerCase();
-      if (terms.some(x => titleLow.includes(x))) { out.push(hit(v, 'title', v.snippet)); continue; }
       const text = plainSnippet(v.body, 1_000_000);
       const low = text.toLowerCase();
       let at = -1;
       for (const x of terms) { const i = low.indexOf(x); if (i >= 0 && (at < 0 || i < at)) at = i; }
-      if (at < 0) { out.push(hit(v, v.tags.some(t => terms.some(x => t.toLowerCase().includes(x))) ? 'tag' : 'content', v.snippet)); continue; }
+      // the title or a tag matched, not the text: show the note's opening instead
+      if (at < 0) { out.push(hit(v, v.snippet)); continue; }
       const from = Math.max(0, at - 40);
-      const ctx = (from > 0 ? '…' : '') + text.slice(from, at + 110).trim() + (at + 110 < text.length ? '…' : '');
-      out.push(hit(v, 'content', ctx));
+      out.push(hit(v, (from > 0 ? '…' : '') + text.slice(from, at + 110).trim() + (at + 110 < text.length ? '…' : '')));
     }
-    return out.slice(0, 40);
+    return out.slice(0, MAX_SEARCH_HITS);
   }
 
   async linkTargets(query: string): Promise<{ id: string; title: string }[]> {
