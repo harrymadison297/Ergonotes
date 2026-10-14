@@ -7,8 +7,6 @@ import TaskItem from '@tiptap/extension-task-item';
 import ListItem from '@tiptap/extension-list-item';
 import { Table } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
-import TableCell from '@tiptap/extension-table-cell';
-import TableHeader from '@tiptap/extension-table-header';
 import { Markdown } from 'tiptap-markdown';
 import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
@@ -17,7 +15,7 @@ import {
 import { mergeText, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, debounce, download } from '../state/util';
-import { currentTaskTokens, ExcalidrawBlock, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SlashCommands, slashItems, StoredImage, Wikilink } from '../editor/extensions';
+import { currentTaskTokens, ExcalidrawBlock, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, Wikilink } from '../editor/extensions';
 import { DrawingDialog } from './DrawingDialog';
 import { IconBtn, TagPill, useMenu, type MenuEntry } from './ui';
 import { Resizer } from './Resizer';
@@ -89,7 +87,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       Link.configure({ openOnClick: false, autolink: true, protocols: [{ scheme: 'ergo-file', optionalSlashes: true }], HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
       Placeholder.configure({ placeholder: 'Press "/" to insert an element' }),
       MarkdownTaskList, TaskItem.extend({ content: 'paragraph taskList?' }).configure({ nested: true }),
-      Table.configure({ resizable: false }), TableRow, TableHeader, TableCell,
+      Table.configure({ resizable: false }), TableRow, SingleParagraphHeader, SingleParagraphCell, TableKeys,
       StoredImage.configure({ inline: true }),
       Wikilink, ExcalidrawBlock, InlineDecorations,
       LinkSuggest.configure({ api }),

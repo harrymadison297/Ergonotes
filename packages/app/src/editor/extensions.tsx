@@ -1,5 +1,7 @@
 import { Extension, Node, mergeAttributes, type Editor } from '@tiptap/core';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import Image from '@tiptap/extension-image';
@@ -291,6 +293,41 @@ export const MarkdownTaskList = TaskList.extend({
             element.querySelectorAll('.contains-task-list').forEach(list => list.setAttribute('data-type', 'taskList'));
           },
         },
+      },
+    };
+  },
+});
+
+// ---------------------------------------------------------------- tables that survive Markdown
+// A table cell holds one paragraph. A cell with two blocks has no Markdown form and the serializer
+// would write the literal text "[table]" over the whole table, losing it on the next save.
+export const SingleParagraphCell = TableCell.extend({ content: 'paragraph' });
+export const SingleParagraphHeader = TableHeader.extend({ content: 'paragraph' });
+
+/** Enter moves to the next cell (a new row after the last one); Mod-Enter leaves the table below. */
+export const TableKeys = Extension.create({
+  name: 'tableKeys',
+  addKeyboardShortcuts() {
+    return {
+      Enter: ({ editor }) => {
+        if (!editor.isActive('table')) return false;
+        if (editor.commands.goToNextCell()) return true;
+        return editor.chain().addRowAfter().goToNextCell().run();
+      },
+      'Mod-Enter': ({ editor }) => {
+        if (!editor.isActive('table')) return false;
+        const { state, view } = editor;
+        const { $from } = state.selection;
+        for (let d = $from.depth; d > 0; d--) {
+          if ($from.node(d).type.name !== 'table') continue;
+          const pos = $from.after(d);
+          const para = state.schema.nodes.paragraph.create();
+          const tr = state.tr.insert(pos, para);
+          tr.setSelection(TextSelection.near(tr.doc.resolve(pos + 1)));
+          view.dispatch(tr.scrollIntoView());
+          return true;
+        }
+        return false;
       },
     };
   },

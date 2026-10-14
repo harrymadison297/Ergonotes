@@ -133,6 +133,18 @@ await page.reload();
 await page.locator('.prose').waitFor();
 check('table and tasks survive a reload', (await page.locator('.prose table').count()) === 1 && (await page.locator('.prose ul[data-type="taskList"] li').count()) === 2);
 await page.screenshot({ path: `${shots}/06-note-table.png` });
+// Enter inside a table cell moves on instead of splitting it; the table must still be saved as a table
+await page.locator('.prose table td').last().click();
+await page.keyboard.type('x');
+await page.keyboard.press('Enter');
+await page.keyboard.type('y');
+await page.waitForTimeout(1500);
+{
+  const rpcT = (m, ...a) => page.evaluate(async ([m, a]) => (await fetch(`./api/rpc/${m}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(a) })).json(), [m, a]);
+  const n = (await rpcT('listItems')).find(i => i.title === 'Property listings');
+  const saved = (await rpcT('getNote', n.id)).body;
+  check('a table keeps its Markdown form after Enter in a cell', saved.includes('| ') && !saved.includes('[table]'), JSON.stringify(saved.slice(-160)));
+}
 
 // attachments: a CSV is stored as a file item and previewed as a table
 await page.goto(`${base}/#/notes`);
@@ -154,7 +166,14 @@ await page.goto(`${base}/#/files`);
 await page.locator('.file-card', { hasText: 'prices.csv' }).waitFor({ timeout: 10000 });
 await page.locator('.file-card', { hasText: 'Property listings' }).waitFor({ timeout: 10000 }).then(
   () => check('files page lists the attachment with its note', true),
-  () => check('files page lists the attachment with its note', false));
+  async () => {
+    const rpc = (m, ...a) => page.evaluate(async ([m, a]) => (await fetch(`./api/rpc/${m}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(a) })).json(), [m, a]);
+    const items = await rpc('listItems');
+    const n = items.find(i => i.title === 'Property listings');
+    const body = n ? (await rpc('getNote', n.id)).body : null;
+    const files = await rpc('listFiles');
+    check('files page lists the attachment with its note', false, JSON.stringify({ cards: await page.locator('.file-card').allInnerTexts(), body: body && body.slice(-200), files }));
+  });
 await page.locator('.file-card', { hasText: 'prices.csv' }).click();
 await page.getByText('Bergen, NO').waitFor({ timeout: 10000 });
 check('file preview opens beside the list', true);
