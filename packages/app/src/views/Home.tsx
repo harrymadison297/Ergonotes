@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Edit3, FilePlus2, Send } from 'lucide-react';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
-import { dueLabel, isoDay } from '../state/util';
+import { isoDay } from '../state/util';
 import { NoteCard } from '../components/ui';
 import { TaskRow } from './Tasks';
 
@@ -114,7 +114,6 @@ export function Home() {
         </section>
       )}
       <button className="btn ghost" onClick={() => app.setDialog({ kind: 'templates' })} style={{ marginTop: 8 }}><Edit3 size={14} /> Start from a template</button>
-      <span hidden>{dueLabel('2000-01-01').text}</span>
     </div>
   );
 }

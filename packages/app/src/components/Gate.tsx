@@ -35,8 +35,8 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
     setBusy(true);
     try {
       if (!noVault) await api.unlock(pw, { remember });
-      else if (mode === 'create') await api.createVault(pw, { deviceName, remember, ...(remote && setupToken ? { setupToken } : {}) } as Parameters<typeof api.createVault>[1]);
-      else await api.joinVault(storeFromForm(store) as StoreConfig, pw, { deviceName, remember, ...(remote && setupToken ? { setupToken } : {}) } as Parameters<typeof api.joinVault>[2]);
+      else if (mode === 'create') await api.createVault(pw, { ...(remote ? {} : { deviceName }), remember, ...(remote && setupToken ? { setupToken } : {}) } as Parameters<typeof api.createVault>[1]);
+      else await api.joinVault(storeFromForm(store) as StoreConfig, pw, { ...(remote ? {} : { deviceName }), remember, ...(remote && setupToken ? { setupToken } : {}) } as Parameters<typeof api.joinVault>[2]);
       onReady();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

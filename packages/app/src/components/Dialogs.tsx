@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Check, Copy, Download, FileUp, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { Bot, Check, Copy, FileUp, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { applyHunks, joinDoc, lineDiff, splitDoc, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, relTime } from '../state/util';
@@ -355,7 +355,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
         <div style={{ maxWidth: 520 }}>
           <button className="btn" onClick={() => { onClose(); app.setDialog({ kind: 'import' }); }}><FileUp size={16} /> Import Markdown files…</button>
           <p className="hint" style={{ color: 'var(--text-3)' }}>Export any note from its Export menu (Markdown, HTML, PDF).</p>
-          <button className="btn" onClick={async () => { await app.run(app.api.emptyTrash()); await app.refresh(); app.toast('Trash emptied'); }}><Download size={16} style={{ display: 'none' }} /> Empty Trash now</button>
+          <button className="btn" onClick={async () => { await app.run(app.api.emptyTrash()); await app.refresh(); app.toast('Trash emptied'); }}>Empty Trash now</button>
         </div>
       )}
     </Dialog>

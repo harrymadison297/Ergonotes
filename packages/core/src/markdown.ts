@@ -31,9 +31,6 @@ export function joinDoc(fm: Frontmatter, body: string): string {
   return `---\n${y}\n---\n${body}`;
 }
 
-export const toLines = (text: string): string[] => text.split('\n');
-export const fromLines = (lines: string[]): string => lines.join('\n');
-
 // ---------- Ergonote fenced blocks ----------
 const FENCE_OPEN = /^```ergonote-[\w-]+\s*$/;
 const FENCE_CLOSE = /^```\s*$/;
@@ -56,7 +53,6 @@ export const fromUnits = (units: string[]): string => units.join('\n');
 
 // ---------- inline tokens ----------
 export const WIKILINK_RE = /\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\|([^\]]*)\]\]/g;
-export const PLAIN_WIKILINK_RE = /\[\[([^\]|]+)\]\]/g;
 
 export function extractLinkIds(body: string): string[] {
   const ids = new Set<string>();
@@ -131,8 +127,4 @@ export function plainSnippet(body: string, max = 180): string {
 export function firstImage(body: string): string | undefined {
   const u = /!\[[^\]]*\]\(([^)\s]+)\)/.exec(body)?.[1];
   return u && !u.startsWith('data:') ? u : undefined;
-}
-
-export function untitled(): string {
-  return 'Untitled';
 }

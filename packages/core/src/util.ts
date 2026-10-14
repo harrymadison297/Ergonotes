@@ -26,10 +26,6 @@ export const DAY = 86_400_000;
 export const HOUR = 3_600_000;
 export const MIN = 60_000;
 
-export function sortedUnique(a: string[]): string[] {
-  return [...new Set(a)].sort();
-}
-
 /** Deterministic JSON equality for plain data. */
 export function sameJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);

@@ -8,13 +8,12 @@ const KDF = { m: 256, t: 1, p: 1 };
 const PASSWORD = 'correct horse battery staple';
 const shared = new Map<string, MemStore>();
 
-async function open(name: string, store?: MemStore, now?: () => number) {
+async function open(name: string, _unused?: MemStore, now?: () => number) {
   const persist = new MemPersist();
   const v = await Vault.open({
     persist, kdf: KDF, now, defaultDeviceName: name,
     storeFactory: cfg => { if (cfg.type !== 'folder') throw new Error('x'); return shared.get(cfg.path)!; },
   });
-  void store;
   return v;
 }
 const cfgFor = (id: string): StoreConfig => ({ type: 'folder', path: id });

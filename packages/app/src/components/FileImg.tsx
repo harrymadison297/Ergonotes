@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useAppOptional } from '../state/appRef';
+import { getApi } from '../state/appRef';
 
 const cache = new Map<string, string>();
 
 /** An <img> that understands `ergo-file:<id>` attachment URLs. */
 export function FileImg({ src, alt, className }: { src: string; alt?: string; className?: string }) {
-  const api = useAppOptional();
+  const api = getApi();
   const m = /^ergo-file:([0-9a-f-]{36})$/.exec(src);
   const [url, setUrl] = useState<string | null>(() => (m ? cache.get(m[1]) ?? null : src));
   useEffect(() => {

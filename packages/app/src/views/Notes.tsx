@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownUp, FileText, FilePlus2, Filter, Trash2 } from 'lucide-react';
+import { ArrowDownUp, FileText, FilePlus2, Trash2 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
@@ -155,4 +155,3 @@ export function TrashView({ noteId }: { noteId?: string }) {
     </div>
   );
 }
-void Filter;
