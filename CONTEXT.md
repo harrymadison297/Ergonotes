@@ -42,8 +42,16 @@ _Avoid_: TOC marker, outline block
 A dated entry written inside a Note (`@event(...)`), with or without a time; it appears in the Calendar. Not the same as a Task, which can be done.
 _Avoid_: Appointment, meeting
 
+**Record**:
+A folder of the Vault, under `attachments/`, that holds one recording: its audio, the frames taken from a shared screen and a transcript. A note links to it with `[label](attachments/record_…  "type_record")` and shows it as a player with the frames marked on the timeline. A *Recording* has audio and transcript; a *Meeting* needs a shared screen and also keeps frames.
+_Avoid_: Recording file, clip (a clip is the older single audio file), session
+
+**Frame**:
+A picture taken from the shared screen during a Meeting, named by the second it was taken at. Dropped while recording when it is practically the last one; the person's own are always kept; a person-started Filter proposes which of the rest to cut.
+_Avoid_: Screenshot, capture, snapshot
+
 **Voice note**:
-A recording made in the app and kept in the Note as an audio clip. It can be written out as text when speech-to-text is set up.
+A short audio clip made in the app and kept in the Note as an audio clip. The older form of a Recording; clips already in notes keep playing.
 _Avoid_: Audio file (that is something attached from outside), memo
 
 **Folder**:
