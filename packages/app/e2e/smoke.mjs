@@ -203,7 +203,13 @@ await page.keyboard.type('See [[Welcome');
 await page.waitForTimeout(500);
 await page.keyboard.press('Enter');
 await page.waitForTimeout(500);
-check('wiki link inserted from the picker', (await page.locator('.prose .wikilink').count()) === 1);
+check('link inserted from the [[ picker is a standard link to the note file', (await page.locator('.prose a[href$="Welcome%20to%20Ergonotes.md"]').count()) === 1);
+{
+  // clicking it opens that note
+  await page.locator('.prose a[href$="Welcome%20to%20Ergonotes.md"]').click();
+  check('the link opens the note it points at', !!(await until(async () => (await page.getByLabel('Title').inputValue()) === 'Welcome to Ergonotes')));
+  await page.goBack();
+}
 
 // drawing block: opens the board and keeps an (empty) drawing block when done
 await page.getByRole('button', { name: /Insert/ }).click();

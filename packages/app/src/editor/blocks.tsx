@@ -1,21 +1,22 @@
 // The elements of the Insert menu that have no CommonMark form of their own. Each one stores itself in the note's
-// Markdown in a plain, readable shape (docs/adr/0009) so a note stays a text file other tools can read:
+// Markdown in a plain, standard shape (docs/adr/0009, 0010) so a note stays a text file other tools can read:
 //
-//   toggle        :::toggle Title … :::        (blocks inside, nesting allowed)
-//   contents      [TOC]
-//   page break    \newpage
+//   toggle        <details><summary>Title</summary> … </details>     (blocks inside, nesting allowed)
+//   page break    <div style="page-break-after: always;"></div>
 //   date          @date(2026-10-20)
 //   checkbox      ☐ / ☑
 //   formula       $x^2$   and   $$ … $$
 //   diagram       ```mermaid … ```
-//   voice note    [Voice note 0:42](ergo-file:<id> "audio")
-import { Node, mergeAttributes, type Editor } from '@tiptap/core';
+//   voice note    [Voice note 0:42](attachments/Voice note.webm "audio")
+// The table of contents is not stored: the app computes it from the headings when it is opened.
+import { Node, mergeAttributes } from '@tiptap/core';
 import CodeBlock from '@tiptap/extension-code-block';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import { useEffect, useRef, useState } from 'react';
 import { AudioLines, ChevronRight, Trash2 } from 'lucide-react';
 import type MarkdownIt from 'markdown-it';
 import { getApi } from '../state/appRef';
+import { vaultPathsOf } from '../state/noteCtx';
 
 type RuleBlock = Parameters<MarkdownIt['block']['ruler']['push']>[1];
 type RuleInline = Parameters<MarkdownIt['inline']['ruler']['push']>[1];
@@ -61,46 +62,58 @@ export const Toggle = Node.create({
   defining: true,
   // a click on the title bar must put the caret there, never select (and then replace) the whole toggle
   selectable: false,
-  addAttributes() { return { summary: { default: '' } }; },
+  addAttributes() { return { summary: { default: '' }, open: { default: false } }; },
   parseHTML() {
-    return [{ tag: 'details[data-toggle]', getAttrs: el => ({ summary: (el as HTMLElement).getAttribute('data-summary') ?? '' }), contentElement: 'div[data-toggle-body]' }];
+    return [{ tag: 'details[data-toggle]', getAttrs: el => ({ summary: (el as HTMLElement).getAttribute('data-summary') ?? '', open: (el as HTMLElement).getAttribute('data-open') === '1' }), contentElement: 'div[data-toggle-body]' }];
   },
   renderHTML({ node }) {
-    return ['details', { 'data-toggle': '1', 'data-summary': node.attrs.summary }, ['div', { 'data-toggle-body': '' }, 0]];
+    return ['details', { 'data-toggle': '1', 'data-summary': node.attrs.summary, 'data-open': node.attrs.open ? '1' : '0' }, ['div', { 'data-toggle-body': '' }, 0]];
   },
   addNodeView() { return ReactNodeViewRenderer(ToggleView); },
   addStorage() {
     return {
       markdown: {
-        serialize(state: Out, node: { attrs: { summary: string } }) {
-          state.write(`:::toggle ${String(node.attrs.summary).replace(/\s+/g, ' ').trim()}\n`);
+        serialize(state: Out, node: { attrs: { summary: string; open: boolean } }) {
+          const title = String(node.attrs.summary).replace(/\s+/g, ' ').replace(/</g, '&lt;').trim();
+          state.write(`<details${node.attrs.open ? ' open' : ''}>\n<summary>${title}</summary>`);
+          state.closeBlock(node);
           state.renderContent(node);
-          state.ensureNewLine();
-          state.write(':::');
+          state.write('</details>');
           state.closeBlock(node);
         },
         parse: {
           setup(md: MarkdownIt) {
+            const OPEN = /^<details(\s+open)?\s*>\s*(?:<summary>(.*?)<\/summary>)?\s*$/i;
+            const SUMMARY = /^\s*<summary>(.*?)<\/summary>\s*$/i;
             const rule: RuleBlock = (state, startLine, endLine, silent) => {
               if (state.sCount[startLine] - state.blkIndent >= 4) return false;
-              const m = /^:::toggle(?:[ \t]+(.*))?[ \t]*$/.exec(lineOf(state, startLine));
+              const m = OPEN.exec(lineOf(state, startLine));
               if (!m) return false;
+              let summary = m[2];
+              let bodyFrom = startLine + 1;
+              if (summary === undefined) {
+                // the title may sit on the next line
+                const t = bodyFrom < endLine ? SUMMARY.exec(lineOf(state, bodyFrom)) : null;
+                summary = t ? t[1] : '';
+                if (t) bodyFrom++;
+              }
               if (silent) return true;
-              let depth = 1, next = startLine + 1;
+              let depth = 1, next = bodyFrom;
               for (; next < endLine; next++) {
                 const line = lineOf(state, next);
-                if (/^:::toggle\b/.test(line)) depth++;
-                else if (/^:::[ \t]*$/.test(line) && --depth === 0) break;
+                if (/^<details(\s[^>]*)?>/i.test(line)) depth++;
+                else if (/^<\/details>\s*$/i.test(line) && --depth === 0) break;
               }
               const closed = next < endLine;
+              const plain = (summary ?? '').replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').trim();
               const open = state.push('html_block', '', 0);
-              open.content = `<details data-toggle="1" data-summary="${esc((m[1] ?? '').trim())}"><div data-toggle-body="">\n`;
+              open.content = `<details data-toggle="1" data-open="${m[1] ? '1' : '0'}" data-summary="${esc(plain)}"><div data-toggle-body="">\n`;
               open.map = [startLine, next];
               const s = state as unknown as { parentType: string };
               const parentType = s.parentType, lineMax = state.lineMax;
               s.parentType = 'container';
               state.lineMax = next;
-              state.md.block.tokenize(state, startLine + 1, next);
+              state.md.block.tokenize(state, bodyFrom, next);
               s.parentType = parentType;
               state.lineMax = lineMax;
               const close = state.push('html_block', '', 0);
@@ -116,72 +129,11 @@ export const Toggle = Node.create({
   },
 });
 
-// ---------------------------------------------------------------- contents (table of contents of this note)
-function tocOf(editor: Editor) {
-  const out: { pos: number; level: number; text: string }[] = [];
-  editor.state.doc.descendants((n, pos) => {
-    if (n.type.name === 'heading' && n.textContent.trim()) out.push({ pos, level: Number(n.attrs.level) || 1, text: n.textContent });
-  });
-  return out;
-}
-function TocView({ editor }: NodeViewProps) {
-  const [heads, setHeads] = useState(() => tocOf(editor));
-  useEffect(() => {
-    const on = () => setHeads(tocOf(editor));
-    editor.on('update', on);
-    return () => { editor.off('update', on); };
-  }, [editor]);
-  const min = Math.min(...heads.map(h => h.level), 3);
-  return (
-    <NodeViewWrapper className="toc-block" contentEditable={false}>
-      <div className="toc-title">Contents</div>
-      {heads.length === 0 ? <p className="hint">Headings you add to this note show up here.</p> : (
-        <ul>
-          {heads.map((h, i) => (
-            <li key={i} style={{ paddingLeft: (h.level - min) * 16 }}>
-              <button type="button" onClick={() => {
-                (editor.view.nodeDOM(h.pos) as HTMLElement | null)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                editor.commands.setTextSelection(h.pos + 1);
-              }}>{h.text}</button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </NodeViewWrapper>
-  );
-}
-export const Contents = Node.create({
-  name: 'contents',
-  group: 'block',
-  atom: true,
-  selectable: true,
-  draggable: true,
-  parseHTML() { return [{ tag: 'div[data-toc]' }]; },
-  renderHTML() { return ['div', { 'data-toc': '1' }]; },
-  addNodeView() { return ReactNodeViewRenderer(TocView); },
-  addStorage() {
-    return {
-      markdown: {
-        serialize(state: Out, node: unknown) { state.write('[TOC]'); state.closeBlock(node); },
-        parse: {
-          updateDOM(root: HTMLElement) {
-            root.querySelectorAll('p').forEach(p => {
-              if (p.textContent?.trim() !== '[TOC]') return;
-              const d = document.createElement('div');
-              d.setAttribute('data-toc', '1');
-              p.replaceWith(d);
-            });
-          },
-        },
-      },
-    };
-  },
-});
-
 // ---------------------------------------------------------------- page break
 function PageBreakView() {
   return <NodeViewWrapper className="page-break" contentEditable={false}><span>Page break</span></NodeViewWrapper>;
 }
+const BREAK = /^<div\s+style="\s*page-break-after:\s*always;?\s*"\s*>\s*<\/div>\s*$/i;
 export const PageBreak = Node.create({
   name: 'pageBreak',
   group: 'block',
@@ -194,15 +146,20 @@ export const PageBreak = Node.create({
   addStorage() {
     return {
       markdown: {
-        serialize(state: Out, node: unknown) { state.write('\\newpage'); state.closeBlock(node); },
+        serialize(state: Out, node: unknown) { state.write('<div style="page-break-after: always;"></div>'); state.closeBlock(node); },
         parse: {
-          updateDOM(root: HTMLElement) {
-            root.querySelectorAll('p').forEach(p => {
-              if (p.textContent?.trim() !== '\\newpage') return;
-              const d = document.createElement('div');
-              d.setAttribute('data-pagebreak', '1');
-              p.replaceWith(d);
-            });
+          setup(md: MarkdownIt) {
+            const rule: RuleBlock = (state, startLine, _endLine, silent) => {
+              if (state.sCount[startLine] - state.blkIndent >= 4) return false;
+              if (!BREAK.test(lineOf(state, startLine))) return false;
+              if (silent) return true;
+              const t = state.push('html_block', '', 0);
+              t.content = '<div data-pagebreak="1"></div>\n';
+              t.map = [startLine, startLine + 1];
+              state.line = startLine + 1;
+              return true;
+            };
+            md.block.ruler.before('fence', 'ergo_pagebreak', rule, { alt: ['paragraph', 'reference', 'blockquote', 'list'] });
           },
         },
       },
@@ -524,21 +481,33 @@ const fmtSecs = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60
 export { fmtSecs };
 
 const audioUrls = new Map<string, string>();
+/** The bytes of an attachment named by a note: `ergo-file:<id>` or a path written in the note. */
+async function loadAttachment(src: string) {
+  const api = getApi();
+  if (!api) return null;
+  const m = /^ergo-file:([0-9a-f-]{36})$/.exec(src);
+  if (m) return api.getFile(m[1]);
+  for (const p of vaultPathsOf(src)) {
+    const f = await api.getFileByPath(p);
+    if (f) return f;
+  }
+  return null;
+}
 function AudioView({ node, selected }: NodeViewProps) {
-  const id = String(node.attrs.file);
-  const [url, setUrl] = useState<string | null>(audioUrls.get(id) ?? null);
+  const src = String(node.attrs.file);
+  const [url, setUrl] = useState<string | null>(audioUrls.get(src) ?? null);
   useEffect(() => {
     if (url) return;
     let live = true;
-    void getApi()?.getFile(id).then(f => {
+    void loadAttachment(src).then(f => {
       if (!f || !live) return;
       const bytes = Uint8Array.from(atob(f.data), c => c.charCodeAt(0));
       const u = URL.createObjectURL(new Blob([bytes], { type: f.mime }));
-      audioUrls.set(id, u);
+      audioUrls.set(src, u);
       setUrl(u);
     });
     return () => { live = false; };
-  }, [id, url]);
+  }, [src, url]);
   return (
     <NodeViewWrapper className={`audio-clip${selected ? ' ProseMirror-selectednode' : ''}`} contentEditable={false} data-drag-handle>
       <span className="audio-ico" aria-hidden><AudioLines size={18} /></span>
@@ -563,16 +532,18 @@ export const AudioClip = Node.create({
     return {
       markdown: {
         serialize(state: Out, node: { attrs: { file: string; label: string } }) {
-          state.write(`[${String(node.attrs.label).replace(/[\[\]\n]/g, ' ')}](ergo-file:${node.attrs.file} "audio")`);
+          state.write(`[${String(node.attrs.label).replace(/[\[\]\n]/g, ' ')}](${node.attrs.file} "audio")`);
           state.closeBlock(node);
         },
         parse: {
           updateDOM(root: HTMLElement) {
-            root.querySelectorAll('p > a[title="audio"][href^="ergo-file:"]').forEach(a => {
+            root.querySelectorAll('p > a[title="audio"]').forEach(a => {
               const p = a.parentElement!;
-              if (p.childNodes.length !== 1) return;
+              const href = a.getAttribute('href') ?? '';
+              // a clip is a link to a file of the vault: a web address stays an ordinary link
+              if (p.childNodes.length !== 1 || (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(href) && !href.startsWith('ergo-file:'))) return;
               const d = document.createElement('div');
-              d.setAttribute('data-audio', (a.getAttribute('href') ?? '').slice('ergo-file:'.length));
+              d.setAttribute('data-audio', href);
               d.setAttribute('data-label', a.textContent ?? 'Voice note');
               p.replaceWith(d);
             });

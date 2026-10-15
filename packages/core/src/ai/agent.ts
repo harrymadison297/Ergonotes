@@ -91,7 +91,7 @@ export function chatSystemPrompt(p: PromptInput): string {
     p.note
       ? 'When the user asks you to write, add, draw or change something and a note is open, do it IN THE OPEN NOTE with the edit tools (append_to_note, insert_after_heading, replace_text). Use create_note only when the user explicitly asks for a new or separate note.'
       : 'When no note is open, write requested documents with create_note.',
-    'Tasks are Markdown checklists: `- [ ] text @due(2026-10-15T17:00) @remind(2026-10-15T16:30) @flag`. Link notes with `[[<note-id>|Title]]`.',
+    'Tasks are Markdown checklists: `- [ ] text @due(2026-10-15T17:00) @remind(2026-10-15T16:30) @flag`. Link notes with a standard Markdown link to the note\'s file, `[Title](relative/path/Note.md)`, or `[[Note title]]`.',
     'To draw a diagram, call insert_diagram with Mermaid source (flowchart, sequenceDiagram, mindmap, classDiagram). Do not hand-write drawing data.',
     p.wholeVault
       ? 'You may search and read any note except those the user marked private.'

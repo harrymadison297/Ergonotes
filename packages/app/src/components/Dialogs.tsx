@@ -369,6 +369,16 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
       )}
       {tab === 'data' && (
         <div style={{ maxWidth: 520 }}>
+          {app.folder && (
+            <div className="field vault-folder">
+              <label>Vault folder</label>
+              <div className="vault-folder-row">
+                <code title={app.folder.path}>{app.folder.path}</code>
+                {app.folder.canPick && <button type="button" className="btn" onClick={() => void app.folder!.change()}>Change…</button>}
+              </div>
+              <span className="hint">Every note is a Markdown file here. Edit them with any other program; changes are picked up within seconds.</span>
+            </div>
+          )}
           <button className="btn" onClick={() => { onClose(); app.setDialog({ kind: 'import' }); }}><FileUp size={16} /> Import Markdown files…</button>
           <p className="hint">Export any note from its Export menu (Markdown, HTML, PDF).</p>
           <button className="btn danger" onClick={async () => {

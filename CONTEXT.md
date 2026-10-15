@@ -7,15 +7,15 @@ A personal, offline-first note system for one person across several devices. Not
 ### Content
 
 **Vault**:
-The complete set of one person's Items, protected by one password.
-_Avoid_: Workspace, notebook, library
+A folder on a device that holds one person's notes as Markdown files, in the folders they are in, plus a hidden `.ergonotes/` with what Markdown cannot hold (history, assistant conversations, AI settings, sync state), sealed by one password. Putting Markdown files in the folder is enough for them to be notes.
+_Avoid_: Workspace, notebook, library, database
 
 **Item**:
-Anything a Vault holds that has its own identity and can be linked to: a Note, a Folder, and later a Drawing, Sheet or Deck.
+Anything a Vault holds that has its own identity and can be linked to: a Note, a Folder, an Attachment, and later a Sheet or Deck.
 _Avoid_: Object, entry, document
 
 **Note**:
-An Item of written content, made of Blocks, that lives in exactly one Folder.
+A Markdown file of the Vault. Its title is its file name, its Folder is the directory it is in, its properties (tags, pinned, private...) are frontmatter. Blocks the app does not understand are kept exactly as written.
 _Avoid_: Page, doc, memo
 
 **Private note**:
@@ -34,6 +34,10 @@ _Avoid_: Autocomplete, ghost text
 The searchable list of every Block and inline element that can be put into a Note, also reached by typing "/". Items can be pinned to its top.
 _Avoid_: Slash menu (that is only the way to open it from the keyboard)
 
+**Contents**:
+The list of a Note's headings, computed when the person opens it; it is not written into the Note.
+_Avoid_: TOC marker, outline block
+
 **Event**:
 A dated entry written inside a Note (`@event(...)`), with or without a time; it appears in the Calendar. Not the same as a Task, which can be done.
 _Avoid_: Appointment, meeting
@@ -43,8 +47,8 @@ A recording made in the app and kept in the Note as an audio clip. It can be wri
 _Avoid_: Audio file (that is something attached from outside), memo
 
 **Folder**:
-An Item that holds other Items and forms the tree a person navigates. A Folder is an ordinary Item, including the ones created by default.
-_Avoid_: Directory, notebook, category
+A directory of the Vault; the tree a person navigates. Created, renamed and moved in the app or in any file manager. An empty folder exists only on the device where it was made.
+_Avoid_: Directory (in the UI), notebook, category
 
 **Block**:
 One unit of content inside a Note (paragraph, heading, checklist, table, drawing, callout, toggle, formula, diagram, audio clip...).
@@ -63,7 +67,7 @@ An Excalidraw sketch. By default it is a Block owned by one Note and can be prom
 _Avoid_: Diagram, canvas, whiteboard
 
 **Attachment**:
-A binary file (image, PDF, spreadsheet...) referenced from a Note, stored once per distinct content.
+A binary file (image, PDF, spreadsheet, recording...) in the Vault, normally under `attachments/`, embedded or linked from a Note with a standard Markdown reference.
 _Avoid_: Upload, asset, media (the "Media" filter on the Files page is only a view label)
 
 ### Organisation
@@ -85,7 +89,7 @@ A hierarchical label (`work/acme`) attached to a Note. A Note has any number of 
 _Avoid_: Label, category, keyword
 
 **Link**:
-A reference from one Item to another by identity, written `[[...]]`. It survives renaming and moving. The reverse view of a Link is a **Backlink**.
+A standard Markdown link to another note's file, `[Title](path/Note.md)`; `[[Title]]` written by other tools is read too. Renaming or moving a note rewrites the links that point at it. The reverse view of a Link is a **Backlink**.
 _Avoid_: Reference, relation, mention
 
 **Template**:
@@ -101,7 +105,7 @@ A checkbox Block inside a Note, optionally with a due date and reminder. A Task 
 _Avoid_: Todo, reminder, action item
 
 **Trash**:
-The place deleted Items stay, recoverable, until they are purged.
+The `.trash/` folder of the Vault: where deleted Notes stay, recoverable, for 30 days. A file deleted by another program is treated the same way and can be restored from its history.
 _Avoid_: Recycle bin, deleted items
 
 **Purge**:
@@ -111,7 +115,7 @@ _Avoid_: Hard delete, empty
 ### Devices and sync
 
 **Device**:
-One installation of the app that holds a full copy of the Vault and has a friendly name. Acts as the author of its Commits.
+One installation of the app that holds a copy of the Vault folder and has a friendly name. Acts as the author of its Commits. Its own settings (identity, remembered key, Store credentials) stay on the device, never in the Vault folder.
 _Avoid_: Client, node, machine
 
 **Server peer**:
@@ -123,7 +127,7 @@ The passive storage location (S3-compatible, WebDAV) that Devices exchange encry
 _Avoid_: Cloud, server, remote
 
 **Commit**:
-One recorded change to a Note, made by one Device, pointing at the Commit(s) it was made on top of.
+One recorded change to a Note, made by one Device, pointing at the Commit(s) it was made on top of. A change made to the file by another program becomes a Commit the next time the app looks at the folder.
 _Avoid_: Version, revision, save, snapshot
 
 **Head**:

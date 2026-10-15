@@ -1,4 +1,5 @@
 // Local persistence of a Device's replica. Implementations: memory (tests), IndexedDB (browser), files (server).
+import type { Sealer } from './crypto.ts';
 import type { Commit } from './graph.ts';
 
 export interface PersistedState {
@@ -17,6 +18,8 @@ export interface Persist {
   markPushed(commits: Commit[]): Promise<void>;
   setHead(item: string, id: string): Promise<void>;
   setMeta(key: string, value: unknown): Promise<void>;
+  /** called once the vault key is known: from then on commits may be written sealed */
+  setSealer?(s: Sealer | null): void;
   /** wait for queued writes; called when the owner shuts down */
   close?(): Promise<void>;
 }

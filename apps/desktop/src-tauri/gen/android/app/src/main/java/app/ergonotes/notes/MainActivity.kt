@@ -1,18 +1,31 @@
 package app.ergonotes.notes
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 
 class MainActivity : TauriActivity() {
   // Text shared to the app from another app; the web UI picks it up through ErgoShare.take() and files it as a Capture.
   private var pending: String? = null
   private var web: WebView? = null
+  private lateinit var vault: SafVault
+
+  // the vault folder: chosen with the system's folder chooser, kept with a persistable permission
+  private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+    if (uri != null) {
+      contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+      vault.setTree(uri)
+    }
+    web?.post { web?.evaluateJavascript("window.dispatchEvent(new CustomEvent('ergo-vault-picked', { detail: { ok: ${uri != null} } }))", null) }
+  }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
+    vault = SafVault(this)
     super.onCreate(savedInstanceState)
     remember(intent)
   }
@@ -34,6 +47,19 @@ class MainActivity : TauriActivity() {
         return t
       }
     }, "ErgoShare")
+    webView.addJavascriptInterface(object {
+      @JavascriptInterface fun root(): String = vault.root()
+      // the app's own folder on shared storage: reachable from a file manager or a USB cable, no permission needed
+      @JavascriptInterface fun defaultDir(): String = (getExternalFilesDir(null) ?: filesDir).absolutePath + "/Ergonotes"
+      @JavascriptInterface fun pick() { runOnUiThread { pickFolder.launch(null) } }
+      @JavascriptInterface fun list(dir: String): String = vault.list(dir)
+      @JavascriptInterface fun stat(path: String): String? = vault.stat(path)
+      @JavascriptInterface fun read(path: String): String? = vault.read(path)
+      @JavascriptInterface fun write(path: String, b64: String): String = vault.write(path, b64)
+      @JavascriptInterface fun mkdir(path: String): String = vault.mkdir(path)
+      @JavascriptInterface fun remove(path: String): String = vault.remove(path)
+      @JavascriptInterface fun rename(from: String, to: String): String = vault.rename(from, to)
+    }, "ErgoVault")
   }
 
   private fun remember(i: Intent?) {

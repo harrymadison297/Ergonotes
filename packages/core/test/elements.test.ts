@@ -30,23 +30,26 @@ describe('events', () => {
   });
 
   it('keeps the new tokens out of list previews', () => {
-    const s = plainSnippet('Team sync @event(2026-10-20T09:00)\n\n[TOC]\n\n\\newpage\n\nOn @date(2026-10-20) we ship.');
+    const s = plainSnippet('Team sync @event(2026-10-20T09:00)\n\n<div style="page-break-after: always;"></div>\n\nOn @date(2026-10-20) we ship.');
     expect(s).toBe('Team sync On 2026-10-20 we ship.');
   });
 });
 
 describe('HTML export of the richer elements', () => {
-  it('turns toggles into <details>, a contents block into a list, page breaks and voice notes into their HTML', async () => {
+  it('turns toggles into <details>, page breaks and voice notes into their HTML', async () => {
     const v = await vault();
     const f = await v.addFile({ name: 'voice.webm', mime: 'audio/webm', data: 'AAAA' });
     const n = await v.createNote({
       title: 'Elements',
-      body: ['# One', '## Two', '[TOC]', ':::toggle More', 'hidden **text**', ':::', '\\newpage', `[Voice note 0:05](ergo-file:${f.id} "audio")`, 'Meet @event(2026-10-20T09:00) on @date(2026-10-20)'].join('\n\n'),
+      body: [
+        '# One', '## Two', '<details>\n<summary>More</summary>\n\nhidden **text**\n\n</details>', '<div style="page-break-after: always;"></div>',
+        `[Voice note 0:05](${f.path} "audio")`, 'Meet @event(2026-10-20T09:00) on @date(2026-10-20)',
+      ].join('\n\n'),
     });
     const r = await v.exportNote(n.id, 'html');
-    expect(r.content).toContain('<details open><summary>More</summary>');
+    expect(r.content).toContain('<details open>');
+    expect(r.content).toContain('<summary>More</summary>');
     expect(r.content).toContain('</details>');
-    expect(r.content).toContain('<li>One');
     expect(r.content).toContain('break-after:page');
     expect(r.content).toContain('<audio controls src="data:audio/webm;base64,AAAA"></audio> Voice note 0:05');
     expect(r.content).toContain('event 2026-10-20T09:00');

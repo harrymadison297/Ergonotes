@@ -4,6 +4,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import type { Commit } from './graph.ts';
 import type { Persist, PersistedState } from './persist.ts';
 import type { Store, StoredKey } from './store.ts';
+import type { FsEntry, FsStat, LocalMeta, VaultFs } from './vaultfs.ts';
 
 /** Write via a temporary file. `priv` keeps the result readable by this user only (the replica holds secrets). */
 async function writeAtomic(path: string, data: string | Uint8Array, priv = false) {
@@ -116,4 +117,52 @@ export class FolderStore implements Store {
     }
     return out.sort((a, b) => (a.key < b.key ? -1 : 1));
   }
+}
+
+/** The vault folder on a real disk. Paths are relative to `root`; nothing outside it can be reached. */
+export class NodeFs implements VaultFs {
+  readonly root: string;
+  constructor(root: string) { this.root = resolve(root); }
+  private p(rel: string) {
+    const full = resolve(this.root, rel);
+    if (full !== this.root && !full.startsWith(this.root + sep)) throw new Error('bad path');
+    return full;
+  }
+  async readdir(dir: string): Promise<FsEntry[]> {
+    const base = this.p(dir);
+    let ents: import('node:fs').Dirent[];
+    try { ents = await readdir(base, { withFileTypes: true }); } catch { return []; }
+    const out: FsEntry[] = [];
+    for (const e of ents) {
+      if (e.name.endsWith('.tmp') && /\.\d+\.[a-z0-9]+\.tmp$/.test(e.name)) continue;
+      const isDir = e.isDirectory() || (e.isSymbolicLink() && (await stat(join(base, e.name)).catch(() => null))?.isDirectory() === true);
+      if (isDir) { out.push({ name: e.name, kind: 'dir', size: 0, mtime: 0 }); continue; }
+      const st = await stat(join(base, e.name)).catch(() => null);
+      if (st?.isFile()) out.push({ name: e.name, kind: 'file', size: st.size, mtime: Math.floor(st.mtimeMs) });
+    }
+    return out;
+  }
+  async read(path: string) { try { return new Uint8Array(await readFile(this.p(path))); } catch { return null; } }
+  async write(path: string, data: Uint8Array | string, o: { private?: boolean } = {}) { await writeAtomic(this.p(path), data, o.private); }
+  async remove(path: string) { await rm(this.p(path), { recursive: true, force: true }); }
+  async rename(from: string, to: string) {
+    await mkdir(dirname(this.p(to)), { recursive: true });
+    await rename(this.p(from), this.p(to));
+  }
+  async mkdir(path: string) { await mkdir(this.p(path), { recursive: true }); }
+  async stat(path: string): Promise<FsStat | null> {
+    const st = await stat(this.p(path)).catch(() => null);
+    if (!st) return null;
+    return { kind: st.isDirectory() ? 'dir' : 'file', size: st.size, mtime: Math.floor(st.mtimeMs) };
+  }
+}
+
+/** Device-local metadata as one private JSON file outside the vault folder. */
+export class FileLocalMeta implements LocalMeta {
+  private path: string;
+  constructor(path: string) { this.path = path; }
+  async load(): Promise<Record<string, unknown>> {
+    try { return JSON.parse(await readFile(this.path, 'utf8')) as Record<string, unknown>; } catch { return {}; }
+  }
+  async save(meta: Record<string, unknown>): Promise<void> { await writeAtomic(this.path, JSON.stringify(meta), true); }
 }

@@ -40,7 +40,7 @@ const waitFor = async (expr, timeout = 30000, label = expr) => {
     await sleep(250);
   }
 };
-const FIND = `(t) => [...document.querySelectorAll('button, a, [role=button], [role=tab], [role=menuitem], [role=checkbox], summary')].find(e => (e.getAttribute('aria-label') || e.textContent || '').trim().replace(/\\s+/g, ' ').includes(t))`;
+const FIND = `(t) => { const all = [...document.querySelectorAll('button, a, [role=button], [role=tab], [role=menuitem], [role=checkbox], summary')]; const lab = e => (e.getAttribute('aria-label') || e.textContent || '').trim().replace(/\\s+/g, ' '); return all.find(e => lab(e) === t) || all.find(e => lab(e).includes(t)); }`;
 const click = async text => { await waitFor(`(${FIND})(${JSON.stringify(text)})`, 20000, `button "${text}"`); await ev(`(${FIND})(${JSON.stringify(text)}).click()`); };
 const fill = async (labelText, value, exact = false) => {
   const sel = `(() => { const l = [...document.querySelectorAll('label')].find(l => ${exact ? 'l.textContent.trim() === ' : 'l.textContent.includes('}${JSON.stringify(labelText)}${exact ? '' : ')'}); const byLabel = l && l.htmlFor ? document.getElementById(l.htmlFor) : null; return byLabel || document.querySelector('[aria-label=' + JSON.stringify(${JSON.stringify(labelText)}) + ']'); })()`;
@@ -83,6 +83,14 @@ await send('Input.insertText', { text: `Written on ${deviceName}, synced through
 await sleep(1800);
 check('autosave on the device', await ev(`document.body.innerText.includes('All changes saved')`));
 await shot('03-note');
+{
+  // the vault is a folder on this device: the note is a Markdown file in it (ADR 0010)
+  const names = async dir => ev(`window.__TAURI_INTERNALS__.invoke('vault_readdir', { dir: ${JSON.stringify(dir)} }).then(r => r.map(e => e.name))`);
+  const inbox = await names('Inbox');
+  check('the note is a Markdown file in the vault folder of this device', inbox.includes(`${noteTitle}.md`), inbox.join(', '));
+  const top = await names('');
+  check('the vault folder holds the notes and the sealed history side by side', top.includes('.ergonotes') && top.includes('Inbox'), top.join(', '));
+}
 if (mobile) {
   await click('Back');
   await sleep(500);

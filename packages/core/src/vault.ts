@@ -1,5 +1,6 @@
-// The Vault: the domain layer over a Replica. Items are Notes and Folders; the folder tree is the `parent`
-// field (ADR 0005). Everything the UI can do goes through the VaultApi implemented here.
+// The Vault: the domain layer over a folder of Markdown files (ADR 0010). The files are the notes; the Replica is
+// the derived layer that gives them history, merging and sync (ADR 0001, 0003). Everything the UI can do goes
+// through the VaultApi implemented here.
 import MarkdownIt from 'markdown-it';
 import MiniSearch from 'minisearch';
 import type {
@@ -11,7 +12,12 @@ import {
   type VaultFile,
 } from './crypto.ts';
 import {
-  extractLinkIds, firstImage, joinDoc, parseEvents, parseTasks, plainSnippet, setTaskDone, splitDoc, WIKILINK_RE,
+  basename, buildLinkIndex, dirname, editFm, extOf, findLinks, folderIdOf, isNotePath, joinPath, normalizePath, parseNote, relativePath, reservedOf,
+  resolveLink, rewriteLinks, safeName, setReserved, stripExt, stripReserved, titleOfPath, toFileText, toItemText, uniquePath, withBody,
+  type LinkIndex, type LinkRef,
+} from './folder.ts';
+import {
+  firstImage, joinDoc, parseEvents, parseTasks, plainSnippet, setTaskDone,
   type Frontmatter, type NoteEvent, type Task,
 } from './markdown.ts';
 import { applyAiPatch, defaultAiConfig, normalizeAiConfig, toSettings, type AiConfig, type AiSettings, type AiSettingsPatch } from './ai/types.ts';
@@ -21,31 +27,45 @@ import { Replica, type SyncContext } from './replica.ts';
 import type { Store } from './store.ts';
 import { S3Store } from './store-s3.ts';
 import { WebDavStore } from './store-webdav.ts';
-import { DAY, dec, enc, fromB64, MIN, newId, sha256hex, toB64 } from './util.ts';
+import { DAY, MIN, dec, enc, fromB64, newId, sha256hex, toB64 } from './util.ts';
+import { MemFs, type VaultFs } from './vaultfs.ts';
 
 /** The single item that carries the AI provider settings (encrypted and synced like any other item, never listed). */
 export const AI_CONFIG_ID = '00000000-0000-4000-8000-0000000a1c01';
 
 export interface VaultOptions {
   persist: Persist;
+  /** The vault folder. Omitted: an empty folder in memory (tests). */
+  fs?: VaultFs;
   /** build a Store for configs the core cannot handle itself (folder stores in Node) */
   storeFactory?: (cfg: StoreConfig) => Promise<Store> | Store;
   fetchImpl?: typeof fetch;
   kdf?: { m: number; t: number; p: number };
   now?: () => number;
   defaultDeviceName?: string;
+  /** A file changed less than this long ago is read on a later scan: another editor may still be writing it. */
+  settleMs?: number;
+  /** How often the folder is looked at for changes made outside the app (0: only on `rescan()`). */
+  watchMs?: number;
+  /** A folder with more files than this is read only in part and the person is told. */
+  maxFiles?: number;
 }
 
 interface View {
   id: string;
   type: 'note' | 'folder';
+  /** the person's own frontmatter properties */
   fm: Frontmatter;
   title: string;
+  /** where the file is (for a folder, the directory), relative to the vault folder */
+  path: string;
   parent: string | null;
   tags: string[];
   created: string;
   updated: string;
   trashed: string | null;
+  /** the folder that was moved to the Trash with this note (restoring that folder brings it back) */
+  trashDir: string | null;
   pinned: boolean;
   template: boolean;
   private: boolean;
@@ -56,7 +76,13 @@ interface View {
   thumb: string | null;
   tasks: Task[];
   events: NoteEvent[];
-  links: string[];
+  linkRefs: LinkRef[];
+}
+
+interface IndexEntry {
+  id: string; kind: 'note' | 'file'; size: number; mtime: number; hash: string;
+  /** the item's head commit when the file was last written or read: the base of an edit made outside */
+  commit?: string;
 }
 
 export type VaultEvent = { type: 'items'; ids: string[] } | { type: 'status' };
@@ -71,15 +97,29 @@ const TRASH_DAYS = 30;
 const MAX_SEARCH_HITS = 40;
 const PUSH_DEBOUNCE_MS = 5 * MIN;
 const PULL_EVERY_MS = 45_000;
+const MAX_ATTACHMENT = 25 * 1024 * 1024;
+const MAX_NOTE_BYTES = 8 * 1024 * 1024;
+const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true });
+const TRASH_DIR = '.trash';
+const ATTACH_DIR = 'attachments';
+const ATTACH_EXT = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.avif', '.heic', '.ico', '.pdf', '.mp3', '.m4a', '.wav', '.ogg', '.oga', '.opus', '.flac',
+  '.webm', '.mp4', '.m4v', '.mov', '.mkv', '.docx', '.xlsx', '.pptx', '.odt', '.ods', '.odp', '.csv', '.zip', '.txt', '.json', '.epub',
+]);
+const MIME: Record<string, string> = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.bmp': 'image/bmp',
+  '.avif': 'image/avif', '.heic': 'image/heic', '.ico': 'image/x-icon', '.pdf': 'application/pdf', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4',
+  '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.oga': 'audio/ogg', '.opus': 'audio/ogg', '.flac': 'audio/flac', '.webm': 'audio/webm', '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.mkv': 'video/x-matroska', '.csv': 'text/csv', '.txt': 'text/plain', '.json': 'application/json',
+  '.zip': 'application/zip', '.epub': 'application/epub+zip',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+};
+const IGNORED_NAMES = new Set(['node_modules', 'Thumbs.db', 'desktop.ini']);
 
-const DEFAULT_FOLDERS: { title: string; role: string }[] = [
-  { title: 'Inbox', role: 'inbox' },
-  { title: 'Projects', role: 'projects' },
-  { title: 'Areas', role: 'areas' },
-  { title: 'Resources', role: 'resources' },
-  { title: 'Archive', role: 'archive' },
-  { title: 'Templates', role: 'templates' },
-];
+const DEFAULT_FOLDERS = ['Inbox', 'Projects', 'Areas', 'Resources', 'Archive', 'Templates'];
+const ROLES: Record<string, string> = { inbox: 'inbox', projects: 'projects', areas: 'areas', resources: 'resources', archive: 'archive', templates: 'templates' };
 
 const DEFAULT_TEMPLATES: { title: string; body: string; daily?: boolean; tags?: string[] }[] = [
   { title: 'Meeting notes', tags: ['meeting'], body: '**Date:** {{date}} {{time}}\n**Attendees:**\n\n## Agenda\n\n- \n\n## Notes\n\n## Action items\n\n- [ ] \n' },
@@ -96,15 +136,24 @@ function cleanTag(t: string): string {
   return t.trim().replace(/^#+/, '').replace(/\s+/g, '-').replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
 }
 
+/** `tags: [a, b]`, a list, or `tags: a, b` / `tag: a b` as other tools write them. */
+function tagsOf(fm: Frontmatter): string[] {
+  const raw = fm.tags ?? fm.tag;
+  const list = Array.isArray(raw) ? raw.map(String) : typeof raw === 'string' ? raw.split(/[,\s]+/) : [];
+  return [...new Set(list.map(cleanTag).filter(Boolean))];
+}
+
 export class Vault implements VaultApi {
   private persist: Persist;
   private opts: VaultOptions;
+  private fs: VaultFs;
   private meta: Record<string, unknown> = {};
   private replica: Replica | null = null;
   private sealer: Sealer | null = null;
   private vaultFile: VaultFile | null = null;
+  /** notes and the folders derived from where they are */
   private views = new Map<string, View>();
-  private files = new Map<string, { name: string; mime: string; body: string; size: number; created: string }>();
+  private files = new Map<string, { name: string; path: string; mime: string; body: string; size: number; created: string }>();
   private fileBySha = new Map<string, string>();
   private searchIndex = new MiniSearch<{ id: string; title: string; body: string; tags: string }>({
     fields: ['title', 'body', 'tags'],
@@ -120,10 +169,23 @@ export class Vault implements VaultApi {
   private unsub: (() => void) | null = null;
   private aiBody: string | null = null;
   private chats = new Map<string, ChatRecord>();
+  // ---- the folder on disk
+  /** disk path (including `.trash/...`) -> what was last read or written there */
+  private index = new Map<string, IndexEntry>();
+  private byLower = new Map<string, string>();
+  private pathById = new Map<string, string>();
+  private diskDirs = new Set<string>();
+  private diskQ: Promise<unknown> = Promise.resolve();
+  private indexTimer: ReturnType<typeof setTimeout> | null = null;
+  private watchTimer: ReturnType<typeof setInterval> | null = null;
+  private linkIdx: LinkIndex | null = null;
+  private linkCache = new Map<string, string[]>();
+  private notice: string | null = null;
 
   private constructor(opts: VaultOptions) {
     this.opts = opts;
     this.persist = opts.persist;
+    this.fs = opts.fs ?? new MemFs();
   }
 
   static async open(opts: VaultOptions): Promise<Vault> {
@@ -171,31 +233,48 @@ export class Vault implements VaultApi {
       conflicts: this.replica ? this.conflictIds().length : 0,
       remembered: !!this.meta.rememberedKey,
       remote: false,
+      notice: this.notice,
     };
   }
 
   private async activate(masterKey: Uint8Array): Promise<void> {
     this.sealer = new Sealer(masterKey);
+    this.persist.setSealer?.(this.sealer);
     this.replica = await Replica.open(this.persist, this.deviceId, this.deviceName);
-    this.unsub = this.replica.onChange(items => { this.refresh(items); this.emit({ type: 'items', ids: items }); this.noteLocalChange(); });
+    this.unsub = this.replica.onChange(items => { this.refresh(items); this.queueWrite(items); this.emit({ type: 'items', ids: items }); this.noteLocalChange(); });
     this.views.clear();
     this.files.clear();
     this.fileBySha.clear();
-    for (const id of this.replica.items()) this.refresh([id]);
+    this.index.clear();
+    this.byLower.clear();
+    this.pathById.clear();
+    if (this.fs.durable !== false) for (const [p, e] of (this.meta.fileIndex as [string, IndexEntry][] | undefined) ?? []) this.setIndex(p, e);
+    this.refresh(this.replica.items());
+    // files that changed while the app was closed, and notes that arrived but were never written out
+    await this.rescan();
+    this.queueWrite(this.replica.items().filter(i => !this.pathById.has(i)));
+    await this.flushDisk();
     this.emit({ type: 'status' });
+  }
+
+  private async folderIsEmpty(): Promise<boolean> {
+    const top = await this.fs.readdir('');
+    return top.every(e => e.name.startsWith('.'));
   }
 
   async createVault(password: string, o: { deviceName?: string; remember?: boolean } = {}): Promise<void> {
     if (this.vaultFile) throw new Error('A vault already exists on this device');
     const problem = checkPassword(password);
     if (problem) throw new Error(problem);
+    const empty = await this.folderIsEmpty();
     const { file, masterKey } = await createVaultFile(password, this.opts.kdf ?? DEFAULT_KDF);
     this.vaultFile = file;
     await this.setMeta('vaultFile', file);
     if (o.deviceName) await this.setMeta('deviceName', o.deviceName);
     if (o.remember) await this.setMeta('rememberedKey', toB64(masterKey));
     await this.activate(masterKey);
-    await this.seedDefaults();
+    // a folder somebody already filled is taken as it is; an empty one gets the PARA folders and a welcome note
+    if (empty) await this.seedDefaults();
   }
 
   async joinVault(store: StoreConfig, password: string, o: { deviceName?: string; remember?: boolean } = {}): Promise<void> {
@@ -213,6 +292,7 @@ export class Vault implements VaultApi {
     if (o.remember) await this.setMeta('rememberedKey', toB64(masterKey));
     await this.activate(masterKey);
     await this.sync({ full: true });
+    await this.flushDisk();
   }
 
   /**
@@ -252,12 +332,19 @@ export class Vault implements VaultApi {
 
   async lock(): Promise<void> {
     this.stopAutoSync();
+    this.stopWatching();
+    await this.flushDisk();
+    await this.saveIndexNow();
     this.unsub?.();
     this.replica = null;
     this.sealer = null;
+    this.persist.setSealer?.(null);
     this.views.clear();
     this.files.clear(); // attachments are plaintext in memory
     this.fileBySha.clear();
+    this.index.clear();
+    this.byLower.clear();
+    this.pathById.clear();
     this.aiBody = null;
     this.chats.clear();
     this.searchIndex.removeAll();
@@ -287,29 +374,346 @@ export class Vault implements VaultApi {
   }
 
   private async seedDefaults() {
-    const ids: Record<string, string> = {};
-    for (const f of DEFAULT_FOLDERS) {
-      const it = await this.createFolderRaw({ title: f.title, parent: null, role: f.role });
-      ids[f.role] = it.id;
-    }
+    for (const f of DEFAULT_FOLDERS) { await this.fs.mkdir(f); this.diskDirs.add(f); }
     for (const t of DEFAULT_TEMPLATES) {
-      await this.createNoteRaw({ parent: ids.templates, title: t.title, body: t.body, tags: t.tags, template: true, daily: t.daily });
+      await this.createNoteRaw({ parent: 'Templates', title: t.title, body: t.body, tags: t.tags, template: true, daily: t.daily });
     }
     await this.createNoteRaw({
-      parent: ids.inbox,
+      parent: 'Inbox',
       title: 'Welcome to Ergonotes',
       body: [
-        'Your notes live on your devices first and sync through storage you own.',
+        'This folder is your vault: every note is a Markdown file you can open with any other editor.',
         '',
-        '- Everything new lands in **Inbox**; move it to Projects, Areas, Resources or Archive when you know where it belongs.',
+        '- New notes land in **Inbox**; move them to Projects, Areas, Resources or Archive when you know where they belong.',
         '- Link notes with `[[` and see backlinks under each note.',
         '- Turn a line into a task with the checkbox button; tasks show up in **Tasks** and the **Calendar**.',
-        '- Draw with the **Insert → Drawing** menu.',
+        '- Draw with the **Insert → Sketch** menu.',
         '',
         '- [ ] Try creating a note from a template',
         '',
       ].join('\n'),
     });
+    this.syncFolders();
+    this.emit({ type: 'status' });
+  }
+
+  // ---------- the folder: files <-> items ----------
+  private setIndex(path: string, e: IndexEntry) {
+    const old = this.index.get(path);
+    if (old && old.id !== e.id && this.pathById.get(old.id) === path) this.pathById.delete(old.id);
+    this.index.set(path, e);
+    this.byLower.set(path.toLowerCase(), path);
+    this.pathById.set(e.id, path);
+    this.saveIndexSoon();
+  }
+  private dropIndex(path: string) {
+    const e = this.index.get(path);
+    if (!e) return;
+    this.index.delete(path);
+    if (this.byLower.get(path.toLowerCase()) === path) this.byLower.delete(path.toLowerCase());
+    if (this.pathById.get(e.id) === path) this.pathById.delete(e.id);
+    this.saveIndexSoon();
+  }
+  private saveIndexSoon() {
+    if (this.indexTimer) return;
+    this.indexTimer = setTimeout(() => { this.indexTimer = null; void this.saveIndexNow(); }, 800);
+  }
+  private async saveIndexNow() {
+    if (this.indexTimer) { clearTimeout(this.indexTimer); this.indexTimer = null; }
+    if (!this.replica || this.fs.durable === false) return;
+    await this.setMeta('fileIndex', [...this.index.entries()]).catch(() => { /* retried on the next change */ });
+  }
+
+  private diskTask<T>(fn: () => Promise<T>): Promise<T> {
+    const r = this.diskQ.then(fn, fn);
+    this.diskQ = r.catch(() => undefined);
+    return r;
+  }
+  private async flushDisk(): Promise<void> {
+    for (;;) {
+      const q = this.diskQ;
+      await q;
+      if (q === this.diskQ) return;
+    }
+  }
+  private queueWrite(ids: string[]) {
+    if (!ids.length) return;
+    void this.diskTask(() => this.writeOut(ids)).catch(e => { this.notice = `Could not write to the vault folder: ${e instanceof Error ? e.message : String(e)}`; });
+  }
+
+  private kindOf(text: string): string {
+    const k = reservedOf(text)._ergo_kind;
+    return typeof k === 'string' ? k : 'note';
+  }
+
+  /** Make the folder match the items: write what changed in the database (a pull, an edit in the app). */
+  private async writeOut(ids: string[]): Promise<void> {
+    const r = this.replica;
+    if (!r) return;
+    for (const id of ids) {
+      try { await this.writeOne(r, id); } catch (e) { this.notice = `Could not write to the vault folder: ${e instanceof Error ? e.message : String(e)}`; }
+    }
+  }
+
+  private async writeOne(r: Replica, id: string): Promise<void> {
+    const text = r.text(id);
+    const prev = this.pathById.get(id);
+    if (text === null) {
+      if (prev) { await this.fs.remove(prev); this.dropIndex(prev); if (prev.startsWith(TRASH_DIR + '/')) await this.pruneTrashDirs(dirname(prev)); }
+      return;
+    }
+    const res = reservedOf(text);
+    const kind = typeof res._ergo_kind === 'string' ? res._ergo_kind : 'note';
+    if (kind !== 'note' && kind !== 'file') return;
+    let rel = typeof res._ergo_path === 'string' ? res._ergo_path : '';
+    const clean = rel ? normalizePath(rel) : null;
+    if (!clean || clean !== rel) {
+      // a path that is empty or leaves the vault is never written; give the item a place of its own
+      rel = await this.freePath('', kind === 'note' ? safeName(basename(rel).replace(/\.\w+$/, '') || 'Untitled') : 'file', kind === 'note' ? '.md' : extOf(rel));
+      await this.commitPath(id, rel);
+      return;
+    }
+    const trashed = typeof res._ergo_trashed === 'string' && res._ergo_trashed !== '';
+    const target = trashed ? `${TRASH_DIR}/${rel}` : rel;
+    let bytes: Uint8Array;
+    let hash: string;
+    if (kind === 'note') {
+      const ft = toFileText(text);
+      bytes = enc(ft);
+      hash = sha256hex(ft);
+    } else {
+      const b64 = parseNote(text).body.replace(/\s+/g, '');
+      bytes = fromB64(b64);
+      hash = sha256hex(b64);
+    }
+    const here = this.index.get(target);
+    if (prev === target && here && here.id === id && here.hash === hash) {
+      if (here.commit !== r.headId(id)) this.index.set(target, { ...here, commit: r.headId(id) });
+      return; // already what the folder has
+    }
+    if (prev === target && here && here.id === id) {
+      // the file was changed by another program after we last looked: it is read first, never overwritten
+      const st = await this.fs.stat(target);
+      if (st && (st.size !== here.size || st.mtime !== here.mtime)) { setTimeout(() => { void this.rescan(); }, 50); return; }
+    }
+
+    const occPath = this.byLower.get(target.toLowerCase());
+    const occ = occPath ? this.index.get(occPath) : undefined;
+    if (occ && occ.id !== id && occPath !== prev) {
+      // two items want one path: the larger id moves aside, the same way on every Device
+      const loser = occ.id > id ? occ.id : id;
+      const lr = reservedOf(r.text(loser) ?? '');
+      const lrel = typeof lr._ergo_path === 'string' ? lr._ergo_path : rel;
+      const ltrash = typeof lr._ergo_trashed === 'string' && lr._ergo_trashed !== '';
+      const free = await this.freePath(dirname(lrel), stripExt(basename(lrel)), extOf(lrel) || '', ltrash ? TRASH_DIR : '');
+      await this.commitPath(loser, free);
+      if (loser !== id) this.queueWrite([id]); // after the occupant has moved
+      return;
+    }
+    if (prev && prev !== target) {
+      const old = this.index.get(prev);
+      if (await this.fs.stat(prev)) await this.fs.rename(prev, target);
+      this.dropIndex(prev);
+      if (prev.startsWith(TRASH_DIR + '/')) await this.pruneTrashDirs(dirname(prev));
+      if (old && old.hash === hash) {
+        const st = await this.fs.stat(target);
+        if (st) { this.setIndex(target, { id, kind, size: st.size, mtime: st.mtime, hash, commit: r.headId(id) }); return; }
+      }
+    }
+    await this.fs.write(target, bytes);
+    const st = await this.fs.stat(target);
+    this.setIndex(target, { id, kind, size: st?.size ?? bytes.length, mtime: st?.mtime ?? 0, hash, commit: r.headId(id) });
+  }
+
+  /** Remove now-empty folders under `.trash`, never the trash folder itself. */
+  private async pruneTrashDirs(dir: string) {
+    let d = dir;
+    while (d && d !== TRASH_DIR && d.startsWith(TRASH_DIR + '/')) {
+      if ((await this.fs.readdir(d)).length) return;
+      await this.fs.remove(d);
+      d = dirname(d);
+    }
+  }
+
+  /** The first path `dir/name.ext`, `dir/name 2.ext`... that is free on disk (any case) and in the index. */
+  private async freePath(dir: string, name: string, ext: string, namespace = ''): Promise<string> {
+    const full = (p: string) => (namespace ? `${namespace}/${p}` : p);
+    for (let n = 1; n < 10_000; n++) {
+      const p = joinPath(dir, n === 1 ? `${name}${ext}` : `${name} ${n}${ext}`);
+      if (!this.byLower.has(full(p).toLowerCase()) && !(await this.fs.stat(full(p)))) return p;
+    }
+    return joinPath(dir, `${name} ${newId().slice(0, 8)}${ext}`);
+  }
+
+  private async commitPath(id: string, rel: string) {
+    const r = this.ready();
+    const t = r.text(id);
+    if (t === null) return;
+    await r.commit(id, setReserved(t, { _ergo_path: rel }), this.now());
+  }
+
+  private async walk(): Promise<{ files: Map<string, { size: number; mtime: number }>; dirs: Set<string>; truncated: boolean }> {
+    const files = new Map<string, { size: number; mtime: number }>();
+    const dirs = new Set<string>();
+    const max = this.opts.maxFiles ?? 20_000;
+    let truncated = false;
+    const stack = [''];
+    while (stack.length) {
+      const dir = stack.pop()!;
+      const ents = await this.fs.readdir(dir);
+      for (const e of ents) {
+        if (e.name.startsWith('.') || IGNORED_NAMES.has(e.name) || e.name.endsWith('.tmp')) continue;
+        const p = dir ? `${dir}/${e.name}` : e.name;
+        // a link that points back up the tree would never end: stop at a sane depth
+        if (e.kind === 'dir') { if (p.split('/').length <= 32) { dirs.add(p); stack.push(p); } continue; }
+        if (files.size >= max) { truncated = true; continue; }
+        files.set(p, { size: e.size, mtime: e.mtime });
+      }
+    }
+    return { files, dirs, truncated };
+  }
+
+  /** Look at the folder and take in what changed outside the app. Returns how many files were affected. */
+  async rescan(): Promise<number> {
+    if (!this.replica) return 0;
+    return this.diskTask(() => this.scanNow());
+  }
+
+  private async scanNow(): Promise<number> {
+    const r = this.replica;
+    if (!r) return 0;
+    if (!(await this.fs.stat(''))) { this.notice = 'The vault folder cannot be reached.'; return 0; }
+    const { files, dirs, truncated } = await this.walk();
+    const live = [...this.index.keys()].filter(p => !p.startsWith(TRASH_DIR + '/'));
+    // a folder that suddenly has nothing in it is an unplugged drive, not a person deleting everything
+    if (files.size === 0 && live.length > 0) { this.notice = 'The vault folder looks empty or unavailable; nothing was changed.'; return 0; }
+    this.notice = truncated ? `This folder has more than ${(this.opts.maxFiles ?? 20_000).toLocaleString('en')} files; only part of it is shown.` : null;
+
+    interface Cand { path: string; kind: 'note' | 'file'; size: number; mtime: number; text?: string; b64?: string; hash: string }
+    const changed: Cand[] = [];
+    const settle = this.opts.settleMs ?? 600;
+    const cut = Date.now() - settle;
+    let again = false;
+    const skipped: string[] = [];
+    for (const [path, f] of files) {
+      const known = this.index.get(path);
+      if (known && known.size === f.size && known.mtime === f.mtime) continue;
+      if (settle > 0 && f.mtime > cut) { again = true; continue; } // still being written by another program
+      if (isNotePath(path)) {
+        if (f.size > MAX_NOTE_BYTES) { skipped.push(path); continue; }
+        const raw = await this.fs.read(path);
+        if (!raw) continue;
+        let text: string;
+        // a file that is not UTF-8 would be damaged by a save: it is left alone and the person is told
+        try { text = STRICT_UTF8.decode(raw); } catch { skipped.push(path); continue; }
+        if (text.includes('\u0000')) { skipped.push(path); continue; }
+        const hash = sha256hex(text);
+        if (known && known.hash === hash) { this.setIndex(path, { ...known, size: f.size, mtime: f.mtime }); continue; }
+        changed.push({ path, kind: 'note', size: f.size, mtime: f.mtime, text, hash });
+      } else {
+        if (!ATTACH_EXT.has(extOf(path)) || f.size > MAX_ATTACHMENT) continue;
+        const raw = await this.fs.read(path);
+        if (!raw) continue;
+        const b64 = toB64(raw);
+        const hash = sha256hex(b64);
+        if (known && known.hash === hash) { this.setIndex(path, { ...known, size: f.size, mtime: f.mtime }); continue; }
+        changed.push({ path, kind: 'file', size: f.size, mtime: f.mtime, b64, hash });
+      }
+    }
+    if (again) setTimeout(() => { void this.rescan(); }, settle + 100);
+    if (skipped.length && !this.notice) {
+      this.notice = `${skipped.length} Markdown file${skipped.length === 1 ? ' is' : 's are'} not UTF-8 text or too large (${skipped[0]}${skipped.length > 1 ? ', …' : ''}) and left alone.`;
+    }
+
+    const missing = new Map<string, IndexEntry>();
+    for (const p of live) if (!files.has(p)) missing.set(p, this.index.get(p)!);
+    const moved = new Set<string>();
+    let n = 0;
+    const now = this.now();
+    const byPathLive = new Map<string, string>(); // item that already has this path (index lost)
+    for (const v of this.views.values()) if (v.type === 'note' && !v.trashed) byPathLive.set(v.path.toLowerCase(), v.id);
+
+    for (const c of changed) {
+      const known = this.index.get(c.path);
+      let id: string | null = known?.id ?? null;
+      if (!id) {
+        const fmId = c.kind === 'note' ? parseNote(c.text!).fm.id : undefined;
+        const wanted = typeof fmId === 'string' || typeof fmId === 'number' ? String(fmId) : '';
+        if (wanted) {
+          const at = this.pathById.get(wanted);
+          if (at && missing.has(at)) { id = wanted; moved.add(at); } // the file was moved or renamed outside
+          else if (!at) id = wanted; // a note that brings its own id
+          // else: a copy of a note that is still where it was: a new identity
+        }
+        if (!id) {
+          for (const [p, e] of missing) {
+            if (!moved.has(p) && e.kind === c.kind && e.hash === c.hash) { id = e.id; moved.add(p); break; }
+          }
+        }
+        if (!id && c.kind === 'note') {
+          const same = byPathLive.get(c.path.toLowerCase());
+          if (same && !this.pathById.has(same)) id = same;
+        }
+        if (!id) id = newId();
+      }
+      // a file seen for the first time is as old as the file; a change is as new as now
+      const ts = r.headId(id) ? now : Math.min(now, c.mtime || now);
+      let text: string;
+      if (c.kind === 'note') text = toItemText(c.text!, { path: c.path });
+      else {
+        const name = basename(c.path);
+        const fm: Frontmatter = {
+          id, _ergo_kind: 'file', _ergo_path: c.path, name, mime: MIME[extOf(c.path)] ?? 'application/octet-stream', sha: c.hash, size: c.size,
+          created: new Date(Math.min(now, c.mtime || now)).toISOString(),
+        };
+        text = joinDoc(fm, c.b64!.replace(/(.{76})/g, '$1\n'));
+      }
+      // the entry first: the write-out that follows the commit then finds the file already as it should be
+      const oldPath = this.pathById.get(id);
+      if (oldPath && oldPath !== c.path) this.dropIndex(oldPath);
+      this.setIndex(c.path, { id, kind: c.kind, size: c.size, mtime: c.mtime, hash: c.hash });
+      const base = known?.commit;
+      const head = r.headId(id);
+      if (c.kind === 'note' && base && head && base !== head && r.g.has(base) && r.text(id) !== null) {
+        // another text arrived (sync) after this file was written: the edit was made on the old one, so it is
+        // recorded as a branch and joined with the new one like any two devices' edits
+        await r.commitOn(id, base, text, Math.max(ts, 0));
+      } else await r.commit(id, text, Math.max(ts, 0));
+      const at = this.index.get(c.path);
+      if (at) this.index.set(c.path, { ...at, commit: r.headId(id) });
+      n++;
+    }
+
+    for (const [p, e] of missing) {
+      if (moved.has(p)) continue;
+      this.dropIndex(p);
+      const t = r.text(e.id);
+      if (t === null) continue;
+      n++;
+      if (e.kind === 'file') { await r.purge(e.id, now); continue; }
+      // deleted outside the app: the note goes to the Trash, history intact, so it can be brought back
+      if (!reservedOf(t)._ergo_trashed) await r.commit(e.id, setReserved(t, { _ergo_trashed: this.iso() }), now);
+    }
+
+    this.diskDirs = dirs;
+    this.syncFolders();
+    if (n) this.emit({ type: 'status' });
+    return n;
+  }
+
+  startWatching(): void {
+    const ms = this.opts.watchMs ?? 3000;
+    if (this.watchTimer || ms <= 0) return;
+    let busy = false;
+    this.watchTimer = setInterval(() => {
+      if (busy || !this.replica) return;
+      busy = true;
+      void this.rescan().catch(() => 0).finally(() => { busy = false; });
+    }, ms);
+  }
+  stopWatching(): void {
+    if (this.watchTimer) clearInterval(this.watchTimer);
+    this.watchTimer = null;
   }
 
   // ---------- views & index ----------
@@ -319,56 +723,98 @@ export class Vault implements VaultApi {
       const text = r.text(id);
       const prev = this.views.get(id);
       if (prev) { try { this.searchIndex.discard(id); } catch { /* not indexed */ } }
-      if (text === null) { this.views.delete(id); this.files.delete(id); this.chats.delete(id); if (id === AI_CONFIG_ID) this.aiBody = null; continue; }
-      const { fm, body } = splitDoc(text);
-      if (fm.type === 'config') {
-        if (id === AI_CONFIG_ID) this.aiBody = body;
+      if (text === null) {
+        this.views.delete(id); this.files.delete(id); this.chats.delete(id);
+        if (id === AI_CONFIG_ID) this.aiBody = null;
+        continue;
+      }
+      const p = parseNote(text);
+      const fm = p.fm;
+      const res = reservedOf(text);
+      const kind = typeof res._ergo_kind === 'string' ? res._ergo_kind : 'note';
+      if (kind === 'config') {
+        if (id === AI_CONFIG_ID) this.aiBody = p.body;
         this.views.delete(id);
         continue;
       }
-      if (fm.type === 'chat') {
+      if (kind === 'chat') {
         this.chats.set(id, {
           id, title: typeof fm.title === 'string' && fm.title ? fm.title : 'Conversation',
           created: typeof fm.created === 'string' ? fm.created : '', updated: typeof fm.updated === 'string' ? fm.updated : '',
-          data: body,
+          data: p.body,
         });
         this.views.delete(id);
         continue;
       }
-      if (fm.type === 'file') {
+      if (kind === 'file') {
+        const path = typeof res._ergo_path === 'string' ? res._ergo_path : `${ATTACH_DIR}/${String(fm.name ?? 'file')}`;
         this.files.set(id, {
-          name: String(fm.name ?? 'file'), mime: String(fm.mime ?? 'application/octet-stream'), body,
-          size: typeof fm.size === 'number' ? fm.size : b64Bytes(body),
+          name: String(fm.name ?? basename(path)), path, mime: String(fm.mime ?? 'application/octet-stream'), body: p.body,
+          size: typeof fm.size === 'number' ? fm.size : b64Bytes(p.body),
           created: typeof fm.created === 'string' ? fm.created : '',
         });
         if (typeof fm.sha === 'string') this.fileBySha.set(fm.sha, id);
         this.views.delete(id);
         continue;
       }
-      const type = fm.type === 'folder' ? 'folder' : 'note';
-      const tags = Array.isArray(fm.tags) ? fm.tags.map(String) : [];
+      const path = typeof res._ergo_path === 'string' && res._ergo_path ? res._ergo_path : 'Untitled.md';
+      const user = { ...fm };
+      const tags = tagsOf(user);
+      const head = r.g.get(r.headId(id) ?? '');
+      let created = typeof fm.created === 'string' ? fm.created : '';
+      if (!created) {
+        let first = head?.ts ?? 0;
+        for (const cid of r.g.byItem.get(id) ?? []) first = Math.min(first || Infinity, r.g.get(cid)!.ts);
+        created = first ? new Date(first).toISOString() : '';
+      }
+      const updated = typeof fm.updated === 'string' ? fm.updated : head ? new Date(head.ts).toISOString() : created;
+      const dir = dirname(path);
       const view: View = {
-        id, type, fm,
-        title: typeof fm.title === 'string' && fm.title ? fm.title : 'Untitled',
-        parent: typeof fm.parent === 'string' ? fm.parent : null,
+        id, type: 'note', fm: user,
+        title: titleOfPath(path) || 'Untitled',
+        path,
+        parent: dir ? folderIdOf(dir) : null,
         tags,
-        created: typeof fm.created === 'string' ? fm.created : '',
-        updated: typeof fm.updated === 'string' ? fm.updated : '',
-        trashed: typeof fm.trashed === 'string' ? fm.trashed : null,
+        created, updated,
+        trashed: typeof res._ergo_trashed === 'string' && res._ergo_trashed ? res._ergo_trashed : null,
+        trashDir: typeof res._ergo_trashdir === 'string' && res._ergo_trashdir ? res._ergo_trashdir : null,
         pinned: fm.pinned === true,
         template: fm.template === true,
         private: fm.private === true,
-        role: typeof fm.role === 'string' ? fm.role : null,
+        role: null,
         daily: typeof fm.daily === 'string' ? fm.daily : null,
-        body,
-        snippet: type === 'note' ? plainSnippet(body) : '',
-        thumb: firstImage(body) ?? null,
-        tasks: type === 'note' ? parseTasks(body) : [],
-        events: type === 'note' ? parseEvents(body) : [],
-        links: extractLinkIds(body),
+        body: p.body,
+        snippet: plainSnippet(p.body),
+        thumb: firstImage(p.body) ?? null,
+        tasks: parseTasks(p.body),
+        events: parseEvents(p.body),
+        linkRefs: findLinks(p.body),
       };
       this.views.set(id, view);
-      if (type === 'note') this.searchIndex.add({ id, title: view.title, body: plainSnippet(body, 4000), tags: tags.join(' ') });
+      this.searchIndex.add({ id, title: view.title, body: plainSnippet(p.body, 4000), tags: tags.join(' ') });
+    }
+    this.linkIdx = null;
+    this.syncFolders();
+  }
+
+  /** Folders are the directories on disk and the directories notes are in: derived, never stored. */
+  private syncFolders() {
+    const dirs = new Set<string>();
+    const add = (d: string) => { for (let x = d; x; x = dirname(x)) { if (dirs.has(x)) break; dirs.add(x); } };
+    for (const d of this.diskDirs) add(d);
+    for (const v of this.views.values()) if (v.type === 'note' && !v.trashed) add(dirname(v.path));
+    for (const [id, v] of this.views) if (v.type === 'folder' && !dirs.has(v.path)) this.views.delete(id);
+    for (const d of dirs) {
+      if (d.split('/').some(s => s.startsWith('.')) || d === ATTACH_DIR) continue;
+      const id = folderIdOf(d);
+      const dir = dirname(d);
+      const old = this.views.get(id);
+      if (old && old.type === 'folder' && old.path === d) continue;
+      this.views.set(id, {
+        id, type: 'folder', fm: {}, title: basename(d), path: d, parent: dir ? folderIdOf(dir) : null, tags: [], created: '', updated: '',
+        trashed: null, trashDir: null, pinned: false, template: false, private: false, role: dir ? null : ROLES[d.toLowerCase()] ?? null, daily: null,
+        body: '', snippet: '', thumb: null, tasks: [], events: [], linkRefs: [],
+      });
     }
   }
 
@@ -386,7 +832,8 @@ export class Vault implements VaultApi {
     return {
       id: v.id, type: v.type, title: v.title, parent: v.parent, tags: v.tags, created: v.created, updated: v.updated,
       trashed: v.trashed, inTrash: this.inTrash(v), pinned: v.pinned, template: v.template, private: v.private, role: v.role,
-      snippet: v.snippet, thumb: v.thumb, conflicted: this.replica!.hasConflict(v.id),
+      filePath: v.path,
+      snippet: v.snippet, thumb: v.thumb, conflicted: v.type === 'note' && this.replica!.hasConflict(v.id),
       tasksOpen: open.length, tasksDone: v.tasks.length - open.length, nextReminder: reminders[0] ?? null,
       childCount: childCounts.get(v.id) ?? 0,
     };
@@ -394,7 +841,7 @@ export class Vault implements VaultApi {
 
   private counts(): Map<string, number> {
     const m = new Map<string, number>();
-    for (const v of this.views.values()) if (v.parent) m.set(v.parent, (m.get(v.parent) ?? 0) + 1);
+    for (const v of this.views.values()) if (v.parent && !v.trashed) m.set(v.parent, (m.get(v.parent) ?? 0) + 1);
     return m;
   }
 
@@ -414,6 +861,42 @@ export class Vault implements VaultApi {
 
   private titleOf(id: string): string { return this.views.get(id)?.title ?? 'Missing note'; }
 
+  // ---------- links ----------
+  private linkIndex(): LinkIndex {
+    if (!this.linkIdx) {
+      const paths: string[] = [];
+      for (const v of this.views.values()) if (v.type === 'note' && !v.trashed) paths.push(v.path);
+      for (const f of this.files.values()) paths.push(f.path);
+      this.linkIdx = buildLinkIndex(paths);
+      this.linkCache.clear();
+    }
+    return this.linkIdx;
+  }
+
+  private noteByPath(): Map<string, View> {
+    const m = new Map<string, View>();
+    for (const v of this.views.values()) if (v.type === 'note' && !v.trashed) m.set(v.path, v);
+    return m;
+  }
+
+  /** The notes this note links to (ids), cached until something moves. */
+  private linksOf(v: View): string[] {
+    const idx = this.linkIndex();
+    const hit = this.linkCache.get(v.id);
+    if (hit) return hit;
+    const byPath = this.noteByPath();
+    const ids = new Set<string>();
+    for (const ref of v.linkRefs) {
+      if (ref.embed) continue;
+      const t = resolveLink(ref, v.path, idx);
+      const target = t ? byPath.get(t) : undefined;
+      if (target) ids.add(target.id);
+    }
+    const out = [...ids];
+    this.linkCache.set(v.id, out);
+    return out;
+  }
+
   // ---------- reading ----------
   async listItems(): Promise<ItemSummary[]> {
     this.ready();
@@ -424,43 +907,59 @@ export class Vault implements VaultApi {
   async getNote(id: string): Promise<NoteDoc | null> {
     this.ready();
     const v = this.views.get(id);
-    if (!v) return null;
-    const backlinks = [...this.views.values()].filter(x => x.links.includes(id) && x.id !== id && !this.inTrash(x)).map(x => ({ id: x.id, title: x.title }));
+    if (!v || v.type !== 'note') return null;
+    const backlinks = [...this.views.values()]
+      .filter(x => x.type === 'note' && x.id !== id && !this.inTrash(x) && this.linksOf(x).includes(id))
+      .map(x => ({ id: x.id, title: x.title }));
+    const idx = this.linkIndex();
+    const byPath = this.noteByPath();
+    const linkMap: Record<string, string> = {};
+    const fileMap: Record<string, string> = {};
+    const fileIdAt = new Map([...this.files].map(([fid, f]) => [f.path, fid]));
+    for (const ref of v.linkRefs) {
+      const t = resolveLink(ref, v.path, idx);
+      if (!t) continue;
+      const target = byPath.get(t);
+      if (target && !ref.embed) linkMap[ref.target] = target.id;
+      const fid = fileIdAt.get(t);
+      if (fid) fileMap[ref.target] = fid;
+    }
+    const links = this.linksOf(v);
     return {
       ...this.summary(v, this.counts()),
       body: v.body,
       path: this.path(id),
       backlinks,
-      links: v.links.filter(l => this.views.has(l)).map(l => ({ id: l, title: this.titleOf(l) })),
+      links: links.map(l => ({ id: l, title: this.titleOf(l) })),
+      linkMap,
+      fileMap,
     };
   }
 
   // ---------- writing ----------
-  private compose(fm: Frontmatter, body: string): string { return joinDoc(fm, body); }
-
-  private async createNoteRaw(i: {
-    parent: string | null; title?: string; body?: string; tags?: string[]; template?: boolean; daily?: boolean | string; role?: string;
-  }): Promise<ItemSummary> {
-    const id = newId();
-    const t = this.iso();
-    const fm: Frontmatter = {
-      id, type: 'note', title: i.title?.trim() || 'Untitled', parent: i.parent ?? undefined,
-      tags: i.tags && i.tags.length ? [...new Set(i.tags.map(cleanTag).filter(Boolean))].sort() : undefined,
-      created: t, updated: t,
-      template: i.template ? true : undefined,
-      daily: typeof i.daily === 'string' ? i.daily : i.daily ? true : undefined,
-    };
-    await this.ready().commit(id, this.compose(fm, i.body ?? ''), this.now());
-    this.refresh([id]);
-    return this.summary(this.views.get(id)!, this.counts());
+  private folderPath(id: string | null): string {
+    if (!id) return '';
+    const f = this.views.get(id);
+    if (!f || f.type !== 'folder') throw new Error('That folder does not exist');
+    return f.path;
   }
 
-  private async createFolderRaw(i: { title: string; parent: string | null; role?: string }): Promise<ItemSummary> {
+  /** Create a note file. `parent` is a folder id or a vault path. */
+  private async createNoteRaw(i: {
+    parent: string | null; title?: string; body?: string; tags?: string[]; template?: boolean; daily?: boolean | string;
+  }): Promise<ItemSummary> {
+    const r = this.ready();
     const id = newId();
-    const t = this.iso();
-    const fm: Frontmatter = { id, type: 'folder', title: i.title.trim() || 'Untitled folder', parent: i.parent ?? undefined, created: t, updated: t, role: i.role };
-    await this.ready().commit(id, this.compose(fm, ''), this.now());
+    const dir = i.parent && this.views.has(i.parent) ? this.folderPath(i.parent) : i.parent ?? '';
+    const path = await this.freePath(dir, safeName(i.title?.trim() || 'Untitled'), '.md');
+    const tags = i.tags && i.tags.length ? [...new Set(i.tags.map(cleanTag).filter(Boolean))].sort() : undefined;
+    const file = editFm(i.body ?? '', {
+      id, tags, template: i.template ? true : undefined,
+      daily: typeof i.daily === 'string' ? i.daily : i.daily ? true : undefined,
+    }, { top: ['id'] });
+    await r.commit(id, toItemText(file, { path }), this.now());
     this.refresh([id]);
+    await this.flushDisk();
     return this.summary(this.views.get(id)!, this.counts());
   }
 
@@ -473,8 +972,23 @@ export class Vault implements VaultApi {
     return this.createNoteRaw({ parent, title: input.title ?? '', body: input.body, tags: input.tags });
   }
 
+  private async makeDir(parent: string | null, title: string): Promise<View> {
+    const dir = this.folderPath(parent);
+    const name = safeName(title.trim() || 'Untitled folder');
+    const path = await this.freePath(dir, name, '');
+    await this.diskTask(async () => { await this.fs.mkdir(path); });
+    this.diskDirs.add(path);
+    this.syncFolders();
+    this.emit({ type: 'items', ids: [folderIdOf(path)] });
+    return this.views.get(folderIdOf(path))!;
+  }
+
   async createFolder(input: { title: string; parent?: string | null }): Promise<ItemSummary> {
-    return this.createFolderRaw({ title: input.title, parent: input.parent ?? null });
+    this.ready();
+    const parent = input.parent ?? null;
+    if (parent && !this.isLiveFolder(parent)) throw new Error('That folder does not exist');
+    const f = await this.makeDir(parent, input.title);
+    return this.summary(f, this.counts());
   }
 
   async capture(input: { text: string; title?: string }): Promise<ItemSummary> {
@@ -483,29 +997,146 @@ export class Vault implements VaultApi {
     return this.createNoteRaw({ parent: await this.captureFolder(), title, body: input.text });
   }
 
-  private async mutate(id: string, fn: (fm: Frontmatter, body: string) => { fm?: Frontmatter; body?: string } | void): Promise<View> {
+  /**
+   * One change to one note: properties edited in place, a new body, a new place. The change is committed and
+   * the file written before this returns.
+   */
+  private async update(
+    id: string, ch: { fm?: Record<string, unknown>; body?: string; path?: string; trashed?: string | null; trashDir?: string | null },
+    o: { quiet?: boolean } = {},
+  ): Promise<View> {
+    const r = this.ready();
     const v = this.views.get(id);
-    if (!v) throw new Error('Item not found');
-    const fm = { ...v.fm };
-    const r = fn(fm, v.body) ?? {};
-    const nfm = r.fm ?? fm;
-    const body = r.body ?? v.body;
-    const text = this.compose({ ...nfm, id, updated: this.iso() }, body);
-    const c = await this.ready().commit(id, text, this.now());
+    const cur = r.text(id);
+    if (!v || v.type !== 'note' || cur === null) throw new Error('Item not found');
+    const parsed = parseNote(cur);
+    const edits: Record<string, unknown> = { ...(ch.fm ?? {}) };
+    // the file gets its identity the first time the app writes something into it; moving it, trashing it and
+    // rewriting a link for another note's sake leave its content alone
+    const content = !o.quiet && (ch.body !== undefined || Object.keys(edits).length > 0);
+    if (content && !parsed.broken) {
+      if (String(parsed.fm.id ?? '') !== id) edits.id = id;
+      if (typeof parsed.fm.updated === 'string') edits.updated = this.iso();
+    }
+    let t = parsed.broken ? cur : editFm(cur, edits, { top: ['id'] });
+    if (ch.body !== undefined) t = withBody(t, ch.body);
+    const kv: Record<string, unknown> = {};
+    if (ch.path !== undefined) kv._ergo_path = ch.path;
+    if (ch.trashed !== undefined) { kv._ergo_trashed = ch.trashed ?? undefined; if (ch.trashed === null) kv._ergo_trashdir = undefined; }
+    if (ch.trashDir !== undefined) kv._ergo_trashdir = ch.trashDir ?? undefined;
+    if (Object.keys(kv).length) t = setReserved(t, kv);
+    const c = await r.commit(id, t, this.now());
     if (c) this.refresh([id]);
+    await this.flushDisk();
     return this.views.get(id)!;
   }
 
   async saveNote(id: string, patch: { title?: string; body?: string }): Promise<ItemSummary> {
-    const v = await this.mutate(id, (fm, body) => {
-      if (patch.title !== undefined) fm.title = patch.title.trim() || 'Untitled';
-      return { fm, body: patch.body ?? body };
-    });
+    const cur = this.views.get(id);
+    if (!cur || cur.type !== 'note') throw new Error('Item not found');
+    let v = cur;
+    if (patch.body !== undefined && patch.body !== cur.body) v = await this.update(id, { body: patch.body });
+    if (patch.title !== undefined && patch.title.trim() && safeName(patch.title) !== v.title) {
+      await this.rename(id, patch.title);
+      v = this.views.get(id) ?? v;
+    }
     return this.summary(v, this.counts());
   }
 
+  // ---------- moving and renaming (links follow) ----------
+  /**
+   * Files moved (old path -> new path): rewrite the links that pointed at them and the relative links of notes
+   * that moved. One commit per note whose text changes.
+   */
+  private async followMoves(moves: Map<string, string>, skip: Set<string>, idx: LinkIndex) {
+    const edits: { id: string; body: string; path: string }[] = [];
+    for (const v of this.views.values()) {
+      if (v.type !== 'note' || v.trashed || skip.has(v.id)) continue;
+      const fromNew = moves.get(v.path) ?? v.path;
+      const body = rewriteLinks(v.body, { fromOld: v.path, fromNew, moved: moves, resolve: ref => resolveLink(ref, v.path, idx) });
+      if (body !== v.body) edits.push({ id: v.id, body, path: fromNew });
+    }
+    for (const e of edits) await this.update(e.id, { body: e.body }, { quiet: true });
+  }
+
   async rename(id: string, title: string): Promise<void> {
-    await this.mutate(id, fm => { fm.title = title.trim() || 'Untitled'; });
+    const v = this.views.get(id);
+    if (!v) throw new Error('Item not found');
+    const name = safeName(title);
+    if (v.type === 'folder') { await this.moveDir(v, dirname(v.path), name); return; }
+    if (name === v.title) return;
+    const to = await this.freePath(dirname(v.path), name, extOf(v.path) || '.md');
+    await this.relocateNote(v, to);
+  }
+
+  private async relocateNote(v: View, to: string) {
+    const moves = new Map([[v.path, to]]);
+    const idx = this.linkIndex();
+    // links in this note (relative ones change with its place) and in every note that points at it
+    await this.update(v.id, { path: to });
+    const self = this.views.get(v.id)!;
+    const fromNew = to;
+    const body = rewriteLinks(self.body, { fromOld: v.path, fromNew, moved: moves, resolve: ref => resolveLink(ref, v.path, idx) });
+    if (body !== self.body) await this.update(v.id, { body }, { quiet: true });
+    await this.followMoves(moves, new Set([v.id]), idx);
+  }
+
+  async move(id: string, parent: string | null): Promise<void> {
+    const v = this.views.get(id);
+    if (!v) throw new Error('Item not found');
+    if (parent) {
+      const p = this.views.get(parent);
+      if (!p || p.type !== 'folder') throw new Error('Destination is not a folder');
+      if (this.isDescendant(parent, id)) throw new Error('Cannot move a folder into itself');
+    }
+    const dir = this.folderPath(parent);
+    if (v.type === 'folder') { await this.moveDir(v, dir, basename(v.path)); return; }
+    if (dirname(v.path) === dir) return;
+    const to = await this.freePath(dir, stripExt(basename(v.path)), extOf(v.path) || '.md');
+    await this.relocateNote(v, to);
+  }
+
+  /** Rename or move a directory: the directory goes as a whole, every note and attachment in it follows. */
+  private async moveDir(f: View, intoDir: string, name: string) {
+    const to = joinPath(intoDir, name);
+    if (to.toLowerCase() === f.path.toLowerCase() && to === f.path) return;
+    if (to.toLowerCase().startsWith(f.path.toLowerCase() + '/')) throw new Error('Cannot move a folder into itself');
+    const target = to.toLowerCase() === f.path.toLowerCase() ? to : await this.freePath(intoDir, name, '');
+    const from = f.path;
+    const pre = from + '/';
+    const moves = new Map<string, string>();
+    const affected: string[] = [];
+    for (const v of this.views.values()) if (v.type === 'note' && !v.trashed && v.path.startsWith(pre)) { moves.set(v.path, target + '/' + v.path.slice(pre.length)); affected.push(v.id); }
+    for (const fl of this.files.values()) if (fl.path.startsWith(pre)) moves.set(fl.path, target + '/' + fl.path.slice(pre.length));
+    const idx = this.linkIndex();
+    await this.diskTask(async () => {
+      await this.fs.rename(from, target);
+      // the index follows the directory, so the write-outs below find every file in place
+      for (const [p, e] of [...this.index]) {
+        if (!p.startsWith(pre)) continue;
+        this.dropIndex(p);
+        this.setIndex(target + '/' + p.slice(pre.length), e);
+      }
+    });
+    this.diskDirs = new Set([...this.diskDirs].map(d => (d === from ? target : d.startsWith(pre) ? target + '/' + d.slice(pre.length) : d)));
+    const r = this.ready();
+    for (const [oldP, newP] of moves) {
+      const id = [...this.views.values()].find(x => x.type === 'note' && x.path === oldP)?.id ?? [...this.files].find(([, x]) => x.path === oldP)?.[0];
+      if (!id) continue;
+      const t = r.text(id);
+      if (t !== null) await r.commit(id, setReserved(t, { _ergo_path: newP }), this.now());
+    }
+    this.syncFolders();
+    // links: notes elsewhere that pointed in, and relative links of the notes that moved
+    const edits: { id: string; body: string }[] = [];
+    for (const v of this.views.values()) {
+      if (v.type !== 'note' || v.trashed) continue;
+      const oldFrom = affected.includes(v.id) ? [...moves].find(([, n]) => n === v.path)?.[0] ?? v.path : v.path;
+      const body = rewriteLinks(v.body, { fromOld: oldFrom, fromNew: v.path, moved: moves, resolve: ref => resolveLink(ref, oldFrom, idx) });
+      if (body !== v.body) edits.push({ id: v.id, body });
+    }
+    for (const e of edits) await this.update(e.id, { body: e.body }, { quiet: true });
+    this.emit({ type: 'items', ids: [folderIdOf(target)] });
   }
 
   private isDescendant(id: string, ancestor: string): boolean {
@@ -519,18 +1150,12 @@ export class Vault implements VaultApi {
     return false;
   }
 
-  async move(id: string, parent: string | null): Promise<void> {
-    if (parent) {
-      const p = this.views.get(parent);
-      if (!p || p.type !== 'folder') throw new Error('Destination is not a folder');
-      if (this.isDescendant(parent, id)) throw new Error('Cannot move a folder into itself');
-    }
-    await this.mutate(id, fm => { if (parent) fm.parent = parent; else delete fm.parent; });
-  }
-
   async setTags(id: string, tags: string[]): Promise<void> {
     const t = [...new Set(tags.map(cleanTag).filter(Boolean))].sort();
-    await this.mutate(id, fm => { if (t.length) fm.tags = t; else delete fm.tags; });
+    const v = this.views.get(id);
+    // a tag list somebody wrote as `tag:` stays under that key
+    const key = v && v.fm.tags === undefined && v.fm.tag !== undefined ? 'tag' : 'tags';
+    await this.update(id, { fm: { [key]: t.length ? t : undefined } });
   }
 
   /** Rename a tag (and its sub-tags) on every note; one new Commit per affected note, run locally. */
@@ -548,33 +1173,57 @@ export class Vault implements VaultApi {
   }
 
   async setPinned(id: string, pinned: boolean): Promise<void> {
-    await this.mutate(id, fm => { if (pinned) fm.pinned = true; else delete fm.pinned; });
+    await this.update(id, { fm: { pinned: pinned ? true : undefined } });
   }
 
   async setPrivate(id: string, isPrivate: boolean): Promise<void> {
-    await this.mutate(id, fm => { if (isPrivate) fm.private = true; else delete fm.private; });
+    await this.update(id, { fm: { private: isPrivate ? true : undefined } });
   }
 
   async setTemplate(id: string, isTemplate: boolean): Promise<void> {
-    await this.mutate(id, fm => { if (isTemplate) fm.template = true; else delete fm.template; });
+    await this.update(id, { fm: { template: isTemplate ? true : undefined } });
   }
 
   async trash(id: string): Promise<void> {
-    await this.mutate(id, fm => { fm.trashed = this.iso(); });
+    const v = this.views.get(id);
+    if (!v) return;
+    if (v.type === 'note') { await this.update(id, { trashed: this.iso() }); return; }
+    for (const x of this.subtree(id)) {
+      const n = this.views.get(x);
+      if (n && n.type === 'note' && !n.trashed) await this.update(x, { trashed: this.iso(), trashDir: id });
+    }
+    // the directory itself goes when nothing but empty folders is left in it
+    await this.diskTask(async () => {
+      const empty = async (d: string): Promise<boolean> => {
+        for (const e of await this.fs.readdir(d)) {
+          if (e.kind === 'file') return false;
+          if (!(await empty(joinPath(d, e.name)))) return false;
+        }
+        return true;
+      };
+      if (await empty(v.path)) await this.fs.remove(v.path);
+    });
+    this.diskDirs = new Set([...this.diskDirs].filter(d => d !== v.path && !d.startsWith(v.path + '/')));
+    this.syncFolders();
+    this.emit({ type: 'items', ids: [id] });
   }
 
   async restore(id: string): Promise<void> {
     const v = this.views.get(id);
-    if (!v) return;
-    // a note whose folder is gone lands in the capture folder (ADR / Q34)
-    const parentOk = !v.parent || (this.views.has(v.parent) && !this.inTrash(this.views.get(v.parent)!));
-    const target = parentOk ? v.parent : await this.captureFolder();
-    await this.mutate(id, fm => { delete fm.trashed; if (target) fm.parent = target; else delete fm.parent; });
+    if (!v) {
+      // a folder that was trashed: its notes come back, and the directories with them
+      for (const n of [...this.views.values()]) if (n.type === 'note' && n.trashed && n.trashDir === id) await this.restore(n.id);
+      return;
+    }
+    if (v.type !== 'note') return;
+    const dir = dirname(v.path);
+    const free = await this.freePath(dir, stripExt(basename(v.path)), extOf(v.path) || '.md');
+    await this.update(id, { trashed: null, path: free });
   }
 
   private subtree(id: string): string[] {
     const out: string[] = [];
-    const seen = new Set<string>(); // two devices can move A into B and B into A while apart: tolerate cycles
+    const seen = new Set<string>(); // tolerate cycles
     const walk = (x: string) => {
       if (seen.has(x)) return;
       seen.add(x);
@@ -593,13 +1242,15 @@ export class Vault implements VaultApi {
   async purge(id: string): Promise<void> {
     this.ready();
     if (this.hasOpenConflict(id)) throw new Error('This note was also changed on another device. Resolve that first, then delete it.');
-    for (const x of this.subtree(id).reverse()) await this.ready().purge(x, this.now());
-    for (const x of this.subtree(id)) this.views.delete(x);
+    const notes = this.subtree(id).filter(x => this.views.get(x)?.type === 'note' || x === id).reverse();
+    for (const x of notes) if (this.replica!.text(x) !== null) await this.ready().purge(x, this.now());
+    for (const x of this.subtree(id)) if (this.views.get(x)?.type === 'note') this.views.delete(x);
     this.refresh([id]);
+    await this.flushDisk();
   }
 
   async emptyTrash(): Promise<void> {
-    const top = [...this.views.values()].filter(v => v.trashed);
+    const top = [...this.views.values()].filter(v => v.type === 'note' && v.trashed);
     // an item with an unresolved concurrent edit stays in the Trash until a person has chosen
     for (const v of top) if (this.views.has(v.id) && !this.hasOpenConflict(v.id)) await this.purge(v.id);
   }
@@ -609,7 +1260,7 @@ export class Vault implements VaultApi {
     await this.settleAiConfig();
     const cutoff = now - TRASH_DAYS * DAY;
     for (const v of [...this.views.values()]) {
-      if (v.trashed && Date.parse(v.trashed) < cutoff && this.views.has(v.id) && !this.hasOpenConflict(v.id)) await this.purge(v.id);
+      if (v.type === 'note' && v.trashed && Date.parse(v.trashed) < cutoff && this.views.has(v.id) && !this.hasOpenConflict(v.id)) await this.purge(v.id);
     }
   }
 
@@ -629,7 +1280,7 @@ export class Vault implements VaultApi {
     if (configured && configured.type === 'folder' && !this.inTrash(configured)) return configured.id;
     const inbox = this.folderByRole('inbox');
     if (inbox) return inbox.id;
-    return (await this.createFolderRaw({ title: 'Inbox', parent: null, role: 'inbox' })).id;
+    return (await this.makeDir(null, 'Inbox')).id;
   }
 
   async search(query: string): Promise<ItemSummary[]> {
@@ -671,14 +1322,14 @@ export class Vault implements VaultApi {
     return out.slice(0, MAX_SEARCH_HITS);
   }
 
-  async linkTargets(query: string): Promise<{ id: string; title: string }[]> {
+  async linkTargets(query: string): Promise<{ id: string; title: string; path: string }[]> {
     this.ready();
     const q = query.trim().toLowerCase();
     return [...this.views.values()]
       .filter(v => v.type === 'note' && !this.inTrash(v) && (!q || v.title.toLowerCase().includes(q)))
       .sort((a, b) => (b.updated || '').localeCompare(a.updated || ''))
       .slice(0, 12)
-      .map(v => ({ id: v.id, title: v.title }));
+      .map(v => ({ id: v.id, title: v.title, path: v.path }));
   }
 
   async tags(): Promise<{ tag: string; count: number }[]> {
@@ -703,7 +1354,9 @@ export class Vault implements VaultApi {
   }
 
   async toggleTask(noteId: string, index: number, done: boolean): Promise<void> {
-    await this.mutate(noteId, (_fm, body) => ({ body: setTaskDone(body, index, done) }));
+    const v = this.views.get(noteId);
+    if (!v) throw new Error('Item not found');
+    await this.update(noteId, { body: setTaskDone(v.body, index, done) });
   }
 
   async calendar(fromIso: string, toIso: string): Promise<CalendarData> {
@@ -733,7 +1386,7 @@ export class Vault implements VaultApi {
   async templates(): Promise<ItemSummary[]> {
     this.ready();
     const c = this.counts();
-    return [...this.views.values()].filter(v => v.template && !this.inTrash(v)).sort(sortTitle).map(v => this.summary(v, c));
+    return [...this.views.values()].filter(v => v.type === 'note' && v.template && !this.inTrash(v)).sort(sortTitle).map(v => this.summary(v, c));
   }
 
   private expand(body: string, title: string): string {
@@ -748,7 +1401,7 @@ export class Vault implements VaultApi {
 
   async createFromTemplate(templateId: string, o: { parent?: string | null; title?: string } = {}): Promise<ItemSummary> {
     const t = this.views.get(templateId);
-    if (!t) throw new Error('Template not found');
+    if (!t || t.type !== 'note') throw new Error('Template not found');
     const title = o.title?.trim() || t.title;
     let parent: string | null;
     if (o.parent !== undefined) parent = o.parent;
@@ -761,17 +1414,16 @@ export class Vault implements VaultApi {
 
   async dailyNote(date: string): Promise<ItemSummary> {
     this.ready();
-    const existing = [...this.views.values()].find(v => v.daily === date && !this.inTrash(v));
+    const existing = [...this.views.values()].find(v => v.type === 'note' && v.daily === date && !this.inTrash(v));
     if (existing) return this.summary(existing, this.counts());
     const s = (this.meta.settings as Partial<Settings> | undefined) ?? {};
-    let parent: string | null = s.dailyFolder && this.views.has(s.dailyFolder) ? s.dailyFolder : null;
+    let parent: string | null = s.dailyFolder && this.isLiveFolder(s.dailyFolder) ? s.dailyFolder : null;
     if (!parent) {
-      const areas = this.folderByRole('areas');
-      const existingDaily = [...this.views.values()].find(v => v.type === 'folder' && v.title === 'Daily' && v.parent === (areas?.id ?? null) && !this.inTrash(v));
-      parent = existingDaily?.id ?? (await this.createFolderRaw({ title: 'Daily', parent: areas?.id ?? null })).id;
+      const found = [...this.views.values()].find(v => v.type === 'folder' && v.path.toLowerCase() === 'daily' && !this.inTrash(v));
+      parent = found?.id ?? (await this.makeDir(null, 'Daily')).id;
       await this.setSettings({ dailyFolder: parent });
     }
-    const tpl = [...this.views.values()].find(v => v.template && v.fm.daily === true && !this.inTrash(v));
+    const tpl = [...this.views.values()].find(v => v.type === 'note' && v.template && v.fm.daily === true && !this.inTrash(v));
     const body = tpl ? this.expand(tpl.body, date) : '## Plan\n\n- [ ] \n\n## Notes\n\n';
     return this.createNoteRaw({ parent, title: date, body, tags: tpl?.tags, daily: date });
   }
@@ -780,7 +1432,7 @@ export class Vault implements VaultApi {
   private conflictIds(): string[] {
     const r = this.replica!;
     // a deleted-here / edited-there note is a conflict too: the deleting device must be asked
-    return r.items().filter(i => i !== AI_CONFIG_ID && !this.chats.has(i) && r.hasConflict(i) && (!r.isPurged(i) || r.otherHeads(i).some(h => r.g.get(h)!.kind !== 'purge')));
+    return r.items().filter(i => i !== AI_CONFIG_ID && !this.chats.has(i) && !this.files.has(i) && r.hasConflict(i) && (!r.isPurged(i) || r.otherHeads(i).some(h => r.g.get(h)!.kind !== 'purge')));
   }
 
   private conflictTitle(id: string): string {
@@ -789,8 +1441,8 @@ export class Vault implements VaultApi {
     const r = this.replica!;
     for (const h of r.g.heads(id)) {
       const t = r.g.text(h);
-      const title = t ? splitDoc(t.join('\n')).fm.title : undefined;
-      if (typeof title === 'string' && title) return title;
+      const p = t ? reservedOf(t.join('\n'))._ergo_path : undefined;
+      if (typeof p === 'string' && p) return titleOfPath(p);
     }
     return 'Deleted note';
   }
@@ -811,7 +1463,7 @@ export class Vault implements VaultApi {
     const g = this.replica!.g;
     const c = g.get(commitId)!;
     const lines = g.text(commitId);
-    return { commit: c.id, deviceId: c.author, deviceName: this.deviceNameOf(c.author), ts: c.ts, purge: c.kind === 'purge', text: lines ? lines.join('\n') : '' };
+    return { commit: c.id, deviceId: c.author, deviceName: this.deviceNameOf(c.author), ts: c.ts, purge: c.kind === 'purge', text: lines ? stripReserved(lines.join('\n')) : '' };
   }
 
   async conflictDetail(id: string): Promise<ConflictDetail | null> {
@@ -824,12 +1476,13 @@ export class Vault implements VaultApi {
       const store = await this.getStore().catch(() => null);
       if (store) await this.refreshDeviceNames(store).catch(() => { /* names are cosmetic */ });
     }
+    const base = others.length ? baseText(r.g, local, others[0]) : null;
     return {
       id,
       title: this.conflictTitle(id),
       local: this.headInfo(local),
       others: others.map(o => this.headInfo(o)),
-      base: others.length ? baseText(r.g, local, others[0]) : null,
+      base: base === null ? null : stripReserved(base),
     };
   }
 
@@ -852,10 +1505,13 @@ export class Vault implements VaultApi {
         for (const o of others) {
           const c = r.g.get(o)!;
           if (c.kind === 'purge') continue;
-          const { fm, body } = splitDoc((r.g.text(o) ?? []).join('\n'));
-          const title = `${typeof fm.title === 'string' && fm.title ? fm.title : 'Untitled'} (from ${this.deviceNameOf(c.author)})`;
-          const parent = typeof fm.parent === 'string' && this.isLiveFolder(fm.parent) ? fm.parent : await this.captureFolder();
-          await this.createNoteRaw({ parent, title, body, tags: Array.isArray(fm.tags) ? fm.tags.map(String) : undefined });
+          const otherText = (r.g.text(o) ?? []).join('\n');
+          const p = parseNote(stripReserved(otherText));
+          const path = reservedOf(otherText)._ergo_path;
+          const name = typeof path === 'string' && path ? titleOfPath(path) : 'Untitled';
+          const dir = typeof path === 'string' ? dirname(path) : '';
+          const title = `${name} (from ${this.deviceNameOf(c.author)})`;
+          await this.createNoteRaw({ parent: dir, title, body: p.body, tags: tagsOf(p.fm) });
         }
         text = r.g.get(local)!.kind === 'purge' ? null : r.text(id);
         break;
@@ -869,13 +1525,19 @@ export class Vault implements VaultApi {
         text = acc;
         break;
       }
-      case 'text': text = choice.text; break;
+      case 'text': {
+        // the editor shows the note without its reserved keys; the place it has stays what this device shows
+        const keep = reservedOf(r.text(id) ?? '');
+        text = setReserved(choice.text, Object.fromEntries(Object.entries(keep).map(([k, v]) => [k, v])));
+        break;
+      }
       case 'delete': text = null; break;
     }
     await r.resolve(id, text, this.now());
     this.refresh([id]);
     this.emit({ type: 'items', ids: [id] });
     this.noteLocalChange();
+    await this.flushDisk();
   }
 
   async history(id: string): Promise<VersionInfo[]> {
@@ -902,15 +1564,23 @@ export class Vault implements VaultApi {
     const c = r.g.get(commit);
     if (!c || c.item !== id || c.kind === 'purge') return null;
     const l = r.g.text(commit);
-    return l ? l.join('\n') : null;
+    return l ? stripReserved(l.join('\n')) : null;
   }
 
   async restoreVersion(id: string, commit: string): Promise<void> {
-    const t = await this.versionText(id, commit);
-    if (t === null) throw new Error('That version cannot be restored');
-    const { fm, body } = splitDoc(t);
-    const wanted = typeof fm.parent === 'string' && this.isLiveFolder(fm.parent) ? fm.parent : undefined;
-    await this.mutate(id, cur => ({ fm: { ...fm, id, parent: wanted ?? (typeof cur.parent === 'string' && this.isLiveFolder(cur.parent) ? cur.parent : undefined), trashed: undefined }, body }));
+    const r = this.ready();
+    const c = r.g.get(commit);
+    if (!c || c.item !== id || c.kind === 'purge') throw new Error('That version cannot be restored');
+    const old = (r.g.text(commit) ?? []).join('\n');
+    const cur = r.text(id) ?? old;
+    const keep = reservedOf(cur);
+    const trashed = typeof keep._ergo_trashed === 'string' && keep._ergo_trashed !== '';
+    const here = typeof keep._ergo_path === 'string' ? keep._ergo_path : 'Untitled.md';
+    const path = trashed ? await this.freePath(dirname(here), stripExt(basename(here)), extOf(here) || '.md') : here;
+    const next = setReserved(old, { _ergo_path: path, _ergo_trashed: undefined, _ergo_eol: keep._ergo_eol, _ergo_bom: keep._ergo_bom });
+    await r.commit(id, next, this.now());
+    this.refresh([id]);
+    await this.flushDisk();
   }
 
   // ---------- settings & store ----------
@@ -940,7 +1610,7 @@ export class Vault implements VaultApi {
   async setAiSettings(patch: AiSettingsPatch): Promise<AiSettings> {
     const r = this.ready();
     const next = applyAiPatch(this.aiConfig(), patch);
-    const fm: Frontmatter = { id: AI_CONFIG_ID, type: 'config', updated: this.iso() };
+    const fm: Frontmatter = { id: AI_CONFIG_ID, _ergo_kind: 'config', updated: this.iso() };
     const c = await r.commit(AI_CONFIG_ID, joinDoc(fm, JSON.stringify(next)), this.now());
     if (c) this.refresh([AI_CONFIG_ID]);
     this.emit({ type: 'status' });
@@ -976,7 +1646,7 @@ export class Vault implements VaultApi {
     const prev = this.chats.get(id);
     const t = this.iso();
     const title = input.title.trim().slice(0, 120) || 'Conversation';
-    const fm: Frontmatter = { id, type: 'chat', title, created: prev?.created || t, updated: t };
+    const fm: Frontmatter = { id, _ergo_kind: 'chat', title, created: prev?.created || t, updated: t };
     await r.commit(id, joinDoc(fm, input.data.replace(/\r?\n/g, ' ')), this.now());
     this.refresh([id]);
     const c = this.chats.get(id)!;
@@ -1042,6 +1712,8 @@ export class Vault implements VaultApi {
       try {
         const store = await this.getStore();
         const r = this.ready();
+        // what was edited in other programs goes into this pass
+        await this.rescan();
         let now = this.now();
         if (store) { try { now += await r.storeClockOffset(this.ctx(store)); } catch { /* offline: local clock */ } }
         if (!store) { await this.housekeeping(now); return rep; }
@@ -1072,6 +1744,7 @@ export class Vault implements VaultApi {
         this.lastSyncError = e instanceof Error ? e.message : String(e);
         rep.error = this.lastSyncError;
       }
+      await this.flushDisk();
       this.emit({ type: 'status' });
       return rep;
     };
@@ -1096,11 +1769,13 @@ export class Vault implements VaultApi {
   /** Push right now (closing a note, switching device, pressing Sync). */
   async flush(): Promise<void> {
     if (this.pushTimer) { clearTimeout(this.pushTimer); this.pushTimer = null; }
+    await this.rescan().catch(() => 0);
     const store = await this.getStore().catch(() => null);
     if (!store || !this.replica) return;
     // look for news first: a delta must not be pushed on top of a base another device just compacted away
     try { await this.replica.pull(this.ctx(store)); } catch { /* offline: push what we can */ }
     try { await this.replica.push(this.ctx(store)); } catch (e) { this.lastSyncError = e instanceof Error ? e.message : String(e); }
+    await this.flushDisk();
     this.emit({ type: 'status' });
   }
 
@@ -1110,6 +1785,7 @@ export class Vault implements VaultApi {
   }
 
   startAutoSync(): void {
+    this.startWatching();
     if (this.pullTimer) return;
     this.pullTimer = setInterval(() => {
       if (!this.replica || this.syncing) return;
@@ -1124,7 +1800,10 @@ export class Vault implements VaultApi {
   /** Stop background work and let anything already started finish writing (server shutdown, tests). */
   async close(): Promise<void> {
     this.stopAutoSync();
+    this.stopWatching();
     try { await this.syncing; } catch { /* reported through status */ }
+    await this.flushDisk();
+    await this.saveIndexNow();
     await this.persist.close?.();
   }
 
@@ -1136,28 +1815,40 @@ export class Vault implements VaultApi {
   }
 
   // ---------- attachments ----------
-  /** Stored as an immutable `file` item (base64 body) so it syncs and encrypts like everything else. */
-  async addFile(input: FileBlob): Promise<{ id: string }> {
+  /** Written to `attachments/` as a real file and kept as an item so it syncs and is encrypted in the Store. */
+  async addFile(input: FileBlob): Promise<{ id: string; path: string }> {
     const r = this.ready();
     if (input.data.length > 34_000_000) throw new Error('That file is larger than 25 MB.');
     const sha = sha256hex(input.data);
     const existing = this.fileBySha.get(sha);
-    if (existing && this.files.has(existing)) return { id: existing }; // stored once per distinct content
+    if (existing && this.files.has(existing)) return { id: existing, path: this.files.get(existing)!.path }; // stored once per distinct content
     const id = newId();
-    const fm: Frontmatter = { id, type: 'file', name: input.name, mime: input.mime, sha, size: b64Bytes(input.data), created: this.iso() };
+    const name = safeName(stripExt(input.name) === input.name ? input.name : input.name, 100);
+    const ext = extOf(name);
+    const path = await this.freePath(ATTACH_DIR, ext ? name.slice(0, -ext.length) : name, ext);
+    const fm: Frontmatter = { id, _ergo_kind: 'file', _ergo_path: path, name: basename(path), mime: input.mime, sha, size: b64Bytes(input.data), created: this.iso() };
     const body = input.data.replace(/(.{76})/g, '$1\n');
     await r.commit(id, joinDoc(fm, body), this.now());
     this.refresh([id]);
-    return { id };
+    await this.flushDisk();
+    return { id, path };
   }
 
   async listFiles(): Promise<FileInfo[]> {
     this.ready();
-    const notes = [...this.views.values()].filter(v => v.type === 'note' && !this.inTrash(v));
+    const idx = this.linkIndex();
+    const users = new Map<string, View>();
+    for (const v of this.views.values()) {
+      if (v.type !== 'note' || this.inTrash(v)) continue;
+      for (const ref of v.linkRefs) {
+        const t = resolveLink(ref, v.path, idx);
+        if (t && !users.has(t)) users.set(t, v);
+      }
+    }
     const out: FileInfo[] = [];
     for (const [id, f] of this.files) {
-      const user = notes.find(n => n.body.includes(`ergo-file:${id}`));
-      out.push({ id, name: f.name, mime: f.mime, size: f.size, created: f.created, noteId: user?.id ?? null, noteTitle: user?.title ?? null });
+      const user = users.get(f.path);
+      out.push({ id, name: f.name, path: f.path, mime: f.mime, size: f.size, created: f.created, noteId: user?.id ?? null, noteTitle: user?.title ?? null });
     }
     return out.sort((a, b) => b.created.localeCompare(a.created));
   }
@@ -1168,83 +1859,86 @@ export class Vault implements VaultApi {
     return f ? { name: f.name, mime: f.mime, data: f.body.replace(/\s+/g, '') } : null;
   }
 
+  async getFileByPath(path: string): Promise<FileBlob | null> {
+    this.ready();
+    const clean = normalizePath(path);
+    if (!clean) return null;
+    const lower = clean.toLowerCase();
+    for (const [id, f] of this.files) if (f.path.toLowerCase() === lower) return this.getFile(id);
+    // a bare file name (`![[diagram.png]]` in another tool's notes): the nearest file of that name
+    if (!clean.includes('/')) {
+      const hits = [...this.files].filter(([, f]) => f.name.toLowerCase() === lower).sort((a, b) => a[1].path.split('/').length - b[1].path.split('/').length);
+      if (hits.length) return this.getFile(hits[0][0]);
+    }
+    // a file too large to be an item, or one that arrived a moment ago: read it from the folder
+    const ext = extOf(clean);
+    if (!ATTACH_EXT.has(ext) || clean.split('/').some(s => s.startsWith('.'))) return null;
+    const st = await this.fs.stat(clean);
+    if (!st || st.kind !== 'file' || st.size > 200 * 1024 * 1024) return null;
+    const raw = await this.fs.read(clean);
+    return raw ? { name: basename(clean), mime: MIME[ext] ?? 'application/octet-stream', data: toB64(raw) } : null;
+  }
+
   // ---------- import / export ----------
+  /** Copy Markdown files into the vault under `parent`; they become notes on the next look at the folder. */
   async importMarkdown(files: ImportFile[], parent: string | null = null): Promise<{ notes: number; folders: number }> {
     this.ready();
-    const root = parent ?? this.folderByRole('resources')?.id ?? null;
-    const folderIds = new Map<string, string>();
-    let folders = 0;
-    const ensureFolder = async (segs: string[]): Promise<string | null> => {
-      let cur: string | null = root;
-      let key = '';
-      for (const s of segs) {
-        key += '/' + s;
-        let id = folderIds.get(key);
-        if (!id) {
-          id = (await this.createFolderRaw({ title: s, parent: cur })).id;
-          folderIds.set(key, id);
-          folders++;
-        }
-        cur = id;
-      }
-      return cur;
-    };
-    const created: { id: string; title: string; body: string; tags: string[]; fm: Frontmatter }[] = [];
+    const base = parent ? this.folderPath(parent) : this.folderByRole('resources')?.path ?? '';
+    let notes = 0;
+    const dirs = new Set<string>();
     for (const f of files) {
       if (!/\.(md|markdown|txt)$/i.test(f.path)) continue;
-      const segs = f.path.replace(/\\/g, '/').split('/').filter(Boolean);
-      const file = segs.pop()!;
-      const dir = await ensureFolder(segs);
-      const { fm, body } = splitDoc(f.content);
-      const h1 = /^#\s+(.+)$/m.exec(body)?.[1];
-      const title = (typeof fm.title === 'string' && fm.title) || h1 || file.replace(/\.(md|markdown|txt)$/i, '');
-      const rawTags = fm.tags ?? fm.tag;
-      const tags = Array.isArray(rawTags) ? rawTags.map(String) : typeof rawTags === 'string' ? rawTags.split(/[,\s]+/) : [];
-      const note = await this.createNoteRaw({ parent: dir, title, body, tags });
-      created.push({ id: note.id, title, body, tags, fm });
+      const segs = f.path.replace(/\\/g, '/').split('/').filter(s => s && s !== '.' && s !== '..').map(s => safeName(s));
+      const file = segs.pop();
+      if (!file) continue;
+      const dir = joinPath(base, ...segs);
+      const fresh = dir && !this.diskDirs.has(dir) && ![...this.views.values()].some(v => v.type === 'folder' && v.path === dir);
+      if (fresh) for (let d = dir; d && !dirs.has(d); d = dirname(d)) dirs.add(d);
+      const path = await this.freePath(dir, stripExt(file).replace(/\.txt$/i, ''), '.md');
+      await this.diskTask(async () => { await this.fs.write(path, f.content); });
+      notes++;
     }
-    // second pass: [[Title]] -> [[id|Title]]
-    const byTitle = new Map(created.map(c => [c.title.toLowerCase(), c.id]));
-    for (const c of created) {
-      let changed = false;
-      const body = c.body.replace(/(?<!!)\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g, (m, t: string, alias?: string) => {
-        const id = byTitle.get(t.trim().toLowerCase());
-        if (!id) return m;
-        changed = true;
-        return `[[${id}|${(alias ?? t).trim()}]]`;
-      });
-      if (changed) await this.mutate(c.id, () => ({ body }));
-    }
-    return { notes: created.length, folders };
+    await this.rescan();
+    return { notes, folders: dirs.size };
   }
 
   async exportNote(id: string, format: 'md' | 'html'): Promise<ExportResult> {
     this.ready();
     const v = this.views.get(id);
-    if (!v) throw new Error('Note not found');
-    const safe = v.title.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'note';
-    const inlineFiles = (b: string) => b.replace(/\(ergo-file:([0-9a-f-]{36})((?:\s+"[^"]*")?)\)/g, (m, fid: string, title: string) => {
-      const f = this.files.get(fid);
-      return f ? `(data:${f.mime};base64,${f.body.replace(/\s+/g, '')}${title ? ' ' + title.trim() : ''})` : m;
-    });
-    const plainBody = inlineFiles(v.body).replace(WIKILINK_RE, (_m, _id, t: string) => `[[${t}]]`);
+    if (!v || v.type !== 'note') throw new Error('Note not found');
+    const safe = safeName(v.title);
+    const idx = this.linkIndex();
+    const byPath = this.noteByPath();
+    const fileAt = (p: string) => [...this.files.values()].find(f => f.path === p);
+    // attachments become data URIs, links to other notes become plain text: the export stands alone
+    let plainBody = '';
+    let pos = 0;
+    for (const ref of v.linkRefs) {
+      const t = resolveLink(ref, v.path, idx);
+      const f = t ? fileAt(t) : undefined;
+      let text: string | null = null;
+      if (f) {
+        const uri = `data:${f.mime};base64,${f.body.replace(/\s+/g, '')}`;
+        text = ref.kind === 'md' ? `${ref.embed ? '!' : ''}[${ref.label}](${uri}${ref.title})` : ref.embed ? `![${f.name}](${uri})` : f.name;
+      } else if (t && byPath.has(t) && !ref.embed) text = ref.kind === 'md' ? ref.label : titleOfPath(t);
+      if (text === null) continue;
+      plainBody += v.body.slice(pos, ref.start) + text;
+      pos = ref.end;
+    }
+    plainBody += v.body.slice(pos);
     if (format === 'md') {
-      const fm: Frontmatter = { title: v.title, tags: v.tags.length ? v.tags : undefined, created: v.created, updated: v.updated };
-      return { filename: `${safe}.md`, mime: 'text/markdown', content: joinDoc(fm, plainBody) };
+      const text = this.replica!.text(id) ?? '';
+      return { filename: `${safe}.md`, mime: 'text/markdown', content: withBody(stripReserved(text), plainBody) };
     }
     const md = new MarkdownIt({ html: false, linkify: true, breaks: false });
     const audio: string[] = [];
-    const toc = v.body.split('\n').filter(l => /^#{1,3} \S/.test(l)).map(l => {
-      const lv = /^#+/.exec(l)![0].length;
-      return `${'  '.repeat(lv - 1)}- ${l.replace(/^#+\s+/, '')}`;
-    }).join('\n');
     const prepared = plainBody
       .replace(/```ergonote-excalidraw[\s\S]*?```/g, '*(drawing – open in Ergonotes)*')
+      .replace(/<div style="page-break-after:\s*always;?"><\/div>/gi, '\nPAGEBREAKMARK\n')
+      .replace(/<summary>([^<\n]*)<\/summary>/gi, '\nTOGGLETITLE:$1\n')
+      .replace(/<details[^>]*>/gi, '\nTOGGLEOPEN\n')
+      .replace(/<\/details>/gi, '\nTOGGLECLOSE\n')
       .replace(/\[([^\]]*)\]\((data:audio\/[^)\s]+)\s+"audio"\)/g, (_m, label: string, uri: string) => { audio.push(uri); return `AUDIOMARK${audio.length - 1}:${label}`; })
-      .replace(/^\[TOC\][ \t]*$/gm, () => '\n' + (toc || ' ') + '\n')
-      .replace(/^\\newpage[ \t]*$/gm, 'PAGEBREAKMARK')
-      .replace(/^:::toggle[ \t]*(.*)$/gm, (_m, t: string) => `TOGGLEOPEN:${t || 'Details'}`)
-      .replace(/^:::[ \t]*$/gm, 'TOGGLECLOSE')
       .replace(/^\$\$[ \t]*$/gm, '```\n')
       .replace(/^(\s*)[-*+] \[( |x|X)\] /gm, (_m, sp: string, c: string) => `${sp}- ${c === ' ' ? '☐' : '☑'} `)
       .replace(/\s*@(due|remind)\(([^)]+)\)/g, ' _($1 $2)_')
@@ -1253,7 +1947,8 @@ export class Vault implements VaultApi {
       .replace(/\s*@flag\b/g, ' ⚑');
     const body = md.render(prepared)
       .replace(/<p>PAGEBREAKMARK<\/p>/g, '<div style="break-after:page"></div><hr>')
-      .replace(/<p>TOGGLEOPEN:(.*?)<\/p>/g, '<details open><summary>$1</summary>')
+      .replace(/<p>TOGGLEOPEN<\/p>/g, '<details open>')
+      .replace(/<p>TOGGLETITLE:(.*?)<\/p>/g, '<summary>$1</summary>')
       .replace(/<p>TOGGLECLOSE<\/p>/g, '</details>')
       .replace(/AUDIOMARK(\d+):([^<]*)/g, (_m, i: string, label: string) => `<audio controls src="${audio[Number(i)]}"></audio> ${label}`);
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${md.utils.escapeHtml(v.title)}</title>
@@ -1273,3 +1968,5 @@ function storeLabel(cfg: StoreConfig): string {
 }
 
 export { WrongPasswordError };
+// kept for hosts that show where a note lives relative to another
+export { relativePath as relativeVaultPath };

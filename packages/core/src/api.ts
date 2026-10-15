@@ -27,6 +27,8 @@ export interface VaultStatus {
   remote: boolean;
   /** server only: this browser session is signed in */
   authenticated?: boolean;
+  /** something about the vault folder the person should know (a very large folder, a file that could not be written) */
+  notice?: string | null;
 }
 
 export interface ItemSummary {
@@ -44,6 +46,8 @@ export interface ItemSummary {
   /** hidden from the AI chat and from agents that use the MCP endpoint */
   private: boolean;
   role: string | null;
+  /** where the file (a folder: the directory) is, relative to the vault folder */
+  filePath: string;
   snippet: string;
   thumb: string | null;
   conflicted: boolean;
@@ -58,6 +62,10 @@ export interface NoteDoc extends ItemSummary {
   path: { id: string; title: string }[];
   backlinks: { id: string; title: string }[];
   links: { id: string; title: string }[];
+  /** every link in the body, as written, to the note it points at (`[Plan](../Plan.md)` -> id) */
+  linkMap: Record<string, string>;
+  /** the same for links and embeds that point at an attachment (href as written -> file id) */
+  fileMap: Record<string, string>;
 }
 
 export interface TaskEntry extends Task {
@@ -120,7 +128,7 @@ export interface CalendarData {
 export interface FileBlob { name: string; mime: string; data: string }
 export interface ImportFile { path: string; content: string }
 /** One attachment: what it is, how big, and the note that uses it. */
-export interface FileInfo { id: string; name: string; mime: string; size: number; created: string; noteId: string | null; noteTitle: string | null }
+export interface FileInfo { id: string; name: string; path: string; mime: string; size: number; created: string; noteId: string | null; noteTitle: string | null }
 /** One row of the search popup: where it lives and the passage that matched. */
 export interface SearchHit {
   id: string;
@@ -171,7 +179,8 @@ export interface VaultApi {
   search(query: string): Promise<ItemSummary[]>;
   /** Notes (with the matching passage) and folders whose name matches; for the search popup. */
   searchHits(query: string): Promise<SearchHit[]>;
-  linkTargets(query: string): Promise<{ id: string; title: string }[]>;
+  /** Notes a link can point at, with the path to link to (relative to the vault folder). */
+  linkTargets(query: string): Promise<{ id: string; title: string; path: string }[]>;
   tags(): Promise<{ tag: string; count: number }[]>;
   tasks(): Promise<TaskEntry[]>;
   toggleTask(noteId: string, index: number, done: boolean): Promise<void>;
@@ -203,9 +212,12 @@ export interface VaultApi {
   sync(opts?: { full?: boolean }): Promise<SyncReport>;
   flush(): Promise<void>;
 
-  addFile(input: FileBlob): Promise<{ id: string }>;
+  /** Writes the file into `attachments/`; `path` is what a note embeds. */
+  addFile(input: FileBlob): Promise<{ id: string; path: string }>;
   listFiles(): Promise<FileInfo[]>;
   getFile(id: string): Promise<FileBlob | null>;
+  /** An attachment by its vault-relative path (what `![](attachments/x.png)` resolves to). */
+  getFileByPath(path: string): Promise<FileBlob | null>;
 
   importMarkdown(files: ImportFile[], parent?: string | null): Promise<{ notes: number; folders: number }>;
   exportNote(id: string, format: 'md' | 'html'): Promise<ExportResult>;
@@ -217,5 +229,5 @@ export const VAULT_METHODS = [
   'renameTag', 'setPinned', 'setPrivate', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'searchHits', 'linkTargets', 'tags', 'tasks', 'toggleTask',
   'calendar', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
   'resolveConflict', 'history', 'versionText', 'restoreVersion', 'listChats', 'getChat', 'saveChat', 'deleteChat', 'getSettings', 'setSettings', 'getAiSettings', 'setAiSettings', 'setStore',
-  'sync', 'flush', 'addFile', 'listFiles', 'getFile', 'importMarkdown', 'exportNote',
+  'sync', 'flush', 'addFile', 'listFiles', 'getFile', 'getFileByPath', 'importMarkdown', 'exportNote',
 ] as const satisfies readonly (keyof VaultApi)[];

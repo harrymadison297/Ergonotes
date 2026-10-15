@@ -4,9 +4,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
-import { listModels, streamChat, transcribeAudio, Vault, VAULT_METHODS, type AiRequest, type StoreConfig, type VaultStatus } from '@ergonotes/core';
-import { FilePersist, FolderStore } from '@ergonotes/core/node';
-import { Mirror } from './mirror.ts';
+import { FsPersist, listModels, streamChat, transcribeAudio, Vault, VAULT_METHODS, type AiRequest, type StoreConfig, type VaultStatus } from '@ergonotes/core';
+import { FileLocalMeta, FolderStore, NodeFs } from '@ergonotes/core/node';
 import { handleRpc, TokenStore } from './mcp.ts';
 
 export interface ServerOptions {
@@ -23,7 +22,10 @@ export interface ServerOptions {
   /** when set, the first-run setup call must present this token (stops a stranger claiming a public server) */
   setupToken?: string;
   kdf?: { m: number; t: number; p: number };
-  mirrorDir?: string | null;
+  /** The vault: a folder of Markdown files, the notes themselves (ADR 0010). Default: `<dataDir>/vault`. */
+  vaultDir?: string;
+  /** how often the vault folder is looked at for edits made by other programs (ms; default 3000) */
+  watchMs?: number;
   /** folder storage chosen from the web UI must live inside this directory (default: the data directory) */
   folderStoreRoot?: string;
   /** how the AI proxy reaches the provider (tests pass a fake) */
@@ -51,8 +53,14 @@ export interface RunningServer {
 export async function startServer(o: ServerOptions): Promise<RunningServer> {
   const log = o.log ?? (() => {});
   await mkdir(o.dataDir, { recursive: true });
+  const vaultDir = resolve(o.vaultDir ?? join(o.dataDir, 'vault'));
+  await mkdir(vaultDir, { recursive: true });
+  const fs = new NodeFs(vaultDir);
   const vault = await Vault.open({
-    persist: new FilePersist(join(o.dataDir, 'replica')),
+    fs,
+    // the vault folder holds the notes and the sealed history; this machine's own settings stay in the data directory
+    persist: new FsPersist(fs, { local: new FileLocalMeta(join(o.dataDir, 'device.json')) }),
+    watchMs: o.watchMs,
     kdf: o.kdf,
     defaultDeviceName: 'Server',
     storeFactory: (cfg: StoreConfig) => {
@@ -67,14 +75,12 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     },
   });
   const tokens = new TokenStore(join(o.dataDir, 'api-tokens.json'));
-  const mirror = o.mirrorDir === null ? null : new Mirror(vault, o.mirrorDir ?? join(o.dataDir, 'markdown'));
   const sessions = new Map<string, number>();
   const attempts = new Map<string, number[]>();
   const sse = new Set<ServerResponse>();
 
   const startWork = () => {
     vault.startAutoSync();
-    mirror?.start();
   };
   vault.onEvent(e => { for (const r of sse) r.write(`data: ${JSON.stringify(e)}\n\n`); });
 
@@ -367,7 +373,6 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     close: async () => {
       for (const r of sse) r.end();
       await new Promise<void>(r => server.close(() => r()));
-      await mirror?.stop();
       await vault.close();
     },
   };

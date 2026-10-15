@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { FilePlus2, KeyRound, Link2, Loader2 } from 'lucide-react';
+import { FilePlus2, FolderOpen, KeyRound, Link2, Loader2 } from 'lucide-react';
 import { MIN_PASSWORD_LENGTH, type StoreConfig, type VaultStatus } from '@ergonotes/core';
 import type { Backend } from '../backend';
 import { classNames } from '../state/util';
@@ -70,6 +70,16 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
           </>
         )}
 
+        {backend.folder && (
+          <div className="field vault-folder">
+            <label>Vault folder</label>
+            <div className="vault-folder-row">
+              <code title={backend.folder.path}>{backend.folder.path}</code>
+              {backend.folder.canPick && <button type="button" className="btn" onClick={() => void backend.folder!.change()}><FolderOpen size={14} /> Change…</button>}
+            </div>
+            {noVault && <span className="hint">Your notes are the Markdown files in this folder. Already have a folder of notes? Choose it and it just works.</span>}
+          </div>
+        )}
         {noVault && mode === 'join' && !remote && <StoreForm value={store} onChange={setStore} />}
         {noVault && remote && (
           <div className="field">

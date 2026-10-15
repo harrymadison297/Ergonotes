@@ -66,6 +66,8 @@ The device is reached from inside the emulator at `10.0.2.2`.
 node packages/app/e2e/smoke.mjs http://127.0.0.1:18080 shots/
 # Server peer + an offline-first device through MinIO: auto-merge, conflict, resolution
 node packages/app/e2e/sync.mjs http://127.0.0.1:18080 http://127.0.0.1:18090 http://10.0.2.2:19000 http://127.0.0.1:19000 shots/
+# the vault folder on the VM's own disk: files put in and read back over ssh
+tools/e2e-folder-vm.sh http://127.0.0.1:18080 /home/ergo/Notes
 # a real Tauri app (Android or Windows) through its WebView DevTools socket
 node packages/app/e2e/device.mjs http://127.0.0.1:9222 http://127.0.0.1:18080 http://10.0.2.2:19000 shots/ Android "Pixel emulator" "From Android"
 ```

@@ -20,6 +20,10 @@ export interface InsertCtx {
   link(): void;
   record(kind: 'voice' | 'meeting' | 'dictate'): void;
   transcribeDialog(): void;
+  /** open the contents of the note (computed from its headings) */
+  contents(): void;
+  /** put the cursor in the note's tag field */
+  focusTags(): void;
   /** speech-to-text is set up (Settings → AI) */
   stt: boolean;
 }
@@ -49,17 +53,17 @@ export const INSERT_ITEMS: InsertItem[] = [
   { id: 'event', group: 'Essentials', label: 'Event', icon: <CalendarClock size={S} />, keywords: 'calendar meeting appointment', run: c => c.eventDialog() },
   { id: 'new-note', group: 'Essentials', label: 'New linked note', icon: <FilePlus2 size={S} />, keywords: 'create note link', run: c => c.linkedNoteDialog() },
   { id: 'link-note', group: 'Essentials', label: 'Link to note', icon: <FileText size={S} />, keywords: 'wiki backlink [[', hint: '[[', run: c => c.editor.chain().focus().insertContent('[[').run() },
-  { id: 'tag', group: 'Essentials', label: 'Inline tag', icon: <Hash size={S} />, keywords: 'hashtag label', hint: '#', run: c => c.editor.chain().focus().insertContent('#').run() },
+  { id: 'tag', group: 'Essentials', label: 'Tag', icon: <Hash size={S} />, keywords: 'hashtag label inline tag', run: c => c.focusTags() },
   { id: 'date', group: 'Essentials', label: 'Date mention', icon: <Calendar size={S} />, keywords: 'day mention', hint: '@date', run: c => c.dateDialog() },
   { id: 'link', group: 'Essentials', label: 'Link', icon: <Link2 size={S} />, keywords: 'url web address', run: c => c.link() },
-  { id: 'toc', group: 'Essentials', label: 'Contents', icon: <ListTree size={S} />, keywords: 'table of contents outline toc', hint: '[TOC]', run: c => c.editor.chain().focus().insertContent({ type: 'contents' }).run() },
+  { id: 'toc', group: 'Essentials', label: 'Contents', icon: <ListTree size={S} />, keywords: 'table of contents outline toc headings', run: c => c.contents() },
   { id: 'table', group: 'Essentials', label: 'Table', icon: <Table2 size={S} />, run: c => c.editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
   { id: 'divider', group: 'Essentials', label: 'Divider', icon: <Minus size={S} />, keywords: 'rule line separator', hint: '---', run: c => c.editor.chain().focus().setHorizontalRule().run() },
-  { id: 'pagebreak', group: 'Essentials', label: 'Page break', icon: <Scissors size={S} />, keywords: 'print newpage', hint: '\\newpage', run: c => c.editor.chain().focus().insertContent({ type: 'pageBreak' }).run() },
+  { id: 'pagebreak', group: 'Essentials', label: 'Page break', icon: <Scissors size={S} />, keywords: 'print newpage', run: c => c.editor.chain().focus().insertContent({ type: 'pageBreak' }).run() },
   { id: 'quote', group: 'Essentials', label: 'Quote', icon: <Quote size={S} />, keywords: 'blockquote cite', hint: '>', run: c => c.editor.chain().focus().toggleBlockquote().run() },
   { id: 'callout', group: 'Essentials', label: 'Note', icon: <StickyNote size={S} />, keywords: 'callout box info admonition', run: c => c.editor.chain().focus().toggleBlockquote().insertContent('[!note] ').run() },
   {
-    id: 'toggle', group: 'Essentials', label: 'Toggle', icon: <ToggleLeft size={S} />, keywords: 'collapse expand collapsible details fold', hint: ':::toggle',
+    id: 'toggle', group: 'Essentials', label: 'Toggle', icon: <ToggleLeft size={S} />, keywords: 'collapse expand collapsible details fold', hint: '<details>',
     run: c => c.editor.chain().focus().insertContent({ type: 'toggle', attrs: { summary: '' }, content: [{ type: 'paragraph' }] }).run(),
   },
   // Text styles

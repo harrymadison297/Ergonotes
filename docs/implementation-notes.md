@@ -6,13 +6,13 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 
 | Topic | Decision / issue | What the code does | Why |
 |---|---|---|---|
-| Local index | ADR "files are truth, SQLite derived index" | Commits are stored as JSON (files on the server, IndexedDB on devices); the search index (MiniSearch), backlinks and task lists are built **in memory** at unlock | Works identically in the webview and on the server with no native dependency. Fine for tens of thousands of notes; revisit with SQLite if start-up time hurts. |
-| Windows vault folder | "Windows: a folder the user chooses, openable in other editors" | The on-device store is IndexedDB inside the app. The **server peer** writes a Markdown mirror (`$ERGONOTES_DATA/markdown`). No folder mirror on Windows/Android yet | Needs Tauri fs plugin and a folder picker; one-way export exists per note (Export → Markdown). |
-| Attachments (Q24) | Content-addressed blobs, lazy download on Android, 50 MB soft limit | A file is an immutable `file` Item (base64 body) that syncs like any commit; identical content is stored once (sha-256); **no lazy download**, hard limit 25 MB, orphans are not collected | Reuses the commit machinery; blob protocol is a later optimisation. |
+| Local index | ADR 0010: the folder is truth, the database is derived | The Markdown files are the notes; the commit graph (history, merging, sync), conversations and AI settings are items in `.ergonotes/` (sealed with the vault key); the search index (MiniSearch), backlinks and task lists are built **in memory** at unlock from the files | Works identically in the webview and on the server; a few thousand notes index in well under a second. |
+| Vault folder on every platform | "Windows: a folder the user chooses, openable in other editors" | Server peer: `$ERGONOTES_VAULT_DIR`. Windows and Linux apps: the folder chosen on the first screen (default `Documents/Ergonotes`), reached through the shell's `vault_*` commands. Android: the folder is chosen with the system's folder chooser (Storage Access Framework, `SafVault.kt`, reached from the webview as `window.ErgoVault`); until one is chosen the app uses its own folder on shared storage (`Android/data/<package>/files/Ergonotes`). The browser build without a server keeps the vault in IndexedDB with an in-memory folder | The Tauri fs plugin needs per-path permissions; the shell's own commands are confined to one folder. |
+| Attachments (Q24) | Content-addressed blobs, lazy download on Android, 50 MB soft limit | A file under the vault (normally `attachments/`) is real on disk and is also kept as an immutable `file` item (base64 body) so it syncs like any commit; identical content is stored once (sha-256); **no lazy download**, hard limit 25 MB (a bigger file stays on its disk, is shown, and is not synced), orphans are listed on the Files page | Simplest thing that keeps every device complete. |
 | Web client | ADR 0007: one TS core everywhere | The web build is a thin client: it calls the server peer's Vault over HTTP RPC (`/api/rpc/<method>`); the core runs in the webview only in the Tauri apps | Matches "web needs the server, no offline". |
 | Push debounce | ADR 0006 | `Vault` pushes 5 minutes after the last local change while the app runs; `flush()` runs on close/hide/Sync | As decided; the pull timer is 45 s. |
 | Merge granularity | ADR 0001 (line/hunk) | A Markdown paragraph is one line, so two edits inside one paragraph conflict; edits in different paragraphs merge. Hard-wrapped imported text is re-flowed by the editor on first edit | Inherent to line-based merging of Markdown. |
-| Delete vs edit | Always ask | Trash is a frontmatter flag, so trash-vs-edit is detected in the frontmatter merge and surfaces as a conflict; *purge*-vs-edit also conflicts | See `packages/core/src/merge.ts`. |
+| Delete vs edit | Always ask | The Trash is a reserved key in the stored text (and the file is under `.trash/`), so trash-vs-edit is detected in the merge and surfaces as a conflict; *purge*-vs-edit also conflicts | See `packages/core/src/merge.ts`. |
 | Reminders | Local notifications | Fire while the app is running (web Notification API / Tauri notification plugin); **no background scheduling** when the app is closed | Android background work is out of v1 (Q12). |
 | Android share intent | "Share → Inbox capture" (issue 07) | Implemented for `text/plain`: `MainActivity.kt` keeps the shared text and the UI files it with `Vault.capture()` | Images/files shared into the app are not handled. |
 | Tag colours | Brand guidelines: tags are coloured | A tag's colour is a hash of its top-level name into the 8-colour tag palette (`state/tags.ts`); nothing is stored or synced | Same colour on every device without a setting. A person cannot pick a colour yet. |
@@ -25,13 +25,36 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 | Diagrams | "draw for me" | The model writes Mermaid; the app converts it with `@excalidraw/mermaid-to-excalidraw` and stores an ordinary drawing block. Only diagrams, no free illustration; the tool exists only in the app (not on MCP, which has no browser to convert with) | Mermaid is far more reliable from a model than raw Excalidraw JSON. |
 | Argon2id cost | 64 MiB, 3 passes | Implemented with `hash-wasm` (WASM). Not measured on a real phone | Measure on a mid-range device and adjust `DEFAULT_KDF`. |
 
+## The vault folder (ADR 0010)
+
+- `packages/core/src/folder.ts` holds the pure parts (file text <-> stored text, surgical frontmatter edits, safe file
+  names, links, block preservation); `vaultfs.ts` the `VaultFs` seam (memory, Node, the Tauri shell) and `FsPersist`;
+  `vault.ts` the engine. Tests: `folder.test.ts`, `folder-vault.test.ts`; end to end: `e2e/folder.mjs`.
+- A note's stored text is its file with reserved `_ergo_*` keys added (path, trashed, line ending, byte order mark).
+  Those never reach the file. A file without an `id` keeps none until the app writes *content* into it; moving,
+  trashing and rewriting a link for another note's sake do not touch the file's text.
+- The folder is looked at every 3 s on the server and desktop (size and modification time first, then a hash), and
+  before every sync. A file modified less than 0.6 s ago is read on the next look. There is no OS file watcher yet.
+- A move or rename made by another program is recognised by the `id` in the file, or, for a file without one, by an
+  unchanged content hash. A copy of a note gets a new identity. A folder that suddenly has no files at all is treated as
+  an unplugged drive, not as a deletion.
+- Two devices that give two notes the same path: the note with the smaller id keeps the name, the other gets `Name 2`,
+  decided the same way on both.
+- The editor writes back only what changed: blocks (paragraphs, lists, fences...) that equal what the editor made from the
+  file on load are replaced by the file's own text (`preserveBlocks`). Syntax it does not know is a raw atom
+  (`editor/raw.tsx`): `![[x]]`, `%%c%%`, `[^1]`, `^id`, inline HTML, a `#tag` opening a paragraph; HTML blocks, comments
+  and anything else in angle brackets are a raw block.
+- Not done: a file watcher (events instead of the 3 s look), syncing empty folders, a warning before a vault folder is
+  opened inside a cloud-synced directory. On Android a provider that reports no modification time (some cloud
+  providers behind the chooser) makes a same-size edit invisible until the size changes; a local folder is fine.
+
 ## Insert menu, recording and speech-to-text
 
 - Element forms are in docs/adr/0009. `packages/app/src/editor/insertItems.tsx` is the one list behind the Insert menu
   and the "/" menu; `editor/blocks.tsx` holds the Markdown rules and node views of the elements Markdown has no syntax
   for. A new element is: a node with a `markdown` storage, an entry in that list, a line in ADR 0009 and in the skill.
-- `\newpage`, `[TOC]`, `:::toggle`, `$$` are block rules added to markdown-it by the node's `parse.setup`; `☐`/`☑` and
-  voice notes are recognised after rendering (`updateDOM`) because the inline text rule would swallow them.
+- `<details>`, the page-break `<div>` and `$$` are block rules added to markdown-it by the node's `parse.setup`; `☐`/`☑`
+  and voice notes are recognised after rendering (`updateDOM`) because the inline text rule would swallow them.
 - A string passed to `insertContent` is read as Markdown by tiptap-markdown, which is how a recording lands as clip +
   summary + toggle in one call. An editor always keeps one empty paragraph after a block (TrailingParagraph), so the
   caret has somewhere to go after a table, a diagram or a formula.
@@ -86,13 +109,12 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 
 ## Known limits
 
-- The editor rewrites the whole body through its Markdown serializer on every change, so Markdown that has no editor node (raw HTML, footnotes) can be normalised. Notes written by agents through MCP are affected the same way once a person edits them.
+- A block the person edits is written by the editor's Markdown serializer, so its text can be normalised (`*` bullets become `-`, a hard-wrapped paragraph is one line, `*`/`_` and `[`/`]` in text are backslash-escaped); blocks nobody edited are kept as they were (see the vault folder section). Notes written by agents through MCP are plain text and are read the same way.
 - A stale device (offline for more than the history window) is not detected on purpose: it shows up as a `no-base` conflict that a person resolves, and the first push after compaction is sent as a snapshot.
 - `{{cursor}}` in a template is removed, not turned into the caret position; HTML export shows drawings as a text placeholder (SVG/PNG export is in the drawing dialog).
 - The web build sends no `Content-Security-Policy` header yet. Drawings are rendered as images, so note content never injects HTML into the page.
 - S3 requests are signed with the device clock; a clock more than 15 minutes off fails every request until corrected.
 
-- The Markdown mirror is one way: it is rebuilt in a temporary folder and swapped in when a note changes, so edits made to those files outside the app are replaced. It inlines attachments as base64 `data:` URIs (the same export a person gets from the Export menu).
 - Reminders are checked every 20 s while the app is open; one that came due while the app was closed shows once on the next start (within a week). Which reminders have fired is remembered per device in `localStorage`.
 - Two devices that are offline and both open the same day's daily note each create one; they appear as two notes with the same title.
 - `probe/<device>` objects on the Store hold the clock value used to learn the Store's time offset and are never deleted.

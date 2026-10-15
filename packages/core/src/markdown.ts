@@ -1,4 +1,5 @@
 import YAML from 'yaml';
+import { parseNote } from './folder.ts';
 
 export type Frontmatter = Record<string, unknown>;
 export interface Doc { fm: Frontmatter; body: string }
@@ -9,20 +10,8 @@ const FM_ORDER = ['id', 'type', 'title', 'parent', 'tags', 'created', 'updated',
 export function splitDoc(text: string): Doc {
   // files written on Windows: normalise the line endings of a note that starts with CRLF frontmatter
   if (text.startsWith('---\r\n')) text = text.replace(/\r\n/g, '\n');
-  if (!text.startsWith('---\n')) return { fm: {}, body: text };
-  const end = text.indexOf('\n---', 4);
-  if (end < 0) return { fm: {}, body: text };
-  const after = text.indexOf('\n', end + 1);
-  const raw = text.slice(4, end);
-  let fm: Frontmatter = {};
-  try {
-    const parsed = YAML.parse(raw);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) fm = parsed as Frontmatter;
-  } catch {
-    return { fm: {}, body: text };
-  }
-  const body = after < 0 ? '' : text.slice(after + 1);
-  return { fm, body };
+  const p = parseNote(text);
+  return { fm: p.fm, body: p.body };
 }
 
 export function joinDoc(fm: Frontmatter, body: string): string {
@@ -144,12 +133,12 @@ export function plainSnippet(body: string, max = 180): string {
     .map(l => (/^\s*\|.*\|\s*$/.test(l) ? l.replace(/\|/g, ' ') : l))
     .join('\n')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
-    .replace(/\[\[[0-9a-f-]{36}\|([^\]]*)\]\]/g, '$1')
+    .replace(/!?\[\[([^\]|#^]*)(?:[#^][^\]|]*)?(?:\|([^\]]*))?\]\]/g, (_m, t: string, a?: string) => a || t)
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/@(due|remind)\([^)]*\)|@flag\b/g, '')
     .replace(/@event\(([^)]*)\)/g, '')
     .replace(/@date\((\d{4}-\d{2}-\d{2})\)/g, '$1')
-    .replace(/^\[TOC\]$|^\\newpage$|^:::\s*(?:toggle\b)?/gm, ' ')
+    .replace(/<\/?[a-zA-Z][^>\n]*>/g, ' ')
     .replace(/\$\$[\s\S]*?\$\$/g, ' ')
     .replace(/^[#>\-*+\s]+/gm, '')
     .replace(/\[[ xX]\]\s*/g, '')

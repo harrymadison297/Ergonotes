@@ -1,5 +1,7 @@
 export * from './util.ts';
 export * from './markdown.ts';
+export * from './folder.ts';
+export * from './vaultfs.ts';
 export * from './graph.ts';
 export * from './merge.ts';
 export * from './compaction.ts';

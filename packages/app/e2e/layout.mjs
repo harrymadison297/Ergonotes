@@ -12,14 +12,12 @@ const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stre
 const BODY = [
   '# A very long title for a heading that goes on and on to see whether it wraps on a narrow phone screen without breaking',
   'Intro with a date @date(2026-10-20), a box ☐ and a done box ☑, an inline formula $\\int_0^1 x^2\\,dx = \\frac13$ and #tag text.',
-  '[TOC]',
-  ':::toggle A toggle with a fairly long title that should wrap or truncate nicely',
-  'Inside the toggle there is **bold** text and a list:\n\n- one\n- two\n\n:::toggle Nested toggle\ndeep\n:::\n\n:::',
-  '\\newpage',
+  '<details>\n<summary>A toggle with a fairly long title that should wrap or truncate nicely</summary>\n\nInside the toggle there is **bold** text and a list:\n\n- one\n- two\n\n<details>\n<summary>Nested toggle</summary>\n\ndeep\n\n</details>\n\n</details>',
+  '<div style="page-break-after: always;"></div>',
   'Team sync with an extraordinarily long event title @event(2026-10-20T09:00-10:30)',
   '$$\n\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6} = 1 + \\frac14 + \\frac19 + \\frac1{16} + \\frac1{25} + \\frac1{36} + \\frac1{49} + \\frac1{64} + \\frac1{81} + \\frac1{100}\n$$',
   '```mermaid\nflowchart LR\n  A[Start of a long flow] --> B{Decision number one} --> C[Another step here] --> D[And one more step] --> E[Finish line reached] --> F[Celebrate]\n```',
-  '[Meeting recording 14:30 · 12:03](ergo-file:FILEID "audio")',
+  '[Meeting recording 14:30 · 12:03](../FILEPATH "audio")',
   '```js\nconst aVeryLongLineOfCodeThatShouldScrollInsideItsBlockAndNotWidenThePageOrBreakTheLayout = someFunction(argumentOne, argumentTwo, argumentThree);\n```',
   '| a | b | c | d |\n|---|---|---|---|\n| one | two | three | four |\n| a long cell with many words in it | x | y | z |',
   '- [ ] a task @due(2026-10-21)\n- [x] done task',
@@ -44,7 +42,7 @@ const seedCtx = await browser.newContext({ viewport: { width: 1280, height: 800 
 const sp = await seedCtx.newPage();
 await login(sp);
 const f = await rpc(sp, 'addFile', { name: 'Meeting.webm', mime: 'audio/webm', data: Buffer.from('not really audio but a file').toString('base64') });
-const note = await rpc(sp, 'createNote', { title: 'Everything', body: BODY.replace('FILEID', f.id) });
+const note = await rpc(sp, 'createNote', { title: 'Everything', body: BODY.replace('FILEPATH', f.path) });
 await rpc(sp, 'setAiSettings', { connection: { id: 'w', type: 'custom', name: 'Whisper', url: 'http://localhost:8000', key: 'k' } });
 await rpc(sp, 'setAiSettings', { speechModel: { connection: 'w', model: '' } });
 await seedCtx.close();
@@ -56,7 +54,7 @@ const viewports = [
 const overflows = page => page.evaluate(() => {
   const vw = innerWidth, bad = [];
   if (document.documentElement.scrollWidth > vw + 1) bad.push(`page scrolls sideways (${document.documentElement.scrollWidth} > ${vw})`);
-  const sel = '.dialog, .menu, .insert-menu, .editor-page, .toolbar, .bottom-nav, .m-note, .aside, .audio-clip, .toggle-block, .toc-block, .math-block, .diagram-out, .page-head, .cal-grid, .recorder';
+  const sel = '.dialog, .menu, .insert-menu, .editor-page, .toolbar, .bottom-nav, .m-note, .aside, .audio-clip, .toggle-block, .math-block, .diagram-out, .page-head, .cal-grid, .recorder';
   for (const el of document.querySelectorAll(sel)) {
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) continue;

@@ -146,6 +146,26 @@ export class Replica {
     return c;
   }
 
+  /**
+   * Record a text that was made on top of `base`, not on top of this Device's head: a file edited by another program
+   * while a newer text arrived from elsewhere. Heads that join cleanly are merged at once; otherwise the item is a
+   * conflicted revision and this Device keeps showing the new text.
+   */
+  async commitOn(item: string, base: string, text: string, now = Date.now()): Promise<Commit> {
+    const c = this.g.make(item, [base], text.split('\n'), this.deviceId, now);
+    if (!this.g.has(c.id)) {
+      this.g.add(c);
+      this.order.push(c.id);
+      this.stats.commits++;
+      await this.persist.putCommit(c, false);
+    }
+    this.localHead.set(item, c.id);
+    await this.persist.setHead(item, c.id);
+    await this.autoMerge(item);
+    this.emit([item]);
+    return c;
+  }
+
   /** Delete forever (history is removed by compaction later). */
   async purge(item: string, now = Date.now()): Promise<void> {
     const head = this.localHead.get(item);

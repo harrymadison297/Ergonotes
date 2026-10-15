@@ -1,4 +1,4 @@
-import { Extension, Node, mergeAttributes, type Editor } from '@tiptap/core';
+import { Extension, Node, type Editor } from '@tiptap/core';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
@@ -14,47 +14,9 @@ import type { VaultApi } from '@ergonotes/core';
 import { popupRenderer, type PopupItem } from './suggest';
 import { FileImg } from '../components/FileImg';
 import { parseDue } from '../state/util';
+import { linkTo } from '../state/noteCtx';
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const WIKI_RE = /^\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\|([^\]\n]*)\]\]/;
-
-// ---------------------------------------------------------------- [[id|Title]] links
-export const Wikilink = Node.create({
-  name: 'wikilink',
-  group: 'inline',
-  inline: true,
-  atom: true,
-  addAttributes() { return { id: { default: '' }, title: { default: '' } }; },
-  parseHTML() {
-    return [{ tag: 'span[data-wikilink]', getAttrs: el => ({ id: (el as HTMLElement).getAttribute('data-wikilink'), title: (el as HTMLElement).textContent ?? '' }) }];
-  },
-  renderHTML({ node }) {
-    return ['span', mergeAttributes({ 'data-wikilink': node.attrs.id, class: 'wikilink' }), node.attrs.title];
-  },
-  addStorage() {
-    return {
-      markdown: {
-        serialize(state: { write(s: string): void }, node: { attrs: { id: string; title: string } }) {
-          state.write(`[[${node.attrs.id}|${String(node.attrs.title).replace(/[\]|\n]/g, ' ')}]]`);
-        },
-        parse: {
-          setup(md: { inline: { ruler: { before(a: string, b: string, fn: (s: unknown, silent: boolean) => boolean): void } } }) {
-            md.inline.ruler.before('link', 'ergo_wikilink', (st: unknown, silent: boolean) => {
-              const state = st as { src: string; pos: number; push(type: string, tag: string, nesting: number): { content: string } };
-              if (state.src.charCodeAt(state.pos) !== 0x5b) return false;
-              const m = WIKI_RE.exec(state.src.slice(state.pos));
-              if (!m) return false;
-              if (!silent) state.push('html_inline', '', 0).content = `<span data-wikilink="${m[1]}">${esc(m[2])}</span>`;
-              state.pos += m[0].length;
-              return true;
-            });
-          },
-        },
-      },
-    };
-  },
-});
-
 // ---------------------------------------------------------------- ```ergonote-excalidraw
 function DrawingView({ node, selected, getPos }: NodeViewProps) {
   const [svg, setSvg] = useState<string>('');
@@ -131,7 +93,6 @@ export const StoredImage = Image.extend({
 
 // ---------------------------------------------------------------- @due(..) / @remind(..) / @flag chips and callouts
 const TOKEN_RE = /@(due|remind)\(([^)]+)\)|@flag\b|@event\([^)]*\)/g;
-const HASHTAG_RE = /(?<![\p{L}\p{N}_&#/])#([\p{L}][\p{L}\p{N}_/-]*)/gu;
 export const InlineDecorations = Extension.create({
   name: 'inlineDecorations',
   addProseMirrorPlugins() {
@@ -154,11 +115,6 @@ export const InlineDecorations = Extension.create({
               const overdue = m[1] === 'due' && parseDue(m[2]) < now;
               const kind = m[0].startsWith('@event') ? ' event' : overdue ? ' overdue' : '';
               decos.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length, { class: `task-meta${kind}` }));
-            }
-            if (parent?.type.name === 'heading') return;
-            HASHTAG_RE.lastIndex = 0;
-            while ((m = HASHTAG_RE.exec(node.text))) {
-              decos.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length, { class: 'hashtag', 'data-tag': m[1] }));
             }
           });
           return DecorationSet.create(state.doc, decos);
@@ -185,7 +141,8 @@ export const TrailingParagraph = Extension.create({
 });
 
 // ---------------------------------------------------------------- [[ link picker and / commands
-export interface LinkItem extends PopupItem { noteId: string }
+export interface LinkItem extends PopupItem { noteId: string; path: string }
+/** `[[` + a few letters: pick a note; what is written is a standard Markdown link to its file. */
 export const LinkSuggest = Extension.create<{ api: VaultApi | null }>({
   name: 'linkSuggest',
   addOptions() { return { api: null }; },
@@ -199,41 +156,13 @@ export const LinkSuggest = Extension.create<{ api: VaultApi | null }>({
       items: async ({ query }) => {
         if (!api) return [];
         const r = await api.linkTargets(query);
-        return r.map(x => ({ id: x.id, noteId: x.id, label: x.title }));
+        return r.map(x => ({ id: x.id, noteId: x.id, label: x.title, path: x.path }));
       },
       command: ({ editor, range, props }) => {
-        editor.chain().focus().insertContentAt(range, [{ type: 'wikilink', attrs: { id: props.noteId, title: props.label } }, { type: 'text', text: ' ' }]).run();
+        const href = linkTo(props.path);
+        editor.chain().focus().insertContentAt(range, [{ type: 'text', text: props.label, marks: [{ type: 'link', attrs: { href } }] }, { type: 'text', text: ' ' }]).run();
       },
       render: popupRenderer<LinkItem>(),
-    })];
-  },
-});
-
-// `#` + letters: pick one of the vault's tags (or make a new one), written into the text and added to the note
-export interface TagItem extends PopupItem { tag: string }
-export const TagSuggest = Extension.create<{ tags: () => string[]; onPick: (tag: string) => void }>({
-  name: 'tagSuggest',
-  addOptions() { return { tags: () => [], onPick: () => undefined }; },
-  addProseMirrorPlugins() {
-    const { tags, onPick } = this.options;
-    return [Suggestion<TagItem>({
-      editor: this.editor,
-      pluginKey: new PluginKey('tagSuggest'),
-      char: '#',
-      allowSpaces: false,
-      // a bare "#" (a heading in the making) or "# " must not open anything
-      allow: ({ state, range }) => range.to - range.from >= 2 && !state.doc.resolve(range.from).parent.type.name.startsWith('heading') && !state.doc.resolve(range.from).parent.type.spec.code,
-      items: ({ query }) => {
-        const q = query.toLowerCase();
-        const have = tags().filter(t => t.toLowerCase().includes(q)).slice(0, 7);
-        const exact = tags().some(t => t.toLowerCase() === q);
-        return [...have.map(t => ({ id: t, label: `#${t}`, tag: t })), ...(!exact && q ? [{ id: `new:${query}`, label: `Create tag “${query}”`, tag: query }] : [])];
-      },
-      command: ({ editor, range, props }) => {
-        editor.chain().focus().insertContentAt(range, [{ type: 'text', text: `#${props.tag}` }, { type: 'text', text: ' ' }]).run();
-        onPick(props.tag);
-      },
-      render: popupRenderer<TagItem>(),
     })];
   },
 });

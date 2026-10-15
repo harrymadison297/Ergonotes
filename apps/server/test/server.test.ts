@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,7 +22,7 @@ async function rpc(method: string, ...args: unknown[]) {
 
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'ergonotes-server-'));
-  srv = await startServer({ port: 0, host: '127.0.0.1', dataDir: dir, kdf: { m: 256, t: 1, p: 1 }, mirrorDir: join(dir, 'md') });
+  srv = await startServer({ port: 0, host: '127.0.0.1', dataDir: dir, kdf: { m: 256, t: 1, p: 1 } });
   base = `http://127.0.0.1:${srv.port}`;
 });
 afterAll(async () => {
@@ -71,16 +71,17 @@ describe.sequential('server peer', () => {
     expect(text.status).toBe(415);
   });
 
-  it('mirrors notes to plain markdown files', async () => {
-    cookie = '';
-    // the limiter is per address; use a fresh server window by waiting is slow, so write directly through the mirror
-    const { Mirror } = await import('../src/mirror.ts');
-    const m = new Mirror(srv.vault, join(dir, 'md-direct'));
-    await m.write();
-    const files = await readdir(join(dir, 'md-direct'), { recursive: true });
+  it('keeps every note as a Markdown file in the vault folder, and reads files put there', async () => {
+    const files = await readdir(join(dir, 'vault'), { recursive: true });
     const note = files.find(f => f.endsWith('From the web.md'));
     expect(note).toBeTruthy();
-    expect(await readFile(join(dir, 'md-direct', note!), 'utf8')).toContain('hello **world**');
+    expect(await readFile(join(dir, 'vault', note!), 'utf8')).toContain('hello **world**');
+    // a file somebody drops into the folder becomes a note
+    await writeFile(join(dir, 'vault', 'Dropped in.md'), '# Dropped\n\nfrom the file manager\n');
+    await srv.vault.unlock(PASSWORD);
+    await new Promise(r => setTimeout(r, 800)); // a file written this moment is read on a later scan
+    await srv.vault.rescan();
+    expect((await srv.vault.listItems()).some(i => i.title === 'Dropped in' && i.type === 'note')).toBe(true);
   });
 });
 
@@ -106,7 +107,7 @@ describe('MCP endpoint', () => {
 
   beforeAll(async () => {
     dir2 = await mkdtemp(join(tmpdir(), 'ergonotes-mcp-'));
-    srv2 = await startServer({ port: 0, host: '127.0.0.1', dataDir: dir2, kdf: { m: 256, t: 1, p: 1 }, mirrorDir: null });
+    srv2 = await startServer({ port: 0, host: '127.0.0.1', dataDir: dir2, kdf: { m: 256, t: 1, p: 1 } });
     url = `http://127.0.0.1:${srv2.port}`;
     await post('/api/rpc/createVault', [PASSWORD]);
     const t = await post('/api/tokens', { name: 'Claude' }, { cookie: sess });
@@ -281,7 +282,7 @@ describe('AI proxy', () => {
 describe('first-run protection', () => {
   it('requires the setup token when configured and hides details before sign-in', async () => {
     const d = await mkdtemp(join(tmpdir(), 'ergonotes-setup-'));
-    const s = await startServer({ port: 0, host: '127.0.0.1', dataDir: d, kdf: { m: 256, t: 1, p: 1 }, mirrorDir: null, setupToken: 'let-me-in' });
+    const s = await startServer({ port: 0, host: '127.0.0.1', dataDir: d, kdf: { m: 256, t: 1, p: 1 }, setupToken: 'let-me-in' });
     const u = `http://127.0.0.1:${s.port}`;
     const post = (args: unknown[]) => fetch(`${u}/api/rpc/createVault`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(args) });
     expect((await post([PASSWORD])).status).toBe(403);
@@ -304,7 +305,7 @@ describe('first-run protection', () => {
 // ---------------------------------------------------------------- hardening (each test has its own server)
 async function withServer(opts: Partial<Parameters<typeof startServer>[0]>, fn: (s: RunningServer, u: string, d: string) => Promise<void>) {
   const d = await mkdtemp(join(tmpdir(), 'ergonotes-hard-'));
-  const s = await startServer({ port: 0, host: '127.0.0.1', dataDir: d, kdf: { m: 256, t: 1, p: 1 }, mirrorDir: null, ...opts });
+  const s = await startServer({ port: 0, host: '127.0.0.1', dataDir: d, kdf: { m: 256, t: 1, p: 1 }, ...opts });
   try { await fn(s, `http://127.0.0.1:${s.port}`, d); } finally { await s.close(); await rm(d, { recursive: true, force: true }); }
 }
 const postJson = (u: string, path: string, body: string, headers: Record<string, string> = {}) =>

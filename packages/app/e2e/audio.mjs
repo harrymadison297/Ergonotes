@@ -96,7 +96,7 @@ await page.locator('.audio-clip').first().waitFor({ timeout: 15000 });
 check('the voice note never asked to share the screen', (await page.evaluate(() => window.__display.calls)) === 0);
 check('a voice note becomes an audio clip in the note', (await page.locator('.audio-clip').count()) === 1);
 const b1 = await until(async () => { const b = await bodyOf(note.id); return b.includes('"audio")') ? b : null; }, 8000) ?? '';
-check('it is stored as a link with the audio title', /\[Voice note \d\d:\d\d · \d+:\d\d\]\(ergo-file:[0-9a-f-]{36} "audio"\)/.test(b1), b1);
+check('it is stored as a link with the audio title', /\[Voice note \d\d:\d\d · \d+:\d\d\]\((?:\.\.\/)?attachments\/Voice%20note%20[^)"]+\.webm "audio"\)/.test(b1), b1);
 const files = await rpc('listFiles');
 check('and the audio is kept as a file of the vault', files.some(f => f.mime.startsWith('audio/')) && transcribed.length === 0);
 await page.screenshot({ path: `${shots}/audio-voice-note.png` });
@@ -164,11 +164,11 @@ check('a meeting gets a heading, the clip, a summary and the transcript in a tog
   (await page.getByRole('heading', { name: /^Meeting \d{4}-\d\d-\d\d/ }).count()) === 1 && (await page.locator('.audio-clip').count()) === 3
   && (await page.getByText('Groceries and a call to Anna').count()) === 1 && (await page.locator('.toggle-title').last().inputValue()) === 'Transcript');
 check('the share is asked for once per attempt, and only for the meeting', (await page.evaluate(() => window.__display.calls)) === 3);
-check('the summary asked the chat model, with the transcript', streamed.length === 1 && JSON.stringify(streamed[0]).includes('ship on Friday'));
+check('the summary asked the chat model, with the transcript', streamed.filter(r => JSON.stringify(r).includes('ship on Friday')).length === 1);
 await page.screenshot({ path: `${shots}/audio-meeting.png` });
-const b2 = await until(async () => { const b = await bodyOf(note.id); return b.includes(':::toggle Transcript') ? b : null; }, 8000) ?? '';
+const b2 = await until(async () => { const b = await bodyOf(note.id); return b.includes('<summary>Transcript</summary>') ? b : null; }, 8000) ?? '';
 check('the summary keeps its bullets and its task as separate lists', /\*\*Summary\*\*\n\n- Groceries and a call to Anna\n- Dentist to be booked\n\n\* \[ \] +Call Anna about the invoice/.test(b2), JSON.stringify(b2.slice(b2.indexOf('**Summary**'))));
-check('the meeting is plain Markdown', /## Meeting [\d-]+ \d\d:\d\d\n\n\[Meeting recording[^\]]*\]\(ergo-file:[0-9a-f-]{36} "audio"\)\n\n\*\*Summary\*\*/.test(b2) && b2.includes(':::toggle Transcript\nWe agreed to ship on Friday.'), b2.slice(-600));
+check('the meeting is plain Markdown', /## Meeting [\d-]+ \d\d:\d\d\n\n\[Meeting recording[^\]]*\]\((?:\.\.\/)?attachments\/[^)"]+ "audio"\)\n\n\*\*Summary\*\*/.test(b2) && b2.includes('<summary>Transcript</summary>\n\nWe agreed to ship on Friday.'), b2.slice(-600));
 
 // ---- transcribe a file
 transcriptText = 'Words from the file.';

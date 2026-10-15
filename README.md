@@ -2,13 +2,15 @@
 
 Offline-first personal notes that sync between your devices through storage you own, with no always-on server.
 PARA folders + Inbox + Zettelkasten links, Evernote-style editor, tasks and calendar, Excalidraw drawings,
-Markdown/HTML/PDF export, and an MCP endpoint for AI agents. The Insert menu puts toggles, a contents box, page breaks,
-dates, events, inline tags, formulas, Mermaid diagrams, voice notes and meeting recordings into a note, and every one of
-them is stored as plain Markdown (docs/adr/0009).
+Markdown/HTML/PDF export, and an MCP endpoint for AI agents. **Your notes are plain Markdown files in a folder you
+choose**, like an Obsidian vault: put a pile of `.md` files there and they are notes; edit them with any other program
+and Ergonotes follows; what it does not understand is never rewritten (docs/adr/0010). The Insert menu puts toggles,
+page breaks, dates, events, formulas, Mermaid diagrams, voice notes and meeting recordings into a note, and every one of
+them is stored as standard Markdown (docs/adr/0009).
 
 | | |
 |---|---|
-| **Android, Windows, Linux** | Tauri 2 apps. Notes live on the device first; sync is optional. |
+| **Android, Windows, Linux** | Tauri 2 apps. Notes are files in a folder on the device (choose it on the first screen; default `Documents/Ergonotes`); sync is optional. |
 | **Web** | The same UI served by the optional Linux *server peer* (no offline mode). |
 | **Sync** | End-to-end encrypted objects in an S3-compatible bucket, WebDAV share, or plain folder. |
 | **Agents** | MCP over HTTP on the server peer, with revocable API tokens. |
@@ -25,7 +27,8 @@ ERGONOTES_DATA=./data node apps/server/src/main.ts
 
 No Node on the host? `tools/n <command>` runs any command in a Node container.
 
-Open the page, choose a password (12+ characters, **it cannot be recovered**) and write.
+Open the page, choose a password (12+ characters, **it cannot be recovered**) and write. The notes are Markdown files in
+`./data/vault` (set `ERGONOTES_VAULT_DIR` to use a folder you already have).
 To sync devices: *Settings → Sync & storage*, enter an S3/WebDAV location, then on the other device choose
 *Join existing* with the same location and password.
 
@@ -33,7 +36,7 @@ To sync devices: *Settings → Sync & storage*, enter an S3/WebDAV location, the
 
 ```sh
 tools/bundle-server.sh                 # dist/server/server.mjs + web build
-node dist/server/server.mjs            # PORT, HOST, ERGONOTES_DATA, ERGONOTES_WEB
+node dist/server/server.mjs            # PORT, HOST, ERGONOTES_DATA, ERGONOTES_VAULT_DIR, ERGONOTES_WEB
 ```
 
 * Serves HTTPS-only (or localhost: a connection from this machine). Put it behind Caddy/nginx for TLS and set
@@ -43,7 +46,7 @@ node dist/server/server.mjs            # PORT, HOST, ERGONOTES_DATA, ERGONOTES_W
 * Folder storage chosen in the web UI has to be inside the data directory unless `ERGONOTES_FOLDER_STORE_ROOT` says otherwise.
 * The vault is unlocked at the first sign-in and the key stays in memory. `ERGONOTES_PASSWORD` unlocks at start-up
   (unattended restarts) at the cost of keeping the password in the environment.
-* A plain-Markdown mirror of every note is written to `$ERGONOTES_DATA/markdown`.
+* The vault is a folder of Markdown files, `$ERGONOTES_VAULT_DIR` (default `$ERGONOTES_DATA/vault`): put files there and they are notes; edit them with any other program and the app picks the change up within seconds.
 * Agents: *Settings → Agents (MCP)* creates a token and shows the command for Claude Code; point any MCP client at
   `https://your-host/mcp` with `Authorization: Bearer <token>`. Tools: `search_notes`, `list_recent`, `read_note`,
   `create_note`, `append_to_note`, `replace_text`, `insert_after_heading`, `update_note`, `rename_note`, `add_tags`,

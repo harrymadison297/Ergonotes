@@ -1,5 +1,6 @@
-import { listModels, streamChat, transcribeAudio, Vault, VAULT_METHODS, type AiEvent, type AiTransport, type AudioFile, type ModelInfo, type VaultApi, type VaultEvent, type VaultStatus } from '@ergonotes/core';
+import { FsPersist, listModels, MemFs, streamChat, transcribeAudio, Vault, VAULT_METHODS, type AiEvent, type AiTransport, type AudioFile, type ModelInfo, type VaultApi, type VaultEvent, type VaultStatus } from '@ergonotes/core';
 import { IdbPersist } from '@ergonotes/core/browser';
+import { tauriFolder, type VaultFolder } from './tauriFs';
 
 export interface Backend {
   api: VaultApi;
@@ -12,6 +13,8 @@ export interface Backend {
   aiModels(connection: string): Promise<ModelInfo[]>;
   /** speech to text with the configured transcription model */
   aiTranscribe(file: AudioFile, signal?: AbortSignal): Promise<string>;
+  /** where the notes live on this device (installed apps); the web build has none: the server holds the folder */
+  folder?: VaultFolder;
   /** called once the vault is ready (starts sync timers in local mode) */
   start(): void;
 }
@@ -109,9 +112,11 @@ class LocalBackend implements Backend {
   aiTransport: AiTransport;
   aiModels: (connection: string) => Promise<ModelInfo[]>;
   aiTranscribe: (file: AudioFile, signal?: AbortSignal) => Promise<string>;
+  folder?: VaultFolder;
 
-  constructor(vault: Vault, fetchImpl?: typeof fetch) {
+  constructor(vault: Vault, fetchImpl?: typeof fetch, folder?: VaultFolder) {
     this.vault = vault;
+    this.folder = folder;
     this.aiTransport = (req, signal) => streamChat(vault.aiConfig(), req, { fetchImpl, signal });
     this.aiTranscribe = (file, signal) => transcribeAudio(vault.aiConfig(), file, { fetchImpl, signal });
     this.aiModels = async connection => {
@@ -150,7 +155,16 @@ export async function createBackend(): Promise<Backend> {
     } catch { /* no server: run on-device */ }
   }
   const fetchImpl = await tauriFetch();
-  const vault = await Vault.open({ persist: new IdbPersist(), fetchImpl, defaultDeviceName: guessDeviceName() });
+  if (inTauri) {
+    // an installed app: the vault is a folder on this device (ADR 0010)
+    const { fs, folder, meta } = await tauriFolder();
+    const vault = await Vault.open({ fs, persist: new FsPersist(fs, { local: meta }), fetchImpl, defaultDeviceName: guessDeviceName() });
+    return new LocalBackend(vault, fetchImpl, folder);
+  }
+  // a browser with no server: the vault lives in this browser (IndexedDB) and its folder is only in memory
+  const mem = new MemFs();
+  mem.durable = false;
+  const vault = await Vault.open({ fs: mem, persist: new IdbPersist(), fetchImpl, defaultDeviceName: guessDeviceName() });
   return new LocalBackend(vault, fetchImpl);
 }
 

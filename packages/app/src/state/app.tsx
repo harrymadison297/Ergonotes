@@ -10,6 +10,8 @@ export interface Toast { id: number; msg: string; kind: 'info' | 'error'; action
 export interface AppCtx {
   api: VaultApi;
   mode: 'local' | 'remote';
+  /** where the notes live on this device (installed apps only) */
+  folder?: Backend['folder'];
   status: VaultStatus;
   items: ItemSummary[];
   byId: Map<string, ItemSummary>;
@@ -164,6 +166,6 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
     go(where === 'calendar' ? { name: 'calendar', note: d.id } : { name: 'notes', note: d.id, folder: d.parent ?? undefined });
   }, [api, run, refresh, go]);
 
-  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, ai, aiTransport: backend.aiTransport, aiModels: backend.aiModels, aiTranscribe: backend.aiTranscribe, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
+  const value: AppCtx = { api, mode: backend.mode, folder: backend.folder, status, items, byId, tasks, tags, conflicts, settings, ai, aiTransport: backend.aiTransport, aiModels: backend.aiModels, aiTranscribe: backend.aiTranscribe, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

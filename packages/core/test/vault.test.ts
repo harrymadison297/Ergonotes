@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MemPersist } from '../src/persist.ts';
 import { MemStore } from '../src/store.ts';
 import { Vault } from '../src/vault.ts';
+import { MemFs } from '../src/vaultfs.ts';
 import type { StoreConfig } from '../src/api.ts';
 
 const KDF = { m: 256, t: 1, p: 1 };
@@ -11,7 +12,7 @@ const shared = new Map<string, MemStore>();
 async function open(name: string, now?: () => number) {
   const persist = new MemPersist();
   const v = await Vault.open({
-    persist, kdf: KDF, now, defaultDeviceName: name,
+    persist, kdf: KDF, now, defaultDeviceName: name, settleMs: 0,
     storeFactory: cfg => { if (cfg.type !== 'folder') throw new Error('x'); return shared.get(cfg.path)!; },
   });
   return v;
@@ -66,10 +67,15 @@ describe('Vault', () => {
     expect((await v.getNote(n.id))!.tags).toEqual(['Work/Acme', 'idea', 'work/acme']);
     await expect(v.move(f.id, n.id)).rejects.toThrow();
     await v.trash(f.id);
+    // a trashed folder is its notes in the Trash; the directory is gone from the vault
     expect((await v.getNote(n.id))!.inTrash).toBe(true);
+    expect((await v.listItems()).some(i => i.id === f.id)).toBe(false);
     expect((await v.search('kickoff'))).toHaveLength(0);
+    // undoing the folder's deletion brings its notes back where they were
     await v.restore(f.id);
     expect((await v.getNote(n.id))!.inTrash).toBe(false);
+    expect((await v.getNote(n.id))!.filePath).toBe('Projects/Acme/Kickoff.md');
+    expect((await v.listItems()).some(i => i.id === f.id)).toBe(true);
     expect((await v.search('kickoff')).map(i => i.id)).toEqual([n.id]);
   });
 
@@ -91,24 +97,27 @@ describe('Vault', () => {
     expect(cal.tasks.map(t => t.text)).toEqual(['Call landscaper']);
   });
 
-  it('links by id: backlinks survive a rename, imports resolve [[Title]]', async () => {
+  it('links are standard Markdown: backlinks and the links themselves follow a rename', async () => {
     const v = await open('A');
     await v.createVault(PASSWORD);
     const a = await v.createNote({ title: 'Alpha', body: 'a' });
-    const b = await v.createNote({ title: 'Beta', body: `see [[${a.id}|Alpha]]` });
+    const b = await v.createNote({ title: 'Beta', body: 'see [Alpha](Alpha.md) and [[Alpha]]' });
     expect((await v.getNote(a.id))!.backlinks.map(l => l.id)).toEqual([b.id]);
     await v.rename(a.id, 'Alpha prime');
     expect((await v.getNote(a.id))!.backlinks.map(l => l.id)).toEqual([b.id]);
     expect((await v.getNote(b.id))!.links[0].title).toBe('Alpha prime');
+    expect((await v.getNote(b.id))!.body).toBe('see [Alpha prime](Alpha%20prime.md) and [[Alpha prime]]');
     const res = await v.importMarkdown([
       { path: 'vault/Ideas/One.md', content: '---\ntags: [x, y]\n---\n# One\nsee [[Two]]' },
       { path: 'vault/Ideas/Two.md', content: 'second' },
     ]);
-    expect(res).toEqual({ notes: 2, folders: 2 });
+    expect(res.notes).toBe(2);
     const one = (await v.listItems()).find(i => i.title === 'One')!;
     const two = (await v.listItems()).find(i => i.title === 'Two')!;
     expect(one.tags).toEqual(['x', 'y']);
-    expect((await v.getNote(one.id))!.body).toContain(`[[${two.id}|Two]]`);
+    expect((await v.getNote(one.id))!.links.map(l => l.id)).toEqual([two.id]);
+    // the file is what was imported, byte for byte
+    expect((await v.getNote(one.id))!.body).toBe('# One\nsee [[Two]]');
   });
 
   it('daily note is created once per date from the daily template', async () => {
@@ -118,7 +127,7 @@ describe('Vault', () => {
     const d2 = await v.dailyNote('2026-10-14');
     expect(d2.id).toBe(d1.id);
     const doc = await v.getNote(d1.id);
-    expect(doc!.path.map(p => p.title)).toEqual(['Areas', 'Daily']);
+    expect(doc!.path.map(p => p.title)).toEqual(['Daily']);
     expect(doc!.body).toContain('## Plan');
   });
 
@@ -126,10 +135,11 @@ describe('Vault', () => {
     const v = await open('A');
     await v.createVault(PASSWORD);
     const a = await v.createNote({ title: 'Alpha', body: 'x' });
-    const b = await v.createNote({ title: 'Beta', body: `link [[${a.id}|Alpha]]\n\n- [ ] todo` });
+    const b = await v.createNote({ title: 'Beta', body: 'link [Alpha](Alpha.md)\n\n- [ ] todo' });
     const md = await v.exportNote(b.id, 'md');
-    expect(md.content).toContain('[[Alpha]]');
+    expect(md.content).toContain('link Alpha');
     expect(md.content).not.toContain(a.id);
+    expect(md.content).not.toContain('Alpha.md');
     const html = await v.exportNote(b.id, 'html');
     expect(html.content).toContain('<h1>Beta</h1>');
     expect(html.content).toContain('☐ todo');
@@ -169,14 +179,20 @@ describe('Vault fixes from review', () => {
     await expect(v.createNote({ title: 'x', parent: 'not-a-folder' })).rejects.toThrow(/does not exist/);
   });
 
-  it('survives a folder cycle created by two devices moving folders into each other', async () => {
+  it('moves a folder with everything in it and keeps the links between notes working', async () => {
     const v = await open('A');
     await v.createVault(PASSWORD);
     const a = await v.createFolder({ title: 'A' });
-    const b = await v.createFolder({ title: 'B', parent: a.id });
-    // simulate the merged result of concurrent moves: A inside B as well
-    await v['mutate'](a.id, fm => { fm.parent = b.id; });
-    await expect(v.purge(a.id)).resolves.toBeUndefined();
+    const b = await v.createFolder({ title: 'B' });
+    const x = await v.createNote({ parent: a.id, title: 'X', body: 'one' });
+    const y = await v.createNote({ parent: a.id, title: 'Y', body: 'to [X](X.md)' });
+    const z = await v.createNote({ parent: b.id, title: 'Z', body: 'to [X](../A/X.md) and [[Y]]' });
+    await expect(v.move(a.id, a.id)).rejects.toThrow();
+    await v.move(a.id, b.id);
+    expect((await v.getNote(x.id))!.filePath).toBe('B/A/X.md');
+    expect((await v.getNote(y.id))!.body).toBe('to [X](X.md)');
+    expect((await v.getNote(z.id))!.body).toBe('to [X](A/X.md) and [[Y]]');
+    expect((await v.getNote(x.id))!.backlinks.map(l => l.id).sort()).toEqual([y.id, z.id].sort());
   });
 
   it('renames a tag, including sub-tags, across notes', async () => {
@@ -219,10 +235,10 @@ describe('files', () => {
     await v.createVault(PASSWORD);
     const data = Buffer.from('hello,world\n1,2\n').toString('base64');
     const f = await v.addFile({ name: 'data.csv', mime: 'text/csv', data });
-    const n = await v.createNote({ title: 'Uses file', body: `[data.csv](ergo-file:${f.id})` });
+    const n = await v.createNote({ title: 'Uses file', body: `[data.csv](${f.path})` });
     const files = await v.listFiles();
     expect(files).toHaveLength(1);
-    expect(files[0]).toMatchObject({ id: f.id, name: 'data.csv', mime: 'text/csv', noteId: n.id, noteTitle: 'Uses file' });
+    expect(files[0]).toMatchObject({ id: f.id, name: 'data.csv', path: 'attachments/data.csv', mime: 'text/csv', noteId: n.id, noteTitle: 'Uses file' });
     expect(files[0].size).toBe(16);
   });
 });

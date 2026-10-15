@@ -12,11 +12,13 @@ import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
   ChevronsLeft, ChevronsRight, EyeOff, Maximize2, Minimize2, MoveHorizontal, AlignCenter, AudioLines, Mic, Sparkles, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
 } from 'lucide-react';
-import { mergeText, toB64, type NoteDoc } from '@ergonotes/core';
+import { mergeText, preserveBlocks, toB64, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, debounce, download, isoDay } from '../state/util';
-import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, TagSuggest, TrailingParagraph, Wikilink } from '../editor/extensions';
-import { AudioClip, CodeWithDiagrams, Contents, DateMention, InlineCheckbox, MathBlock, MathInline, PageBreak, Toggle } from '../editor/blocks';
+import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, TrailingParagraph } from '../editor/extensions';
+import { RawBlock, RawInline, Wikilink } from '../editor/raw';
+import { AudioClip, CodeWithDiagrams, DateMention, InlineCheckbox, MathBlock, MathInline, PageBreak, Toggle } from '../editor/blocks';
+import { linkTo, setNoteDir } from '../state/noteCtx';
 import { INSERT_ITEMS, type InsertCtx } from '../editor/insertItems';
 import { InsertMenu } from './InsertMenu';
 import { DateDialog, EventDialog, LinkedNoteDialog } from './InsertDialogs';
@@ -44,7 +46,12 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const [dateDialog, setDateDialog] = useState<'due' | 'remind' | null>(null);
   const dirty = useRef(false);
   const inflight = useRef<Promise<unknown>>(Promise.resolve());
+  /** the note body last known to be in the vault (the base for merging what arrives from elsewhere) */
   const loadedBody = useRef('');
+  /** the body as it is in the file, and what this editor wrote for it right after loading (ADR 0010: blocks nobody edited are written back as they were) */
+  const rawRef = useRef('');
+  const normRef = useRef('');
+  const docRef = useRef<NoteDoc | null>(null);
   const paused = useRef(false);
   const [external, setExternal] = useState<{ body: string; title: string; updated: string } | null>(null);
   const loadedFor = useRef<{ id: string; updated: string } | null>(null);
@@ -56,9 +63,6 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const [recorder, setRecorder] = useState<RecordKind | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   const ctxRef = useRef<InsertCtx | null>(null);
-  const tagsRef = useRef<string[]>([]);
-  tagsRef.current = app.tags.map(t => t.tag);
-  const pickTagRef = useRef<(t: string) => void>(() => undefined);
   const styleMenu = useMenu();
   const [, force] = useState(0);
 
@@ -76,8 +80,11 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   ghostRef.current = { on: app.ai.suggest && app.ai.suggestReady && !app.byId.get(id)?.private, delay: app.ai.suggestDelay, transport: app.aiTransport };
   const [ghostState, setGhostState] = useState<{ busy: boolean; error: string | null; empty: boolean }>({ busy: false, error: null, empty: false });
   const outlineRef = useRef<{ headings: { text: string; level: number }[]; active: number; goto(i: number): void } | null>(null);
-  const saveBody = useMemo(() => debounce((nid: string, body: string, seq: number) => {
+  const saveBody = useMemo(() => debounce((nid: string, md: string, seq: number) => {
     setSaveState('saving');
+    const body = preserveBlocks(rawRef.current, normRef.current, md);
+    rawRef.current = body;
+    normRef.current = md;
     inflight.current = api.saveNote(nid, { body }).then(s => {
       // our own write must not look like an outside change (it would reload and reset the cursor)
       if (loadedFor.current?.id === nid) { loadedFor.current = { id: nid, updated: s.updated }; loadedBody.current = body; }
@@ -97,11 +104,10 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       // list items hold a paragraph and nested lists only: tables and quotes inside a list item have no Markdown form
       StarterKit.configure({ heading: { levels: [1, 2, 3] }, listItem: false, bulletList: false, codeBlock: false }),
       CodeWithDiagrams,
-      TrailingParagraph, Toggle, Contents, PageBreak, DateMention, InlineCheckbox, MathBlock, MathInline, AudioClip,
-      TagSuggest.configure({ tags: () => tagsRef.current, onPick: t => pickTagRef.current(t) }),
+      TrailingParagraph, Toggle, PageBreak, DateMention, InlineCheckbox, MathBlock, MathInline, AudioClip, RawBlock, RawInline,
       MarkdownBulletList,
       ListItem.extend({ content: 'paragraph (bulletList | orderedList)*' }),
-      Link.configure({ openOnClick: false, autolink: true, protocols: [{ scheme: 'ergo-file', optionalSlashes: true }], HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
+      Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
       Placeholder.configure({ placeholder: 'Press "/" to insert an element' }),
       MarkdownTaskList, TaskItem.extend({ content: 'paragraph taskList?' }).configure({ nested: true }),
       Table.configure({ resizable: false }), TableRow, SingleParagraphHeader, SingleParagraphCell, TableKeys,
@@ -150,6 +156,17 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const idRef = useRef(id);
   idRef.current = id;
 
+  const markdownOf = (e: Editor) => (e.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown();
+  /** put a body into the editor and remember both what the file says and what the editor makes of it */
+  function loadBody(body: string) {
+    if (!editor) return;
+    editor.commands.setContent(body, false);
+    rawRef.current = body;
+    normRef.current = markdownOf(editor);
+  }
+  /** the body to save: the editor's text, with every block nobody edited exactly as the file has it */
+  const currentBody = (e: Editor) => preserveBlocks(rawRef.current, normRef.current, markdownOf(e));
+
   // open a note
   useEffect(() => {
     let live = true;
@@ -162,12 +179,14 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       if (!live) return;
       if (!d) { setMissing(true); return; }
       setDoc(d);
+      docRef.current = d;
+      setNoteDir(d.filePath);
       setTitle(d.title);
       loadedFor.current = { id: d.id, updated: d.updated };
       loadedBody.current = d.body;
       dirty.current = false;
       setSaveState('saved');
-      if (editor) editor.commands.setContent(d.body, false);
+      if (editor) loadBody(d.body);
       // "Sketch" in the create menu: open a new note straight into the drawing board
       if (sessionStorage.getItem('ergo.pending') === 'drawing') {
         sessionStorage.removeItem('ergo.pending');
@@ -193,20 +212,23 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         loadedFor.current = { id: d.id, updated: d.updated };
         loadedBody.current = d.body;
         setDoc(d);
+        docRef.current = d;
+        setNoteDir(d.filePath);
         if (document.activeElement?.tagName !== 'INPUT') setTitle(d.title);
-        editor.commands.setContent(d.body, false);
+        loadBody(d.body);
         return;
       }
       // the person is typing: merge the remote text into what is on screen instead of losing either side
-      const ours = (editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown();
+      const ours = currentBody(editor);
       const r = mergeText(ours, loadedBody.current, d.body);
       if (r.clean) {
         loadedFor.current = { id: d.id, updated: d.updated };
         loadedBody.current = d.body;
         setDoc(d);
-        editor.commands.setContent(r.text, false);
+        docRef.current = d;
+        loadBody(r.text);
         editSeq.current++;
-        saveBody(id, r.text, editSeq.current);
+        saveBody(id, markdownOf(editor), editSeq.current);
       } else {
         saveBody.cancel();
         paused.current = true;
@@ -252,9 +274,10 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       const mime = f.type || 'application/octet-stream';
       const r = await app.run(api.addFile({ name: f.name, mime, data }));
       if (!r) continue;
-      if (mime.startsWith('image/')) editor?.chain().focus().setImage({ src: `ergo-file:${r.id}`, alt: f.name }).run();
-      else if (mime.startsWith('audio/')) editor?.chain().focus().insertContent({ type: 'audioClip', attrs: { file: r.id, label: f.name } }).run();
-      else editor?.chain().focus().insertContent({ type: 'text', text: f.name, marks: [{ type: 'link', attrs: { href: `ergo-file:${r.id}` } }] }).insertContent(' ').run();
+      const rel = linkTo(r.path);
+      if (mime.startsWith('image/')) editor?.chain().focus().setImage({ src: rel, alt: f.name }).run();
+      else if (mime.startsWith('audio/')) editor?.chain().focus().insertContent({ type: 'audioClip', attrs: { file: rel, label: f.name } }).run();
+      else editor?.chain().focus().insertContent({ type: 'text', text: f.name, marks: [{ type: 'link', attrs: { href: rel } }] }).insertContent(' ').run();
     }
   };
 
@@ -279,13 +302,37 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   useEffect(() => {
     if (!editor) return;
     const dom = editor.view.dom;
+    // a link is resolved by the vault from the note as it is saved, so a link added a moment ago works too
+    const fresh = async () => {
+      saveBody.flush();
+      await inflight.current;
+      return (await api.getNote(idRef.current)) ?? docRef.current;
+    };
     const onClick = (e: MouseEvent) => {
       const t = (e.target as HTMLElement).closest('[data-wikilink]');
-      if (t) { e.preventDefault(); app.go({ name: 'notes', note: t.getAttribute('data-wikilink') ?? undefined }); return; }
-      const h = (e.target as HTMLElement).closest('.hashtag');
-      if (h) { e.preventDefault(); app.go({ name: 'notes', tag: h.getAttribute('data-tag') ?? undefined }); return; }
-      const a = (e.target as HTMLElement).closest('a[href^="ergo-file:"]');
-      if (a) { e.preventDefault(); app.setDialog({ kind: 'file', id: (a.getAttribute('href') ?? '').slice('ergo-file:'.length) }); }
+      if (t) {
+        e.preventDefault();
+        const target = t.getAttribute('data-target') ?? '';
+        void fresh().then(d => {
+          const noteId = d?.linkMap[target];
+          if (noteId) app.go({ name: 'notes', note: noteId });
+          else app.toast(`There is no note called “${target}” in this vault yet.`, 'info');
+        });
+        return;
+      }
+      const a = (e.target as HTMLElement).closest('a[href]');
+      if (!a) return;
+      const href = a.getAttribute('href') ?? '';
+      if (href.startsWith('ergo-file:')) { e.preventDefault(); app.setDialog({ kind: 'file', id: href.slice('ergo-file:'.length) }); return; }
+      if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(href)) return; // a web address
+      e.preventDefault();
+      void fresh().then(d => {
+        const noteId = d?.linkMap[href];
+        const fileId = d?.fileMap[href];
+        if (noteId) app.go({ name: 'notes', note: noteId });
+        else if (fileId) app.setDialog({ kind: 'file', id: fileId });
+        else app.toast('That link does not point at a note or file in this vault.', 'info');
+      });
     };
     dom.addEventListener('click', onClick);
     return () => dom.removeEventListener('click', onClick);
@@ -307,7 +354,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       outline: { noteId: id, locked: lockedRef.current, headings: o.headings, active: o.active },
       fns: {
         goto: o.goto,
-        live: () => ({ title: titleRef.current, body: (editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown() }),
+        live: () => ({ title: titleRef.current, body: currentBody(editor) }),
         apply: patch => {
           if (patch.title !== undefined) { setTitle(patch.title); titleRef.current = patch.title; saveTitle(idRef.current, patch.title); }
           if (patch.body !== undefined) editor.commands.setContent(patch.body, true);
@@ -382,7 +429,6 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     if (d) setDoc(x => x && ({ ...x, tags: d.tags }));
   };
 
-  pickTagRef.current = tag => { if (!doc.tags.includes(tag)) void app.run(api.setTags(id, [...doc.tags, tag])).then(async () => { const d = await api.getNote(id); if (d) setDoc(x => x && ({ ...x, tags: d.tags })); }); };
   const insertCtx: InsertCtx = {
     editor,
     pickFile: accept => { if (fileInput.current) { fileInput.current.accept = accept; fileInput.current.click(); } },
@@ -393,6 +439,8 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     link: () => setLink(),
     record: kind => setRecorder(kind),
     transcribeDialog: () => setTranscribing(true),
+    contents: () => setPrefs({ aside: true, asideTab: 'toc' }),
+    focusTags: () => { (document.querySelector('.editor-foot .tag-input') as HTMLInputElement | null)?.focus(); },
     stt: app.ai.speechReady,
   };
 
@@ -406,6 +454,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     for (let i = 0; i < sentences.length; i += 4) out.push(sentences.slice(i, i + 4).join(' '));
     return out.join('\n\n');
   };
+  const transcriptBlock = (text: string) => `<details>\n<summary>Transcript</summary>\n\n${paragraphs(text)}\n\n</details>`;
   const transcript = async (file: { name: string; mime: string; data: string }, setStatus: (s: string) => void) => {
     setStatus('Writing it out…');
     const text = await app.aiTranscribe(file);
@@ -436,7 +485,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     const what = kind === 'meeting' ? 'Meeting recording' : 'Voice note';
     const saved = await app.run(api.addFile({ name: `${what} ${isoDay(now)} ${hm}.${audioExt(r.mime)}`, mime: r.mime, data }));
     if (!saved) throw new Error('The recording could not be saved.');
-    const clip = `[${what} ${hm} · ${fmtSecs(r.seconds)}](ergo-file:${saved.id} "audio")`;
+    const clip = `[${what} ${hm} · ${fmtSecs(r.seconds)}](${linkTo(saved.path)} "audio")`;
     let text = '';
     if (o.transcribe && !doc.private) {
       try { text = await transcript({ name: `${what}.${audioExt(r.mime)}`, mime: r.mime, data }, setStatus); }
@@ -450,7 +499,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         const sum = await summarize(text);
         if (sum) md += `**Summary**\n\n${sum}\n\n`;
       }
-      if (text) md += `:::toggle Transcript\n${paragraphs(text)}\n:::\n`;
+      if (text) md += `${transcriptBlock(text)}\n`;
     } else {
       md += `${clip}\n\n`;
       if (text) md += `${paragraphs(text)}\n`;
@@ -464,8 +513,9 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     const saved = await app.run(api.addFile({ name: f.name, mime, data }));
     if (!saved) throw new Error('The file could not be saved.');
     const text = await transcript({ name: f.name, mime, data }, setStatus);
-    const head = mime.startsWith('audio/') ? `[${f.name.replace(/[\[\]]/g, ' ')}](ergo-file:${saved.id} "audio")` : `[${f.name.replace(/[\[\]]/g, ' ')}](ergo-file:${saved.id})`;
-    insertMarkdown(`${head}\n\n:::toggle Transcript\n${paragraphs(text)}\n:::\n`);
+    const label = f.name.replace(/[\[\]]/g, ' ');
+    const head = mime.startsWith('audio/') ? `[${label}](${linkTo(saved.path)} "audio")` : `[${label}](${linkTo(saved.path)})`;
+    insertMarkdown(`${head}\n\n${transcriptBlock(text)}\n`);
   };
   ctxRef.current = insertCtx;
   const styleLabel = editor.isActive('heading', { level: 1 }) ? 'Heading 1' : editor.isActive('heading', { level: 2 }) ? 'Heading 2' : editor.isActive('heading', { level: 3 }) ? 'Heading 3' : 'Normal text';
@@ -497,7 +547,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         <div className="banner" role="alert">
           <GitMerge size={16} /><span className="grow">This note was changed on another device while you were editing, in the same place.</span>
           <button className="btn" onClick={() => { loadedFor.current = { id, updated: external.updated }; loadedBody.current = external.body; paused.current = false; setExternal(null); editSeq.current++; const md = (editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown(); saveBody(id, md, editSeq.current); }}>Keep my edits</button>
-          <button className="btn" onClick={() => { loadedFor.current = { id, updated: external.updated }; loadedBody.current = external.body; editor.commands.setContent(external.body, false); dirty.current = false; paused.current = false; setExternal(null); setSaveState('saved'); }}>Use theirs</button>
+          <button className="btn" onClick={() => { loadedFor.current = { id, updated: external.updated }; loadedBody.current = external.body; loadBody(external.body); dirty.current = false; paused.current = false; setExternal(null); setSaveState('saved'); }}>Use theirs</button>
         </div>
       )}
       {doc.conflicted && !isTrashed && (
@@ -628,7 +678,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         const n = await app.run(api.createNote({ title: t, parent: doc.parent ?? undefined }));
         if (!n) return;
         setInsertDialog(null);
-        editor.chain().focus().insertContent([{ type: 'wikilink', attrs: { id: n.id, title: n.title } }, { type: 'text', text: ' ' }]).run();
+        editor.chain().focus().insertContent([{ type: 'text', text: n.title, marks: [{ type: 'link', attrs: { href: linkTo(n.filePath) } }] }, { type: 'text', text: ' ' }]).run();
         await app.refresh();
       }} />}
       {dateDialog && <TaskDateDialog kind={dateDialog} value={dateDialog === 'due' ? tokens.due : tokens.remind} onClose={() => setDateDialog(null)}

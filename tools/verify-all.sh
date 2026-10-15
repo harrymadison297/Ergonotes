@@ -18,7 +18,7 @@ echo "### reset shared state"
 docker rm -f ergonotes-minio >/dev/null 2>&1; rm -rf temp/minio-e2e; mkdir -p temp/minio-e2e
 docker run -d --name ergonotes-minio --user "$(id -u):$(id -g)" -p 0.0.0.0:19000:9000 -e MINIO_ROOT_USER=spike -e MINIO_ROOT_PASSWORD=spikepass12345 -v "$R/temp/minio-e2e:/data" quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data >/dev/null
 scp -i "$KEY" $SSHO -P 2222 dist/release/ergonotes-server.tgz ergo@127.0.0.1:/tmp/ >/dev/null
-ssh -i "$KEY" $SSHO -p 2222 ergo@127.0.0.1 'sudo systemctl stop ergonotes; sudo rm -rf /var/lib/ergonotes/* /opt/ergonotes/*; sudo tar -xzf /tmp/ergonotes-server.tgz -C /opt/ergonotes; sudo systemctl start ergonotes; sleep 2; echo "server peer in the Linux VM: $(systemctl is-active ergonotes)"'
+ssh -i "$KEY" $SSHO -p 2222 ergo@127.0.0.1 'sudo systemctl stop ergonotes; sudo rm -rf /var/lib/ergonotes/* /opt/ergonotes/*; rm -rf /home/ergo/Notes; mkdir -p /home/ergo/Notes; sudo tar -xzf /tmp/ergonotes-server.tgz -C /opt/ergonotes; sudo systemctl start ergonotes; sleep 2; echo "server peer in the Linux VM: $(systemctl is-active ergonotes)"'
 (pgrep -f "http.server 18090" >/dev/null) || (cd packages/app/dist && nohup python3 -m http.server 18090 --bind 127.0.0.1 >/dev/null 2>&1 &)
 # wait until MinIO and the static server answer instead of sleeping a fixed time
 for i in $(seq 1 40); do curl -sf http://127.0.0.1:19000/minio/health/live >/dev/null && curl -sf http://127.0.0.1:18090/ >/dev/null && break; sleep 0.5; done
@@ -31,8 +31,8 @@ run "2d voice notes, meetings, dictation, transcription (fake microphone, script
 run "2e layout: phone, tablet, desktop, light and dark (nothing wider than its screen)" $PW layout.mjs http://127.0.0.1:18080 /repo/temp/out/shots-verify-layout
 run "3 two devices: server peer + offline-first device via MinIO" $PW sync.mjs http://127.0.0.1:18080 http://127.0.0.1:18090 http://10.0.2.2:19000 http://127.0.0.1:19000 /repo/temp/out/shots-verify-sync
 
-echo; echo "### Android emulator: fresh install of the debug APK"
-APK=apps/desktop/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+echo; echo "### Android emulator: fresh install of the release APK"
+APK=dist/release/Ergonotes-android.apk
 docker cp "$APK" ergonotes-android:/tmp/app.apk
 docker exec ergonotes-android sh -c 'adb uninstall app.ergonotes.notes >/dev/null 2>&1; adb install -r /tmp/app.apk | tail -1; adb shell am start -n app.ergonotes.notes/.MainActivity >/dev/null; sleep 8; SOCK=$(adb shell cat /proc/net/unix | tr -d "\r" | grep -o "webview_devtools_remote_[0-9]*" | head -1); adb forward --remove-all >/dev/null; adb forward tcp:9222 localabstract:$SOCK'
 run "4 Android app (Tauri APK in KVM emulator)" $NODE device.mjs http://127.0.0.1:9222 http://127.0.0.1:18080 http://10.0.2.2:19000 /repo/temp/out/shots-verify-android Android "Pixel emulator" "From Android"
@@ -43,6 +43,8 @@ Get-Process ergonotes -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep 2
 if (Test-Path "$env:LOCALAPPDATA\Ergonotes\uninstall.exe") { Start-Process "$env:LOCALAPPDATA\Ergonotes\uninstall.exe" -ArgumentList "/S" -Wait }
 Remove-Item -Recurse -Force "$env:LOCALAPPDATA\app.ergonotes.notes" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$env:APPDATA\app.ergonotes.notes" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$env:USERPROFILE\Documents\Ergonotes" -ErrorAction SilentlyContinue
 Start-Process -FilePath C:\Users\Docker\ergonotes-setup.exe -ArgumentList "/S" -Wait
 "installed: " + (Get-Item "$env:LOCALAPPDATA\Ergonotes\ergonotes.exe").VersionInfo.ProductName
 schtasks /Run /TN ErgoRun | Out-Null
@@ -54,6 +56,10 @@ tools/winrun.sh temp/out/winverify.ps1 2>&1 | grep -vE "CLIXML|<Objs"
 (curl -s -m 3 http://127.0.0.1:19223/json/version >/dev/null) || sshpass -p admin ssh -f -N -L 19223:127.0.0.1:9223 -p 2223 $SSHO -o ExitOnForwardFailure=yes Docker@127.0.0.1
 sleep 2
 run "5 Windows 11 app (NSIS install in KVM VM)" $NODE device.mjs http://127.0.0.1:19223 http://127.0.0.1:18080 http://172.17.0.1:19000 /repo/temp/out/shots-verify-windows Windows "Windows 11 VM" "From Windows"
+
+echo; echo "### Linux VM: fresh vault folder for the folder test"
+ssh -i "$KEY" $SSHO -p 2222 ergo@127.0.0.1 'sudo systemctl stop ergonotes; sudo rm -rf /var/lib/ergonotes/* /home/ergo/Notes; mkdir -p /home/ergo/Notes; sudo systemctl start ergonotes; sleep 2' >/dev/null
+run "2f vault folder on the VM disk: files in, edit one block, edits from outside, rename, trash" tools/e2e-folder-vm.sh http://127.0.0.1:18080 /home/ergo/Notes
 
 echo; echo "================ SUMMARY"
 FAILED=0
