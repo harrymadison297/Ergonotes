@@ -5,7 +5,7 @@ import { Vault } from '../src/vault.ts';
 import type { StoreConfig } from '../src/api.ts';
 import {
   DEFAULT_MODELS, PROVIDER_LABEL, ThinkSplitter, apiBase, applyAiPatch, buildTools, listModels, normalizeAiConfig, resolveTarget, toSettings, chatSystemPrompt, cleanSuggestion, completeText, defaultAiConfig, runAgent, sectionRange, streamChat, suggestionRequest,
-  transcribeAudio, speechTarget,
+  transcribeAudio, transcribeTimed, speechTarget, recommendCuts, parseCut,
   type AiConfig, type AiEvent, type AiProvider, type ThinkingLevel, type AiMessage, type AiRequest, type AiTransport, type NoteIO,
 } from '../src/index.ts';
 
@@ -736,5 +736,92 @@ describe('speech-to-text', () => {
     await expect(transcribeAudio(withSpeech(), file, { fetchImpl: bad })).rejects.toThrow(/Model not found/);
     const odd = (async () => new Response('plain', { status: 200 })) as unknown as typeof fetch;
     await expect(transcribeAudio(withSpeech(), file, { fetchImpl: odd })).rejects.toThrow(/not with a transcript/);
+  });
+});
+
+describe('pictures and timed transcripts', () => {
+  const cfg = (extra: Partial<AiConfig> = {}): AiConfig => ({
+    ...defaultAiConfig(),
+    connections: [{ id: 'c1', name: 'Local', type: 'custom', url: 'http://localhost:11434' }, { id: 'c2', name: 'Vision', type: 'custom', url: 'http://localhost:9999' }],
+    chatModel: { connection: 'c1', model: 'chat-m' }, suggestModel: { connection: 'c1', model: 's-m' }, speechModel: { connection: 'c1', model: 'whisper-1' }, ...extra,
+  });
+
+  it('sends pictures to the vision model, else to the chat model', () => {
+    expect(resolveTarget(cfg(), 'vision')).toMatchObject({ model: 'chat-m' });
+    expect(resolveTarget(cfg({ visionModel: { connection: 'c2', model: 'llava' } }), 'vision')).toMatchObject({ model: 'llava', conn: { id: 'c2' } });
+    const patched = applyAiPatch(cfg(), { visionModel: { connection: 'c2', model: '' } });
+    expect(patched.visionModel.connection).toBe('c2');
+    expect(applyAiPatch(patched, { visionModel: null }).visionModel.connection).toBe('');
+    expect(applyAiPatch(patched, { removeConnection: 'c2' }).visionModel.connection).toBe('');
+  });
+
+  it('puts the pictures in an OpenAI-style message', async () => {
+    let body: { messages: { role: string; content: unknown }[] } | null = null;
+    const fetchImpl = (async (_u: string, init: RequestInit) => {
+      body = JSON.parse(String(init.body));
+      return new Response('data: {"choices":[{"delta":{"content":"{\\"cut\\":[]}"}}]}\n\ndata: [DONE]\n\n', { status: 200 });
+    }) as unknown as typeof fetch;
+    const events: string[] = [];
+    for await (const e of streamChat(cfg(), { model: 'vision', messages: [{ role: 'user', content: 'Which?', images: ['AAAA', 'BBBB'] }] }, { fetchImpl })) events.push(e.type);
+    expect(events).toContain('done');
+    const content = body!.messages[0].content as { type: string; image_url?: { url: string } }[];
+    expect(content[0]).toEqual({ type: 'text', text: 'Which?' });
+    expect(content.slice(1).map(c => c.image_url?.url)).toEqual(['data:image/jpeg;base64,AAAA', 'data:image/jpeg;base64,BBBB']);
+  });
+
+  it('asks for timed segments and falls back to plain text for a server that cannot', async () => {
+    const formats: string[] = [];
+    const fetchImpl = (async (_u: string, init: RequestInit) => {
+      const f = (init.body as FormData).get('response_format') as string;
+      formats.push(f);
+      if (f === 'verbose_json' && formats.length === 1 && cfgNoSegments) return new Response('{"error":"unsupported"}', { status: 400 });
+      return new Response(JSON.stringify(f === 'verbose_json' ? { text: ' Hi there. ', segments: [{ start: 0, end: 1.5, text: ' Hi there. ' }] } : { text: 'Hi there.' }), { status: 200 });
+    }) as unknown as typeof fetch;
+    let cfgNoSegments = false;
+    const a = await transcribeTimed(cfg(), { name: 'a.webm', mime: 'audio/webm', data: 'QUJD' }, { fetchImpl });
+    expect(a).toEqual({ text: 'Hi there.', segments: [{ start: 0, end: 1.5, text: 'Hi there.' }] });
+    cfgNoSegments = true;
+    formats.length = 0;
+    const b = await transcribeTimed(cfg(), { name: 'a.webm', mime: 'audio/webm', data: 'QUJD' }, { fetchImpl });
+    expect(formats).toEqual(['verbose_json', 'json']);
+    expect(b).toEqual({ text: 'Hi there.', segments: [] });
+  });
+});
+
+describe('recommending frames to cut', () => {
+  const frames = (n: number) => Array.from({ length: n }, (_, i) => ({ second: i * 10, jpeg: `img${i}` }));
+  const answer = (cuts: number[][]) => {
+    const seen: { content: string; images?: string[] }[] = [];
+    let call = 0;
+    const transport: AiTransport = async function* (req) {
+      seen.push(req.messages[0] as { content: string; images?: string[] });
+      yield { type: 'text', delta: JSON.stringify({ cut: cuts[call++] ?? [] }) };
+      yield { type: 'done' };
+    };
+    return { transport, seen };
+  };
+
+  it('maps the numbers of each batch back to seconds and compares a batch with the last frame kept', async () => {
+    const { transport, seen } = answer([[2, 3], [1]]);
+    const r = await recommendCuts(transport, frames(6), { batch: 4 });
+    expect(r).toEqual({ cut: [10, 20, 40], failed: 0 });
+    expect(seen[0].images).toEqual(['img0', 'img1', 'img2', 'img3']);
+    expect(seen[1].images).toEqual(['img3', 'img4', 'img5']); // img3 was the last one kept: the second batch is compared with it
+    expect(seen[1].content).toContain('Frame 1: at 0:40');
+  });
+
+  it('keeps the frames of a batch the model did not answer clearly', async () => {
+    const transport: AiTransport = async function* () { yield { type: 'text', delta: 'I think frame two.' }; yield { type: 'done' }; };
+    expect(await recommendCuts(transport, frames(3), { batch: 4 })).toEqual({ cut: [], failed: 3 });
+  });
+
+  it('reports a provider that fails at once instead of cutting nothing', async () => {
+    const transport: AiTransport = async function* () { throw new Error('The provider rejected the API key'); };
+    await expect(recommendCuts(transport, frames(3))).rejects.toThrow(/API key/);
+  });
+
+  it('reads the answer wherever the JSON is, and ignores numbers that are not frames', () => {
+    expect(parseCut('Sure!\n```json\n{"cut":[1,3,3,9,"x"]}\n```', 4)).toEqual([1, 3]);
+    expect(parseCut('nothing', 4)).toBeNull();
   });
 });

@@ -20,4 +20,5 @@ export * from './ai/agent.ts';
 export * from './ai/tools.ts';
 export * from './ai/suggest.ts';
 export * from './ai/skill.ts';
+export * from './ai/frames.ts';
 export * from './record.ts';

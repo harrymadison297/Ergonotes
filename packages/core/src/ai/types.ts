@@ -29,6 +29,8 @@ export interface AiConfig {
   suggestModel: ModelRef;
   /** speech-to-text (voice dictation, recordings, audio files): an OpenAI-style `/audio/transcriptions` model of a custom server */
   speechModel: ModelRef;
+  /** looks at pictures (which frames of a meeting to keep); empty: the chat model is used */
+  visionModel: ModelRef;
   /** thinking for the chat and for suggestions are separate: one model, two jobs */
   chatThinking: ThinkingLevel;
   suggestThinking: ThinkingLevel;
@@ -65,6 +67,10 @@ export interface AiSettings {
   speechModel: ModelRef;
   /** speech-to-text can be used */
   speechReady: boolean;
+  /** the model that looks at pictures: its own choice, else the chat model */
+  visionModel: ModelRef;
+  /** pictures can be sent to a model (the vision model, or the chat model when none is chosen) */
+  visionReady: boolean;
   chatThinking: ThinkingLevel;
   suggestThinking: ThinkingLevel;
   wholeVault: boolean;
@@ -82,6 +88,8 @@ export interface AiSettingsPatch {
   suggestModel?: ModelRef;
   /** `null` turns speech-to-text off; an empty `model` picks `whisper-1` */
   speechModel?: ModelRef | null;
+  /** `null` goes back to the chat model; an empty `model` picks the connection's chat default */
+  visionModel?: ModelRef | null;
   chatThinking?: ThinkingLevel;
   suggestThinking?: ThinkingLevel;
   wholeVault?: boolean;
@@ -102,7 +110,7 @@ export const PROVIDER_LABEL: Record<AiProvider, string> = { openrouter: 'OpenRou
 
 export function defaultAiConfig(): AiConfig {
   return {
-    connections: [], chatModel: { connection: '', model: '' }, suggestModel: { connection: '', model: '' }, speechModel: { connection: '', model: '' },
+    connections: [], chatModel: { connection: '', model: '' }, suggestModel: { connection: '', model: '' }, speechModel: { connection: '', model: '' }, visionModel: { connection: '', model: '' },
     chatThinking: 'auto', suggestThinking: 'off', wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400,
   };
 }
@@ -110,8 +118,9 @@ export function defaultAiConfig(): AiConfig {
 export const isReady = (c: AiConnection | undefined): boolean => !!c && (c.type === 'custom' ? !!c.url : !!c.key);
 
 /** The connection and model a job (the chat or a suggestion) will use, when there is one. */
-export function resolveTarget(cfg: AiConfig, job: 'chat' | 'suggest'): { conn: AiConnection; model: string } | null {
-  const ref = job === 'chat' ? cfg.chatModel : cfg.suggestModel;
+export function resolveTarget(cfg: AiConfig, job: 'chat' | 'suggest' | 'vision'): { conn: AiConnection; model: string } | null {
+  // pictures go to the vision model when one is chosen, else to the chat model
+  const ref = job === 'chat' ? cfg.chatModel : job === 'suggest' ? cfg.suggestModel : cfg.visionModel.connection ? cfg.visionModel : cfg.chatModel;
   const conn = cfg.connections.find(c => c.id === ref.connection);
   return conn && ref.model ? { conn, model: ref.model } : null;
 }
@@ -166,6 +175,9 @@ export function normalizeAiConfig(raw: unknown): AiConfig {
     speechModel: j.speechModel && typeof j.speechModel === 'object' && str((j.speechModel as Record<string, unknown>).connection)
       ? { connection: str((j.speechModel as Record<string, unknown>).connection), model: str((j.speechModel as Record<string, unknown>).model) || DEFAULT_SPEECH_MODEL }
       : { connection: '', model: '' },
+    visionModel: j.visionModel && typeof j.visionModel === 'object' && str((j.visionModel as Record<string, unknown>).connection)
+      ? { connection: str((j.visionModel as Record<string, unknown>).connection), model: str((j.visionModel as Record<string, unknown>).model) }
+      : { connection: '', model: '' },
     chatThinking: level(j.chatThinking, base.chatThinking),
     suggestThinking: level(j.suggestThinking, base.suggestThinking),
     wholeVault: j.wholeVault === true,
@@ -194,7 +206,8 @@ export interface AiThinkingBlock { text: string; signature?: string; redacted?: 
 export interface AiToolCall { id: string; name: string; args: Record<string, unknown> }
 
 export type AiMessage =
-  | { role: 'user'; content: string }
+  /** `images`: base64 JPEGs shown with the text (for a model that can see) */
+  | { role: 'user'; content: string; images?: string[] }
   | { role: 'assistant'; content: string; toolCalls?: AiToolCall[]; thinking?: AiThinkingBlock[] }
   | { role: 'tool'; callId: string; name: string; content: string };
 
@@ -206,8 +219,8 @@ export interface AiToolSpec {
 }
 
 export interface AiRequest {
-  /** which of the two configured models to use */
-  model: 'chat' | 'suggest';
+  /** which of the configured models to use */
+  model: 'chat' | 'suggest' | 'vision';
   system?: string;
   messages: AiMessage[];
   tools?: AiToolSpec[];
@@ -237,6 +250,8 @@ export function toSettings(c: AiConfig): AiSettings {
     chatReady: !!resolveTarget(c, 'chat') && isReady(c.connections.find(x => x.id === c.chatModel.connection)),
     suggestReady: !!resolveTarget(c, 'suggest') && isReady(c.connections.find(x => x.id === c.suggestModel.connection)),
     speechModel: c.speechModel, speechReady: speechTarget(c) !== null,
+    visionModel: c.visionModel,
+    visionReady: !!resolveTarget(c, 'vision') && isReady(c.connections.find(x => x.id === (c.visionModel.connection || c.chatModel.connection))),
     chatThinking: c.chatThinking, suggestThinking: c.suggestThinking, wholeVault: c.wholeVault, autoApply: c.autoApply,
     suggest: c.suggest, suggestDelay: c.suggestDelay,
   };
@@ -276,6 +291,13 @@ export function applyAiPatch(c: AiConfig, p: AiSettingsPatch): AiConfig {
     next.chatModel = fix(next.chatModel, 'chat');
     next.suggestModel = fix(next.suggestModel, 'suggest');
     if (next.speechModel.connection === p.removeConnection) next.speechModel = { connection: '', model: '' };
+    if (next.visionModel.connection === p.removeConnection) next.visionModel = { connection: '', model: '' };
+  }
+  if (p.visionModel === null) next.visionModel = { connection: '', model: '' };
+  else if (p.visionModel) {
+    const conn = next.connections.find(x => x.id === p.visionModel!.connection);
+    if (!conn) throw new Error('That connection no longer exists.');
+    next.visionModel = { connection: conn.id, model: p.visionModel.model.trim() || DEFAULT_MODELS[conn.type].chat };
   }
   if (p.speechModel === null) next.speechModel = { connection: '', model: '' };
   else if (p.speechModel) {

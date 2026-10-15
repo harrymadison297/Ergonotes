@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
-import { FsPersist, listModels, streamChat, transcribeAudio, Vault, VAULT_METHODS, type AiRequest, type StoreConfig, type VaultStatus } from '@ergonotes/core';
+import { FsPersist, listModels, streamChat, transcribeAudio, transcribeTimed, Vault, VAULT_METHODS, type AiRequest, type StoreConfig, type VaultStatus } from '@ergonotes/core';
 import { FileLocalMeta, FolderStore, NodeFs } from '@ergonotes/core/node';
 import { handleRpc, TokenStore } from './mcp.ts';
 
@@ -249,7 +249,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     let body: AiRequest;
     try {
       body = JSON.parse(await readBody(req, 16 * 1024 * 1024)) as AiRequest;
-      if (!Array.isArray(body.messages) || (body.model !== 'chat' && body.model !== 'suggest')) throw new Error('Bad request');
+      if (!Array.isArray(body.messages) || (body.model !== 'chat' && body.model !== 'suggest' && body.model !== 'vision')) throw new Error('Bad request');
     } catch (e) {
       const msg = String(e instanceof Error ? e.message : e);
       return json(res, /too large/i.test(msg) ? 413 : 400, { error: msg }, { connection: 'close' });
@@ -273,13 +273,18 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     if (!authed(req)) return json(res, 401, { error: 'Sign in first' });
     if (!sameOrigin(req)) return json(res, 403, { error: 'Cross-origin request refused' });
     if ((await vault.status()).state !== 'ready') return json(res, 409, { error: 'The vault is locked' });
-    let file: { name?: string; mime?: string; data?: string };
+    let file: { name?: string; mime?: string; data?: string; timed?: boolean };
     try { file = JSON.parse((await readBody(req, 40 * 1024 * 1024)) || '{}') as typeof file; } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return json(res, /too large/i.test(msg) ? 413 : 400, { error: /too large/i.test(msg) ? 'That recording is too large.' : 'Bad JSON' }, { connection: 'close' });
     }
     if (typeof file.data !== 'string' || !file.data) return json(res, 400, { error: 'No audio was sent.' });
-    try { return json(res, 200, { text: await transcribeAudio(vault.aiConfig(), { name: String(file.name ?? 'audio.webm'), mime: String(file.mime ?? ''), data: file.data }, { fetchImpl: o.aiFetch }) }); }
+    try {
+      const f = { name: String(file.name ?? 'audio.webm'), mime: String(file.mime ?? ''), data: file.data };
+      // with `timed` the phrases come with their times (a record's transcript has a mark per minute)
+      if (file.timed === true) return json(res, 200, await transcribeTimed(vault.aiConfig(), f, { fetchImpl: o.aiFetch }));
+      return json(res, 200, { text: await transcribeAudio(vault.aiConfig(), f, { fetchImpl: o.aiFetch }) });
+    }
     catch (e) { return json(res, 400, { error: e instanceof Error ? e.message : String(e) }); }
   };
 

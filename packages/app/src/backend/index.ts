@@ -1,4 +1,4 @@
-import { FsPersist, listModels, MemFs, streamChat, transcribeAudio, Vault, VAULT_METHODS, type AiEvent, type AiTransport, type AudioFile, type ModelInfo, type VaultApi, type VaultEvent, type VaultStatus } from '@ergonotes/core';
+import { FsPersist, listModels, MemFs, streamChat, transcribeAudio, transcribeTimed, Vault, VAULT_METHODS, type AiEvent, type AiTransport, type AudioFile, type ModelInfo, type TimedTranscript, type VaultApi, type VaultEvent, type VaultStatus } from '@ergonotes/core';
 import { IdbPersist } from '@ergonotes/core/browser';
 import { tauriFolder, type VaultFolder } from './tauriFs';
 
@@ -13,6 +13,8 @@ export interface Backend {
   aiModels(connection: string): Promise<ModelInfo[]>;
   /** speech to text with the configured transcription model */
   aiTranscribe(file: AudioFile, signal?: AbortSignal): Promise<string>;
+  /** the same with the time of every phrase, when the server gives it */
+  aiTranscribeTimed(file: AudioFile, signal?: AbortSignal): Promise<TimedTranscript>;
   /** where the notes live on this device (installed apps); the web build has none: the server holds the folder */
   folder?: VaultFolder;
   /** called once the vault is ready (starts sync timers in local mode) */
@@ -38,6 +40,13 @@ class HttpBackend implements Backend {
     const b = await r.json().catch(() => null) as { text?: string; error?: string } | null;
     if (!r.ok) throw new Error(b?.error ?? (r.status === 413 ? 'That recording is too large.' : `Request failed (${r.status})`));
     return b?.text ?? '';
+  };
+
+  aiTranscribeTimed = async (file: AudioFile, signal?: AbortSignal): Promise<TimedTranscript> => {
+    const r = await fetch('./api/ai/transcribe', { method: 'POST', credentials: 'same-origin', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...file, timed: true }) });
+    const b = await r.json().catch(() => null) as (Partial<TimedTranscript> & { error?: string }) | null;
+    if (!r.ok) throw new Error(b?.error ?? (r.status === 413 ? 'That recording is too large.' : `Request failed (${r.status})`));
+    return { text: b?.text ?? '', segments: Array.isArray(b?.segments) ? b!.segments : [] };
   };
 
   /** The server calls the provider with the key it holds and streams the events back as one JSON object per line. */
@@ -112,6 +121,7 @@ class LocalBackend implements Backend {
   aiTransport: AiTransport;
   aiModels: (connection: string) => Promise<ModelInfo[]>;
   aiTranscribe: (file: AudioFile, signal?: AbortSignal) => Promise<string>;
+  aiTranscribeTimed: (file: AudioFile, signal?: AbortSignal) => Promise<TimedTranscript>;
   folder?: VaultFolder;
 
   constructor(vault: Vault, fetchImpl?: typeof fetch, folder?: VaultFolder) {
@@ -119,6 +129,7 @@ class LocalBackend implements Backend {
     this.folder = folder;
     this.aiTransport = (req, signal) => streamChat(vault.aiConfig(), req, { fetchImpl, signal });
     this.aiTranscribe = (file, signal) => transcribeAudio(vault.aiConfig(), file, { fetchImpl, signal });
+    this.aiTranscribeTimed = (file, signal) => transcribeTimed(vault.aiConfig(), file, { fetchImpl, signal });
     this.aiModels = async connection => {
       const conn = vault.aiConfig().connections.find(c => c.id === connection);
       if (!conn) throw new Error('That connection does not exist.');

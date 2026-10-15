@@ -533,6 +533,15 @@ function AiSettings() {
             {THINKING_LEVELS.map(l => <option key={l} value={l}>{THINK_NAME[l]}</option>)}
           </select>
           <span className="hint">Chat and suggestions think independently, even with the same model. Off is best for suggestions; models that cannot think ignore this.</span></div></div>
+      <div className="field"><label htmlFor="ai-vision">Model that looks at pictures</label>
+        <ModelPicker id="ai-vision" label="Vision model" value={ai.visionModel.connection ? ai.visionModel : ai.chatModel} connections={ai.connections}
+          onPick={ref => void save({ visionModel: ref })} />
+        <span className="hint">
+          Suggests which frames of a meeting recording to cut. {ai.visionModel.connection ? '' : 'Not chosen: the chat model is used. '}
+          The frames are sent to the provider only when you press Filter, never from a private note.
+          {ai.visionModel.connection && <> <button type="button" className="btn" style={{ marginLeft: 4 }} onClick={() => void save({ visionModel: null })}>Use the chat model</button></>}
+        </span>
+      </div>
       <div className="field"><label htmlFor="ai-speech-conn">Speech-to-text</label>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <select id="ai-speech-conn" className="input" style={{ flex: '1 1 200px', width: 'auto' }} aria-label="Speech-to-text server"

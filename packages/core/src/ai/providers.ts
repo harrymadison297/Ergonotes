@@ -126,8 +126,14 @@ function openAiMessages(req: AiRequest): unknown[] {
   const out: unknown[] = [];
   if (req.system) out.push({ role: 'system', content: req.system });
   for (const m of req.messages) {
-    if (m.role === 'user') out.push({ role: 'user', content: m.content });
-    else if (m.role === 'assistant') {
+    if (m.role === 'user') {
+      out.push({
+        role: 'user',
+        content: m.images?.length
+          ? [{ type: 'text', text: m.content }, ...m.images.map(b => ({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b}` } }))]
+          : m.content,
+      });
+    } else if (m.role === 'assistant') {
       const o: Record<string, unknown> = { role: 'assistant', content: m.content || null };
       if (m.toolCalls?.length) o.tool_calls = m.toolCalls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args) } }));
       out.push(o);
@@ -207,7 +213,10 @@ function anthropicMessages(messages: AiMessage[]): unknown[] {
     if (last && last.role === role) last.content.push(block); else out.push({ role, content: [block] });
   };
   for (const m of messages) {
-    if (m.role === 'user') push('user', { type: 'text', text: m.content });
+    if (m.role === 'user') {
+      for (const b of m.images ?? []) push('user', { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b } });
+      push('user', { type: 'text', text: m.content });
+    }
     else if (m.role === 'assistant') {
       // thoughts come first, and exactly as received: the signature is checked when a tool result follows
       for (const t of m.thinking ?? []) push('assistant', t.redacted !== undefined ? { type: 'redacted_thinking', data: t.redacted } : { type: 'thinking', thinking: t.text, signature: t.signature ?? '' });
@@ -377,21 +386,39 @@ export async function listModels(conn: AiConnection, o: Pick<StreamOptions, 'fet
 /** What a recording or an audio file is sent as. `data` is base64. */
 export interface AudioFile { name: string; mime: string; data: string }
 
+/** What the speech was and when: segments are in seconds from the start of the file. */
+export interface TimedTranscript { text: string; segments: { start: number; end: number; text: string }[] }
+
 /** Speech to text through an OpenAI-style `/audio/transcriptions` endpoint of the configured server. */
 export async function transcribeAudio(cfg: AiConfig, file: AudioFile, o: StreamOptions = {}): Promise<string> {
+  return (await transcribeTimed(cfg, file, o, false)).text;
+}
+
+/**
+ * The same, with the time of each phrase when the server gives it (`verbose_json`). A server that does not know
+ * that format is asked again for plain text, and `segments` is empty.
+ */
+export async function transcribeTimed(cfg: AiConfig, file: AudioFile, o: StreamOptions = {}, timed = true): Promise<TimedTranscript> {
   const t = speechTarget(cfg);
   if (!t) throw new AiError('Speech-to-text is not set up. Choose a custom server and a model in Settings → AI.');
   const bytes = Uint8Array.from(atob(file.data.replace(/\s+/g, '')), c => c.charCodeAt(0));
-  const form = new FormData();
-  form.append('file', new Blob([bytes], { type: file.mime || 'application/octet-stream' }), file.name || 'audio.webm');
-  form.append('model', t.model);
-  form.append('response_format', 'json');
-  const res = await post(`${apiBase(t.conn.url)}/audio/transcriptions`, {
-    method: 'POST', body: form, signal: o.signal,
-    headers: t.conn.key ? { authorization: `Bearer ${t.conn.key}` } : {},
-  }, o);
+  const ask = async (format: 'json' | 'verbose_json'): Promise<Response> => {
+    const form = new FormData();
+    form.append('file', new Blob([bytes], { type: file.mime || 'application/octet-stream' }), file.name || 'audio.webm');
+    form.append('model', t.model);
+    form.append('response_format', format);
+    return post(`${apiBase(t.conn.url)}/audio/transcriptions`, {
+      method: 'POST', body: form, signal: o.signal,
+      headers: t.conn.key ? { authorization: `Bearer ${t.conn.key}` } : {},
+    }, o);
+  };
+  let res = await ask(timed ? 'verbose_json' : 'json');
+  if (timed && (res.status === 400 || res.status === 422)) res = await ask('json');
   if (!res.ok) throw await failure(res);
-  const j = await res.json().catch(() => null) as { text?: unknown } | null;
+  const j = await res.json().catch(() => null) as { text?: unknown; segments?: { start?: unknown; end?: unknown; text?: unknown }[] } | null;
   if (!j || typeof j.text !== 'string') throw new AiError('The server answered, but not with a transcript. Is this an OpenAI-style transcription model?');
-  return j.text.trim();
+  const segments = Array.isArray(j.segments)
+    ? j.segments.filter(s => typeof s.start === 'number' && typeof s.text === 'string').map(s => ({ start: Number(s.start), end: typeof s.end === 'number' ? s.end : Number(s.start), text: String(s.text).trim() }))
+    : [];
+  return { text: j.text.trim(), segments };
 }
