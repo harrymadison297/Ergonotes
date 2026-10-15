@@ -1,5 +1,5 @@
 // Streaming chat against OpenRouter (OpenAI-style) and Anthropic (Messages API), normalised to AiEvent.
-import { resolveTarget, type AiConfig, type AiConnection, type AiEvent, type AiMessage, type AiRequest, type AiThinkingBlock, type AiToolCall, type ModelInfo, type ThinkingLevel } from './types.ts';
+import { resolveTarget, speechTarget, type AiConfig, type AiConnection, type AiEvent, type AiMessage, type AiRequest, type AiThinkingBlock, type AiToolCall, type ModelInfo, type ThinkingLevel } from './types.ts';
 
 export interface StreamOptions { fetchImpl?: typeof fetch; signal?: AbortSignal }
 
@@ -372,4 +372,26 @@ export async function listModels(conn: AiConnection, o: Pick<StreamOptions, 'fet
   }
   for (const m of j.models ?? []) { const id = m.name ?? m.model; if (id && !byId.has(id)) byId.set(id, { id }); }
   return [...byId.values()].sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
+}
+
+/** What a recording or an audio file is sent as. `data` is base64. */
+export interface AudioFile { name: string; mime: string; data: string }
+
+/** Speech to text through an OpenAI-style `/audio/transcriptions` endpoint of the configured server. */
+export async function transcribeAudio(cfg: AiConfig, file: AudioFile, o: StreamOptions = {}): Promise<string> {
+  const t = speechTarget(cfg);
+  if (!t) throw new AiError('Speech-to-text is not set up. Choose a custom server and a model in Settings → AI.');
+  const bytes = Uint8Array.from(atob(file.data.replace(/\s+/g, '')), c => c.charCodeAt(0));
+  const form = new FormData();
+  form.append('file', new Blob([bytes], { type: file.mime || 'application/octet-stream' }), file.name || 'audio.webm');
+  form.append('model', t.model);
+  form.append('response_format', 'json');
+  const res = await post(`${apiBase(t.conn.url)}/audio/transcriptions`, {
+    method: 'POST', body: form, signal: o.signal,
+    headers: t.conn.key ? { authorization: `Bearer ${t.conn.key}` } : {},
+  }, o);
+  if (!res.ok) throw await failure(res);
+  const j = await res.json().catch(() => null) as { text?: unknown } | null;
+  if (!j || typeof j.text !== 'string') throw new AiError('The server answered, but not with a transcript. Is this an OpenAI-style transcription model?');
+  return j.text.trim();
 }

@@ -25,6 +25,20 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 | Diagrams | "draw for me" | The model writes Mermaid; the app converts it with `@excalidraw/mermaid-to-excalidraw` and stores an ordinary drawing block. Only diagrams, no free illustration; the tool exists only in the app (not on MCP, which has no browser to convert with) | Mermaid is far more reliable from a model than raw Excalidraw JSON. |
 | Argon2id cost | 64 MiB, 3 passes | Implemented with `hash-wasm` (WASM). Not measured on a real phone | Measure on a mid-range device and adjust `DEFAULT_KDF`. |
 
+## Insert menu, recording and speech-to-text
+
+- Element forms are in docs/adr/0009. `packages/app/src/editor/insertItems.tsx` is the one list behind the Insert menu
+  and the "/" menu; `editor/blocks.tsx` holds the Markdown rules and node views of the elements Markdown has no syntax
+  for. A new element is: a node with a `markdown` storage, an entry in that list, a line in ADR 0009 and in the skill.
+- `\newpage`, `[TOC]`, `:::toggle`, `$$` are block rules added to markdown-it by the node's `parse.setup`; `☐`/`☑` and
+  voice notes are recognised after rendering (`updateDOM`) because the inline text rule would swallow them.
+- A string passed to `insertContent` is read as Markdown by tiptap-markdown, which is how a recording lands as clip +
+  summary + toggle in one call. An editor always keeps one empty paragraph after a block (TrailingParagraph), so the
+  caret has somewhere to go after a table, a diagram or a formula.
+- Recording uses MediaRecorder (Opus, 32 kbit/s) and needs a secure context; the microphone is not available on a plain
+  http address other than localhost. Speech-to-text posts the file as multipart to `<custom server>/v1/audio/transcriptions`
+  from the device, or from the server peer in the web build (`/api/ai/transcribe`, 40 MB body limit).
+
 ## AI limits
 
 - Settings are a list of connections plus a model per job. The first version stored one provider with a key per

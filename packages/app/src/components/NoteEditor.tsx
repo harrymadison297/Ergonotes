@@ -10,7 +10,7 @@ import TableRow from '@tiptap/extension-table-row';
 import { Markdown } from 'tiptap-markdown';
 import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
-  ChevronsLeft, ChevronsRight, EyeOff, Maximize2, Minimize2, MoveHorizontal, AlignCenter, Sparkles, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
+  ChevronsLeft, ChevronsRight, EyeOff, Maximize2, Minimize2, MoveHorizontal, AlignCenter, AudioLines, Mic, Sparkles, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
 } from 'lucide-react';
 import { mergeText, toB64, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
@@ -20,6 +20,8 @@ import { AudioClip, CodeWithDiagrams, Contents, DateMention, InlineCheckbox, Mat
 import { INSERT_ITEMS, type InsertCtx } from '../editor/insertItems';
 import { InsertMenu } from './InsertMenu';
 import { DateDialog, EventDialog, LinkedNoteDialog } from './InsertDialogs';
+import { blobToB64, RecorderDialog, TranscribeDialog, type RecordKind, type Recording } from './Recorder';
+import { fmtSecs } from '../editor/blocks';
 import { DrawingDialog } from './DrawingDialog';
 import { editorBridge } from '../state/editorBridge';
 import { suggestionRequest, cleanSuggestion, completeText } from '@ergonotes/core';
@@ -51,6 +53,8 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const moreMenu = useMenu();
   const [insertAt, setInsertAt] = useState<DOMRect | null>(null);
   const [insertDialog, setInsertDialog] = useState<'event' | 'date' | 'linked' | null>(null);
+  const [recorder, setRecorder] = useState<RecordKind | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
   const ctxRef = useRef<InsertCtx | null>(null);
   const tagsRef = useRef<string[]>([]);
   tagsRef.current = app.tags.map(t => t.tag);
@@ -387,9 +391,81 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     dateDialog: () => setInsertDialog('date'),
     linkedNoteDialog: () => setInsertDialog('linked'),
     link: () => setLink(),
-    record: () => app.toast('Recording is not available yet.', 'error'),
-    transcribeDialog: () => app.toast('Transcription is not available yet.', 'error'),
-    stt: false,
+    record: kind => setRecorder(kind),
+    transcribeDialog: () => setTranscribing(true),
+    stt: app.ai.speechReady,
+  };
+
+  // ---- recordings: a voice note, a meeting, dictation, an audio file
+  // a string given to insertContent is read as Markdown (tiptap-markdown), so the elements arrive as themselves
+  const insertMarkdown = (md: string) => { editor.chain().focus().insertContent(md).run(); };
+  const paragraphs = (text: string) => {
+    // a transcript arrives as one run of sentences: break it into short paragraphs
+    const sentences = text.replace(/\s+/g, ' ').trim().split(/(?<=[.!?…。])\s+/);
+    const out: string[] = [];
+    for (let i = 0; i < sentences.length; i += 4) out.push(sentences.slice(i, i + 4).join(' '));
+    return out.join('\n\n');
+  };
+  const transcript = async (file: { name: string; mime: string; data: string }, setStatus: (s: string) => void) => {
+    setStatus('Writing it out…');
+    const text = await app.aiTranscribe(file);
+    if (!text.trim()) throw new Error('No speech was found in it.');
+    return text;
+  };
+  const summarize = async (text: string): Promise<string> => {
+    try {
+      const out = await completeText(app.aiTransport, {
+        model: 'chat', maxTokens: 700,
+        system: 'You write minutes. Reply with Markdown only, in the language of the transcript, no preface.',
+        messages: [{ role: 'user', content: `Summarise this meeting transcript as 3 to 7 short bullet points. If decisions or action items were made, add them as "- [ ] " tasks after the bullets.\n\n${text.slice(0, 24000)}` }],
+      });
+      // bullets and tasks of one summary must not merge into one list: the two kinds get different markers
+      return out.trim().split('\n').map(l => /^\s*[-*+] \[[ xX]\] /.test(l) ? l.replace(/^(\s*)[-*+] /, '$1* ') : l.replace(/^(\s*)[*+] (?!\[)/, '$1- ')).join('\n');
+    } catch { return ''; }
+  };
+  const audioExt = (mime: string) => (mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : mime.includes('wav') ? 'wav' : 'webm');
+  const onRecorded = async (kind: RecordKind, r: Recording, o: { transcribe: boolean }, setStatus: (s: string) => void) => {
+    const data = await blobToB64(r.blob);
+    if (kind === 'dictate') {
+      const text = await transcript({ name: `dictation.${audioExt(r.mime)}`, mime: r.mime, data }, setStatus);
+      editor.chain().focus().insertContent({ type: 'text', text: text.trim() + ' ' }).run();
+      return;
+    }
+    const now = new Date();
+    const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const what = kind === 'meeting' ? 'Meeting recording' : 'Voice note';
+    const saved = await app.run(api.addFile({ name: `${what} ${isoDay(now)} ${hm}.${audioExt(r.mime)}`, mime: r.mime, data }));
+    if (!saved) throw new Error('The recording could not be saved.');
+    const clip = `[${what} ${hm} · ${fmtSecs(r.seconds)}](ergo-file:${saved.id} "audio")`;
+    let text = '';
+    if (o.transcribe && !doc.private) {
+      try { text = await transcript({ name: `${what}.${audioExt(r.mime)}`, mime: r.mime, data }, setStatus); }
+      catch (e) { app.toast(`The recording is saved, but could not be written out: ${e instanceof Error ? e.message : String(e)}`, 'error'); }
+    }
+    let md = '';
+    if (kind === 'meeting') {
+      md += `## Meeting ${isoDay(now)} ${hm}\n\n${clip}\n\n`;
+      if (text && app.ai.chatReady) {
+        setStatus('Summarising…');
+        const sum = await summarize(text);
+        if (sum) md += `**Summary**\n\n${sum}\n\n`;
+      }
+      if (text) md += `:::toggle Transcript\n${paragraphs(text)}\n:::\n`;
+    } else {
+      md += `${clip}\n\n`;
+      if (text) md += `${paragraphs(text)}\n`;
+    }
+    insertMarkdown(md);
+  };
+  const onMediaFile = async (f: File, setStatus: (s: string) => void) => {
+    setStatus('Saving…');
+    const data = toB64(new Uint8Array(await f.arrayBuffer()));
+    const mime = f.type || 'audio/mpeg';
+    const saved = await app.run(api.addFile({ name: f.name, mime, data }));
+    if (!saved) throw new Error('The file could not be saved.');
+    const text = await transcript({ name: f.name, mime, data }, setStatus);
+    const head = mime.startsWith('audio/') ? `[${f.name.replace(/[\[\]]/g, ' ')}](ergo-file:${saved.id} "audio")` : `[${f.name.replace(/[\[\]]/g, ' ')}](ergo-file:${saved.id})`;
+    insertMarkdown(`${head}\n\n:::toggle Transcript\n${paragraphs(text)}\n:::\n`);
   };
   ctxRef.current = insertCtx;
   const styleLabel = editor.isActive('heading', { level: 1 }) ? 'Heading 1' : editor.isActive('heading', { level: 2 }) ? 'Heading 2' : editor.isActive('heading', { level: 3 }) ? 'Heading 3' : 'Normal text';
@@ -461,6 +537,8 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
 
       <div className="toolbar" role="toolbar" aria-label="Formatting">
         <button type="button" className="tb-btn accent" disabled={locked} onClick={e => setInsertAt(e.currentTarget.getBoundingClientRect())}><span className="insert-dot"><Plus size={12} /></span> Insert <ChevronDown size={14} /></button>
+        <TB locked={locked} label="Meeting recording" onClick={() => insertCtx.record('meeting')}><AudioLines size={18} /></TB>
+        <TB locked={locked} label="Voice note" onClick={() => insertCtx.record('voice')}><Mic size={18} /></TB>
         <TB locked={locked} label="Checklist" on={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={18} /></TB>
         <TB locked={locked} label={tokens.inTask ? 'Due date' : 'Due date (place the cursor in a task)'} on={!!tokens.due} disabled={!tokens.inTask} onClick={() => setDateDialog('due')}><CalendarDays size={18} /></TB>
         <TB locked={locked} label="Reminder" on={!!tokens.remind} disabled={!tokens.inTask} onClick={() => setDateDialog('remind')}><Bell size={18} /></TB>
@@ -540,6 +618,9 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
           setDrawing(null);
         }} />
       )}
+      {recorder && <RecorderDialog kind={recorder} sttReady={app.ai.speechReady} privateNote={!!doc.private} onClose={() => setRecorder(null)}
+        onFinish={(r, o, setStatus) => onRecorded(recorder, r, o, setStatus)} />}
+      {transcribing && <TranscribeDialog privateNote={!!doc.private} onClose={() => setTranscribing(false)} onPick={onMediaFile} />}
       {insertDialog === 'date' && <DateDialog onClose={() => setInsertDialog(null)} onInsert={day => { setInsertDialog(null); editor.chain().focus().insertContent([{ type: 'dateMention', attrs: { date: day } }, { type: 'text', text: ' ' }]).run(); }} />}
       {insertDialog === 'event' && <EventDialog initialTitle={editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ')} onClose={() => setInsertDialog(null)}
         onInsert={text => { setInsertDialog(null); editor.chain().focus().insertContent(text).run(); }} />}

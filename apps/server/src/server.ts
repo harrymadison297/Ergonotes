@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
-import { listModels, streamChat, Vault, VAULT_METHODS, type AiRequest, type StoreConfig, type VaultStatus } from '@ergonotes/core';
+import { listModels, streamChat, transcribeAudio, Vault, VAULT_METHODS, type AiRequest, type StoreConfig, type VaultStatus } from '@ergonotes/core';
 import { FilePersist, FolderStore } from '@ergonotes/core/node';
 import { Mirror } from './mirror.ts';
 import { handleRpc, TokenStore } from './mcp.ts';
@@ -262,6 +262,21 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   };
 
   /** The model names the configured provider offers (the settings page fills its pick-list from this). */
+  const aiTranscribe = async (req: IncomingMessage, res: ServerResponse) => {
+    if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
+    if (!authed(req)) return json(res, 401, { error: 'Sign in first' });
+    if (!sameOrigin(req)) return json(res, 403, { error: 'Cross-origin request refused' });
+    if ((await vault.status()).state !== 'ready') return json(res, 409, { error: 'The vault is locked' });
+    let file: { name?: string; mime?: string; data?: string };
+    try { file = JSON.parse((await readBody(req, 40 * 1024 * 1024)) || '{}') as typeof file; } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return json(res, /too large/i.test(msg) ? 413 : 400, { error: /too large/i.test(msg) ? 'That recording is too large.' : 'Bad JSON' }, { connection: 'close' });
+    }
+    if (typeof file.data !== 'string' || !file.data) return json(res, 400, { error: 'No audio was sent.' });
+    try { return json(res, 200, { text: await transcribeAudio(vault.aiConfig(), { name: String(file.name ?? 'audio.webm'), mime: String(file.mime ?? ''), data: file.data }, { fetchImpl: o.aiFetch }) }); }
+    catch (e) { return json(res, 400, { error: e instanceof Error ? e.message : String(e) }); }
+  };
+
   const aiModels = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
     if (!authed(req)) return json(res, 401, { error: 'Sign in first' });
@@ -334,6 +349,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
       }
       if (url.pathname === '/api/ai/stream') return await aiStream(req, res);
       if (url.pathname === '/api/ai/models') return await aiModels(req, res);
+      if (url.pathname === '/api/ai/transcribe') return await aiTranscribe(req, res);
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
       return await serveStatic(req, res, url);
     } catch (e) {

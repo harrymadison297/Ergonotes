@@ -523,6 +523,26 @@ function AiSettings() {
             {THINKING_LEVELS.map(l => <option key={l} value={l}>{THINK_NAME[l]}</option>)}
           </select>
           <span className="hint">Chat and suggestions think independently, even with the same model. Off is best for suggestions; models that cannot think ignore this.</span></div></div>
+      <div className="field"><label htmlFor="ai-speech-conn">Speech-to-text</label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <select id="ai-speech-conn" className="input" style={{ flex: '1 1 200px', width: 'auto' }} aria-label="Speech-to-text server"
+            value={ai.speechModel.connection}
+            onChange={e => void save({ speechModel: e.target.value ? { connection: e.target.value, model: '' } : null })}>
+            <option value="">Off</option>
+            {ai.connections.filter(c => c.type === 'custom').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          {ai.speechModel.connection && (
+            <input className="input" style={{ flex: '1 1 160px', width: 'auto' }} aria-label="Speech-to-text model" placeholder="whisper-1" defaultValue={ai.speechModel.model}
+              key={ai.speechModel.connection + ai.speechModel.model}
+              onBlur={e => { if (e.target.value.trim() !== ai.speechModel.model) void save({ speechModel: { connection: ai.speechModel.connection, model: e.target.value } }); }} />
+          )}
+        </div>
+        <span className="hint">
+          {ai.connections.some(c => c.type === 'custom')
+            ? 'Turns recordings and audio files into text, and powers voice dictation. Pick a server with an OpenAI-style /audio/transcriptions endpoint (OpenAI, Groq, a local Whisper server). Notes marked private are never transcribed.'
+            : 'Add a Custom server connection above first: OpenAI, Groq or a local Whisper server. OpenRouter and Anthropic cannot transcribe audio.'}
+        </span>
+      </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
         <button className="btn" disabled={!ai.chatReady || busy} onClick={() => void test()}>{busy ? <Loader2 size={16} className="spin" /> : <Check size={16} />} Test the chat model</button>
         {msg && <span role="status" className={msg.ok ? undefined : 'error-text'}>{msg.text}</span>}

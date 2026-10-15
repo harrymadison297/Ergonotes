@@ -13,17 +13,19 @@ Sizes and styling for the parts we do have are in `docs/brand-guidelines.md`.
 ## Not built (each is its own issue when picked up)
 
 ### Create menu (the "…" circle under New note)
-- Meeting recording (record, transcript, summary, speakers)
+- Meeting recording, Event, Voice note, File and Image as entries here (all exist inside a note: Insert menu and the toolbar; ADR 0009)
 - AI Prompts
-- Event (calendar event, as opposed to a dated task)
 - Space (a second workspace)
-- File and Image as creation entries (today they are inserted from inside a note)
+- Meeting recording: speaker names (the transcript has no speakers)
 
 ### Note editor
 - Font family and font size pickers, text colour, highlight colour
 - Underline, text alignment, indent / outdent, a "More" overflow for the rest
 - AI Edit on a selection (select text, then Rewrite / Shorten / Fix grammar). The right-hand assistant panel exists (ADR 0008); sending a selection to it is the next step
-- Voice note and meeting recording buttons in the toolbar
+- Insert menu items that need a service of ours or an account: **Mention an entity**, **Mention a person** (there is no
+  directory of people or entities in a personal vault) and **Google Drive** (an OAuth flow and a server of ours, ADR 0004)
+- Voice: recording on **Android** needs the RECORD_AUDIO permission wired into the WebView (not done, not tested); on the
+  web it works on https and localhost only
 - Reminder and "Add to…" actions in the note footer (task reminders exist inside the text)
 - Share button: share a note by link or with collaborators (needs accounts, so a product decision)
 

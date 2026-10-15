@@ -5,6 +5,7 @@ import { Vault } from '../src/vault.ts';
 import type { StoreConfig } from '../src/api.ts';
 import {
   DEFAULT_MODELS, PROVIDER_LABEL, ThinkSplitter, apiBase, applyAiPatch, buildTools, listModels, normalizeAiConfig, resolveTarget, toSettings, chatSystemPrompt, cleanSuggestion, completeText, defaultAiConfig, runAgent, sectionRange, streamChat, suggestionRequest,
+  transcribeAudio, speechTarget,
   type AiConfig, type AiEvent, type AiProvider, type ThinkingLevel, type AiMessage, type AiRequest, type AiTransport, type NoteIO,
 } from '../src/index.ts';
 
@@ -683,5 +684,57 @@ describe('model list', () => {
     const list = await listModels(cfg({ provider: 'anthropic' }).connections[0], { fetchImpl });
     expect(list).toEqual([{ id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' }]);
     expect(seen!.get('x-api-key')).toBe('sk-ant-test');
+  });
+});
+
+describe('speech-to-text', () => {
+  const withSpeech = (over: Partial<AiConfig> = {}): AiConfig => ({
+    ...defaultAiConfig(),
+    connections: [
+      { id: 'or', name: 'OpenRouter', type: 'openrouter', key: 'sk-or', url: '' },
+      { id: 'w', name: 'Whisper', type: 'custom', key: 'sk-w', url: 'http://localhost:8000' },
+    ],
+    speechModel: { connection: 'w', model: 'whisper-1' },
+    ...over,
+  });
+
+  it('is only available on a custom server that is ready', () => {
+    expect(speechTarget(withSpeech())).toMatchObject({ model: 'whisper-1' });
+    expect(speechTarget(withSpeech({ speechModel: { connection: 'or', model: 'x' } }))).toBeNull();
+    expect(speechTarget(defaultAiConfig())).toBeNull();
+    expect(toSettings(withSpeech()).speechReady).toBe(true);
+    expect(toSettings(defaultAiConfig()).speechReady).toBe(false);
+  });
+
+  it('is set and cleared through the settings patch, and refuses providers that cannot transcribe', () => {
+    const c = withSpeech({ speechModel: { connection: '', model: '' } });
+    expect(applyAiPatch(c, { speechModel: { connection: 'w', model: '' } }).speechModel).toEqual({ connection: 'w', model: 'whisper-1' });
+    expect(() => applyAiPatch(c, { speechModel: { connection: 'or', model: 'x' } })).toThrow(/custom server/);
+    const on = applyAiPatch(c, { speechModel: { connection: 'w', model: 'large-v3' } });
+    expect(applyAiPatch(on, { speechModel: null }).speechModel).toEqual({ connection: '', model: '' });
+    expect(applyAiPatch(on, { removeConnection: 'w' }).speechModel).toEqual({ connection: '', model: '' });
+    expect(normalizeAiConfig(JSON.parse(JSON.stringify(on))).speechModel).toEqual({ connection: 'w', model: 'large-v3' });
+  });
+
+  it('posts the recording as multipart form data with the key and model, and returns the text', async () => {
+    let seen: { url: string; auth: string | null; model: unknown; name: string; size: number; type: string } | null = null;
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      const f = init.body as FormData;
+      const file = f.get('file') as File;
+      seen = { url, auth: new Headers(init.headers).get('authorization'), model: f.get('model'), name: file.name, size: file.size, type: file.type };
+      return new Response(JSON.stringify({ text: '  Hello there.  ' }), { headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+    const text = await transcribeAudio(withSpeech(), { name: 'clip.webm', mime: 'audio/webm', data: btoa('0123456789') }, { fetchImpl });
+    expect(text).toBe('Hello there.');
+    expect(seen).toEqual({ url: 'http://localhost:8000/v1/audio/transcriptions', auth: 'Bearer sk-w', model: 'whisper-1', name: 'clip.webm', size: 10, type: 'audio/webm' });
+  });
+
+  it('says what is wrong: nothing set up, a server error, or an answer that is not a transcript', async () => {
+    const file = { name: 'a.webm', mime: 'audio/webm', data: btoa('x') };
+    await expect(transcribeAudio(defaultAiConfig(), file)).rejects.toThrow(/not set up/);
+    const bad = (async () => new Response(JSON.stringify({ error: { message: 'Model not found' } }), { status: 404 })) as unknown as typeof fetch;
+    await expect(transcribeAudio(withSpeech(), file, { fetchImpl: bad })).rejects.toThrow(/Model not found/);
+    const odd = (async () => new Response('plain', { status: 200 })) as unknown as typeof fetch;
+    await expect(transcribeAudio(withSpeech(), file, { fetchImpl: odd })).rejects.toThrow(/not with a transcript/);
   });
 });

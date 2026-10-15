@@ -2,7 +2,9 @@
 
 Offline-first personal notes that sync between your devices through storage you own, with no always-on server.
 PARA folders + Inbox + Zettelkasten links, Evernote-style editor, tasks and calendar, Excalidraw drawings,
-Markdown/HTML/PDF export, and an MCP endpoint for AI agents.
+Markdown/HTML/PDF export, and an MCP endpoint for AI agents. The Insert menu puts toggles, a contents box, page breaks,
+dates, events, inline tags, formulas, Mermaid diagrams, voice notes and meeting recordings into a note, and every one of
+them is stored as plain Markdown (docs/adr/0009).
 
 | | |
 |---|---|

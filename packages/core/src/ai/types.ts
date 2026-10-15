@@ -27,6 +27,8 @@ export interface AiConfig {
   connections: AiConnection[];
   chatModel: ModelRef;
   suggestModel: ModelRef;
+  /** speech-to-text (voice dictation, recordings, audio files): an OpenAI-style `/audio/transcriptions` model of a custom server */
+  speechModel: ModelRef;
   /** thinking for the chat and for suggestions are separate: one model, two jobs */
   chatThinking: ThinkingLevel;
   suggestThinking: ThinkingLevel;
@@ -60,6 +62,9 @@ export interface AiSettings {
   chatReady: boolean;
   /** the connection of the suggestion model is ready */
   suggestReady: boolean;
+  speechModel: ModelRef;
+  /** speech-to-text can be used */
+  speechReady: boolean;
   chatThinking: ThinkingLevel;
   suggestThinking: ThinkingLevel;
   wholeVault: boolean;
@@ -75,6 +80,8 @@ export interface AiSettingsPatch {
   /** an empty `model` picks the connection's default */
   chatModel?: ModelRef;
   suggestModel?: ModelRef;
+  /** `null` turns speech-to-text off; an empty `model` picks `whisper-1` */
+  speechModel?: ModelRef | null;
   chatThinking?: ThinkingLevel;
   suggestThinking?: ThinkingLevel;
   wholeVault?: boolean;
@@ -89,11 +96,13 @@ export const DEFAULT_MODELS: Record<AiProvider, { chat: string; suggest: string 
   custom: { chat: 'llama3.2', suggest: 'llama3.2' },
 };
 
+export const DEFAULT_SPEECH_MODEL = 'whisper-1';
+
 export const PROVIDER_LABEL: Record<AiProvider, string> = { openrouter: 'OpenRouter', anthropic: 'Anthropic', custom: 'Custom server' };
 
 export function defaultAiConfig(): AiConfig {
   return {
-    connections: [], chatModel: { connection: '', model: '' }, suggestModel: { connection: '', model: '' },
+    connections: [], chatModel: { connection: '', model: '' }, suggestModel: { connection: '', model: '' }, speechModel: { connection: '', model: '' },
     chatThinking: 'auto', suggestThinking: 'off', wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400,
   };
 }
@@ -105,6 +114,12 @@ export function resolveTarget(cfg: AiConfig, job: 'chat' | 'suggest'): { conn: A
   const ref = job === 'chat' ? cfg.chatModel : cfg.suggestModel;
   const conn = cfg.connections.find(c => c.id === ref.connection);
   return conn && ref.model ? { conn, model: ref.model } : null;
+}
+
+/** The server and model that turn speech into text, when one is set up and reachable. */
+export function speechTarget(cfg: AiConfig): { conn: AiConnection; model: string } | null {
+  const conn = cfg.connections.find(c => c.id === cfg.speechModel.connection);
+  return conn && conn.type === 'custom' && isReady(conn) && cfg.speechModel.model ? { conn, model: cfg.speechModel.model } : null;
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -148,6 +163,9 @@ export function normalizeAiConfig(raw: unknown): AiConfig {
     connections,
     chatModel: ref(j.chatModel, j.chatModel, 'chat'),
     suggestModel: ref(j.suggestModel, j.suggestModel, 'suggest'),
+    speechModel: j.speechModel && typeof j.speechModel === 'object' && str((j.speechModel as Record<string, unknown>).connection)
+      ? { connection: str((j.speechModel as Record<string, unknown>).connection), model: str((j.speechModel as Record<string, unknown>).model) || DEFAULT_SPEECH_MODEL }
+      : { connection: '', model: '' },
     chatThinking: level(j.chatThinking, base.chatThinking),
     suggestThinking: level(j.suggestThinking, base.suggestThinking),
     wholeVault: j.wholeVault === true,
@@ -218,6 +236,7 @@ export function toSettings(c: AiConfig): AiSettings {
     chatModel: c.chatModel, suggestModel: c.suggestModel,
     chatReady: !!resolveTarget(c, 'chat') && isReady(c.connections.find(x => x.id === c.chatModel.connection)),
     suggestReady: !!resolveTarget(c, 'suggest') && isReady(c.connections.find(x => x.id === c.suggestModel.connection)),
+    speechModel: c.speechModel, speechReady: speechTarget(c) !== null,
     chatThinking: c.chatThinking, suggestThinking: c.suggestThinking, wholeVault: c.wholeVault, autoApply: c.autoApply,
     suggest: c.suggest, suggestDelay: c.suggestDelay,
   };
@@ -256,6 +275,14 @@ export function applyAiPatch(c: AiConfig, p: AiSettingsPatch): AiConfig {
       next.connections.some(x => x.id === r.connection) ? r : first ? { connection: first.id, model: DEFAULT_MODELS[first.type][job] } : { connection: '', model: '' };
     next.chatModel = fix(next.chatModel, 'chat');
     next.suggestModel = fix(next.suggestModel, 'suggest');
+    if (next.speechModel.connection === p.removeConnection) next.speechModel = { connection: '', model: '' };
+  }
+  if (p.speechModel === null) next.speechModel = { connection: '', model: '' };
+  else if (p.speechModel) {
+    const conn = next.connections.find(x => x.id === p.speechModel!.connection);
+    if (!conn) throw new Error('That connection no longer exists.');
+    if (conn.type !== 'custom') throw new Error('Speech-to-text needs a custom server (OpenAI, Groq, a local Whisper server…): OpenRouter and Anthropic have no transcription endpoint.');
+    next.speechModel = { connection: conn.id, model: p.speechModel.model.trim() || DEFAULT_SPEECH_MODEL };
   }
   const pick = (r: ModelRef | undefined, job: 'chat' | 'suggest'): ModelRef | null => {
     if (!r) return null;

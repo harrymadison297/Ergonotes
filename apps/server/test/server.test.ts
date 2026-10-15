@@ -241,6 +241,30 @@ describe('AI proxy', () => {
     } finally { await new Promise<void>(r => ollama.close(() => r())); }
   });
 
+  it('transcribes a recording through the configured server, for a signed-in browser only', async () => {
+    let seen = '';
+    const aiFetch = (async (u: string, init: RequestInit) => {
+      seen = `${u} ${new Headers(init.headers).get('authorization')} ${String((init.body as FormData).get('model'))}`;
+      return new Response(JSON.stringify({ text: 'Buy milk' }), { headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+    await withServer({ aiFetch }, async (_s, u) => {
+      const body = JSON.stringify({ name: 'v.webm', mime: 'audio/webm', data: Buffer.from('audio').toString('base64') });
+      expect((await postJson(u, '/api/ai/transcribe', body)).status).toBe(401);
+      const created = await postJson(u, '/api/rpc/createVault', JSON.stringify([PASSWORD]));
+      const cookie = created.headers.get('set-cookie')!.split(';')[0];
+      const none = await postJson(u, '/api/ai/transcribe', body, { cookie });
+      expect(none.status).toBe(400);
+      expect((await none.json()).error).toMatch(/not set up/);
+      await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ connection: { id: 'w', type: 'custom', url: 'http://stt.local:9000', key: 'k' }, speechModel: { connection: 'w', model: '' } }]), { cookie });
+      const r = await postJson(u, '/api/ai/transcribe', body, { cookie });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual({ text: 'Buy milk' });
+      expect(seen).toBe('http://stt.local:9000/v1/audio/transcriptions Bearer k whisper-1');
+      expect((await postJson(u, '/api/ai/transcribe', '{}', { cookie })).status).toBe(400);
+      expect((await postJson(u, '/api/ai/transcribe', body, { cookie, origin: 'https://evil.example' })).status).toBe(403);
+    });
+  });
+
   it('reports a provider failure as an error event instead of hanging', async () => {
     const aiFetch = (async () => new Response(JSON.stringify({ error: { message: 'No credits' } }), { status: 402 })) as unknown as typeof fetch;
     await withServer({ aiFetch }, async (_s, u) => {

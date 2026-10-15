@@ -30,12 +30,24 @@ _Avoid_: Bot, copilot, agent (an agent is something outside the app that uses th
 The grey next-words text shown after the cursor while typing; accepted with Tab, dismissed with Esc.
 _Avoid_: Autocomplete, ghost text
 
+**Insert menu**:
+The searchable list of every Block and inline element that can be put into a Note, also reached by typing "/". Items can be pinned to its top.
+_Avoid_: Slash menu (that is only the way to open it from the keyboard)
+
+**Event**:
+A dated entry written inside a Note (`@event(...)`), with or without a time; it appears in the Calendar. Not the same as a Task, which can be done.
+_Avoid_: Appointment, meeting
+
+**Voice note**:
+A recording made in the app and kept in the Note as an audio clip. It can be written out as text when speech-to-text is set up.
+_Avoid_: Audio file (that is something attached from outside), memo
+
 **Folder**:
 An Item that holds other Items and forms the tree a person navigates. A Folder is an ordinary Item, including the ones created by default.
 _Avoid_: Directory, notebook, category
 
 **Block**:
-One unit of content inside a Note (paragraph, heading, checklist, table, drawing, callout...).
+One unit of content inside a Note (paragraph, heading, checklist, table, drawing, callout, toggle, formula, diagram, audio clip...).
 _Avoid_: Element, node, widget
 
 **Ergonote block**:

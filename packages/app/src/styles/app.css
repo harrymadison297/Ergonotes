@@ -898,3 +898,12 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
   .insert-menu { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-width: none; max-height: 78dvh; border-radius: var(--radius-dialog) var(--radius-dialog) 0 0; padding-bottom: env(safe-area-inset-bottom); animation: sheet-in var(--t-slow) var(--ease); }
   .toggle-body { padding-left: 12px; }
 }
+
+/* recorder */
+.recorder { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 8px 0; text-align: center; }
+.rec-time { font-size: 40px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-strong); }
+.recorder.recording .rec-time { color: var(--danger); }
+.rec-meter { width: min(280px, 80%); height: 8px; border-radius: 4px; background: var(--bg-active); overflow: hidden; }
+.rec-meter i { display: block; height: 100%; width: 100%; background: var(--green-mark); transform-origin: left; transition: transform 90ms linear; border-radius: 4px; }
+.rec-opt { display: inline-flex; align-items: center; gap: 8px; }
+.rec-opt.off { color: var(--text-3); }

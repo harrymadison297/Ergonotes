@@ -26,6 +26,8 @@ for i in $(seq 1 40); do curl -sf http://127.0.0.1:19000/minio/health/live >/dev
 run "1 unit+integration tests (core, server, MCP)" tools/n npx vitest run
 run "2 browser e2e on the Linux VM server" $PW smoke.mjs http://127.0.0.1:18080 /repo/temp/out/shots-verify-linux
 run "2b AI assistant, suggestions, private notes (scripted provider)" $PW ai.mjs http://127.0.0.1:18080 /repo/temp/out/shots-verify-ai
+run "2c Insert menu: every element stored as Markdown and read back" $PW insert.mjs http://127.0.0.1:18080 /repo/temp/out/shots-verify-insert
+run "2d voice notes, meetings, dictation, transcription (fake microphone, scripted server)" $PW audio.mjs http://127.0.0.1:18080 /repo/temp/out/shots-verify-audio
 run "3 two devices: server peer + offline-first device via MinIO" $PW sync.mjs http://127.0.0.1:18080 http://127.0.0.1:18090 http://10.0.2.2:19000 http://127.0.0.1:19000 /repo/temp/out/shots-verify-sync
 
 echo; echo "### Android emulator: fresh install of the debug APK"

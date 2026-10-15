@@ -33,4 +33,9 @@ Create the token in Ergonotes under **Settings → AI & agents**. One token per 
   reads, and writes to it are refused as "Note not found". Do not try to work around that.
 - Notes may contain personal information; do not copy them elsewhere unless asked.
 - Drawings are stored as \`\`\`\` \`\`\`ergonote-excalidraw \`\`\`\` blocks. Leave them untouched; do not try to edit their JSON.
+- Other elements have a plain form you may read and write: a toggle is \`:::toggle Title\` … \`:::\` (blocks inside), a
+  contents box is a line \`[TOC]\`, a page break is a line \`\\newpage\`, a date is \`@date(2026-10-20)\`, an event is
+  \`Team sync @event(2026-10-20T09:00-10:30)\` (or \`@event(2026-10-20)\`), a tick box is \`☐\` / \`☑\`, a formula is \`$x^2$\` or a
+  \`$$\` … \`$$\` block, a diagram is a \`\`\`\` \`\`\`mermaid \`\`\`\` fence. A voice note is \`[Voice note](ergo-file:<id> "audio")\`:
+  leave those links as they are.
 `;

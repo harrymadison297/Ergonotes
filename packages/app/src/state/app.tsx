@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { AiSettings, AiTransport, ModelInfo, ItemSummary, Settings, TaskEntry, VaultApi, VaultStatus } from '@ergonotes/core';
+import type { AiSettings, AiTransport, AudioFile, ModelInfo, ItemSummary, Settings, TaskEntry, VaultApi, VaultStatus } from '@ergonotes/core';
 import type { Backend } from '../backend';
 import { debounce, isoDay } from './util';
 import { useRoute, type Route } from './router';
@@ -21,6 +21,7 @@ export interface AppCtx {
   ai: AiSettings;
   aiTransport: AiTransport;
   aiModels: (connection: string) => Promise<ModelInfo[]>;
+  aiTranscribe: (file: AudioFile, signal?: AbortSignal) => Promise<string>;
   route: Route;
   go: (r: Route, replace?: boolean) => void;
   refresh: () => Promise<void>;
@@ -76,7 +77,7 @@ function useMedia(q: string): boolean {
 }
 
 const EMPTY_SETTINGS: Settings = { captureFolder: null, dailyFolder: null, theme: 'system' };
-const EMPTY_AI: AiSettings = { connections: [], chatModel: { connection: '', model: '' }, suggestModel: { connection: '', model: '' }, chatReady: false, suggestReady: false, chatThinking: 'auto', suggestThinking: 'off', wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400 };
+const EMPTY_AI: AiSettings = { connections: [], chatModel: { connection: '', model: '' }, suggestModel: { connection: '', model: '' }, speechModel: { connection: '', model: '' }, speechReady: false, chatReady: false, suggestReady: false, chatThinking: 'auto', suggestThinking: 'off', wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400 };
 
 export function AppProvider({ backend, status: initial, children }: { backend: Backend; status: VaultStatus; children: ReactNode }) {
   const api = backend.api;
@@ -163,6 +164,6 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
     go(where === 'calendar' ? { name: 'calendar', note: d.id } : { name: 'notes', note: d.id, folder: d.parent ?? undefined });
   }, [api, run, refresh, go]);
 
-  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, ai, aiTransport: backend.aiTransport, aiModels: backend.aiModels, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
+  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, ai, aiTransport: backend.aiTransport, aiModels: backend.aiModels, aiTranscribe: backend.aiTranscribe, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

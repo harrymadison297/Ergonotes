@@ -1,4 +1,4 @@
-import { listModels, streamChat, Vault, VAULT_METHODS, type AiEvent, type AiTransport, type ModelInfo, type VaultApi, type VaultEvent, type VaultStatus } from '@ergonotes/core';
+import { listModels, streamChat, transcribeAudio, Vault, VAULT_METHODS, type AiEvent, type AiTransport, type AudioFile, type ModelInfo, type VaultApi, type VaultEvent, type VaultStatus } from '@ergonotes/core';
 import { IdbPersist } from '@ergonotes/core/browser';
 
 export interface Backend {
@@ -10,6 +10,8 @@ export interface Backend {
   aiTransport: AiTransport;
   /** the model names the provider offers */
   aiModels(connection: string): Promise<ModelInfo[]>;
+  /** speech to text with the configured transcription model */
+  aiTranscribe(file: AudioFile, signal?: AbortSignal): Promise<string>;
   /** called once the vault is ready (starts sync timers in local mode) */
   start(): void;
 }
@@ -26,6 +28,13 @@ class HttpBackend implements Backend {
     const b = await r.json().catch(() => null) as { models?: ModelInfo[]; error?: string } | null;
     if (!r.ok) throw new Error(b?.error ?? `Request failed (${r.status})`);
     return b?.models ?? [];
+  };
+
+  aiTranscribe = async (file: AudioFile, signal?: AbortSignal): Promise<string> => {
+    const r = await fetch('./api/ai/transcribe', { method: 'POST', credentials: 'same-origin', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify(file) });
+    const b = await r.json().catch(() => null) as { text?: string; error?: string } | null;
+    if (!r.ok) throw new Error(b?.error ?? (r.status === 413 ? 'That recording is too large.' : `Request failed (${r.status})`));
+    return b?.text ?? '';
   };
 
   /** The server calls the provider with the key it holds and streams the events back as one JSON object per line. */
@@ -99,10 +108,12 @@ class LocalBackend implements Backend {
   private started = false;
   aiTransport: AiTransport;
   aiModels: (connection: string) => Promise<ModelInfo[]>;
+  aiTranscribe: (file: AudioFile, signal?: AbortSignal) => Promise<string>;
 
   constructor(vault: Vault, fetchImpl?: typeof fetch) {
     this.vault = vault;
     this.aiTransport = (req, signal) => streamChat(vault.aiConfig(), req, { fetchImpl, signal });
+    this.aiTranscribe = (file, signal) => transcribeAudio(vault.aiConfig(), file, { fetchImpl, signal });
     this.aiModels = async connection => {
       const conn = vault.aiConfig().connections.find(c => c.id === connection);
       if (!conn) throw new Error('That connection does not exist.');
