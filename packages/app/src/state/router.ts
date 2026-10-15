@@ -4,7 +4,7 @@ export type Route =
   | { name: 'home' }
   | { name: 'notes'; folder?: string; tag?: string; note?: string; q?: string }
   | { name: 'tasks'; note?: string }
-  | { name: 'calendar'; note?: string }
+  | { name: 'calendar'; note?: string; day?: string }
   | { name: 'files'; file?: string }
   | { name: 'folders' }
   | { name: 'trash'; note?: string }
@@ -18,7 +18,7 @@ export function parseHash(hash: string): Route {
   switch (seg[0]) {
     case 'notes': return { name: 'notes', folder: p.get('folder') ?? undefined, tag: p.get('tag') ?? undefined, note: seg[1], q: p.get('q') ?? undefined };
     case 'tasks': return { name: 'tasks', note: seg[1] };
-    case 'calendar': return { name: 'calendar', note: seg[1] };
+    case 'calendar': return { name: 'calendar', note: seg[1], day: p.get('day') ?? undefined };
     case 'files': return { name: 'files', file: seg[1] };
     case 'folders': return { name: 'folders' };
     case 'trash': return { name: 'trash', note: seg[1] };
@@ -38,7 +38,9 @@ export function href(r: Route): string {
       if (r.q) q.set('q', r.q);
       return `#/notes${r.note ? '/' + r.note : ''}${q.size ? '?' + q.toString() : ''}`;
     case 'tasks': return `#/tasks${r.note ? '/' + r.note : ''}`;
-    case 'calendar': return `#/calendar${r.note ? '/' + r.note : ''}`;
+    case 'calendar':
+      if (r.day) q.set('day', r.day);
+      return `#/calendar${r.note ? '/' + r.note : ''}${q.size ? '?' + q.toString() : ''}`;
     case 'files': return `#/files${r.file ? '/' + r.file : ''}`;
     case 'folders': return '#/folders';
     case 'trash': return `#/trash${r.note ? '/' + r.note : ''}`;

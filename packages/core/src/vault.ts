@@ -3,7 +3,7 @@
 import MarkdownIt from 'markdown-it';
 import MiniSearch from 'minisearch';
 import type {
-  CalendarData, ChatRecord, ChatSummary, ConflictChoice, ConflictDetail, ExportResult, FileBlob, FileInfo, HeadInfo, ImportFile, ItemSummary, NoteDoc, SearchHit,
+  CalendarData, ChatRecord, ChatSummary, ConflictChoice, ConflictDetail, EventEntry, ExportResult, FileBlob, FileInfo, HeadInfo, ImportFile, ItemSummary, NoteDoc, SearchHit,
   Settings, StoreConfig, SyncReport, TaskEntry, VaultApi, VaultState, VaultStatus, VersionInfo,
 } from './api.ts';
 import {
@@ -11,8 +11,8 @@ import {
   type VaultFile,
 } from './crypto.ts';
 import {
-  extractLinkIds, firstImage, joinDoc, parseTasks, plainSnippet, setTaskDone, splitDoc, WIKILINK_RE,
-  type Frontmatter, type Task,
+  extractLinkIds, firstImage, joinDoc, parseEvents, parseTasks, plainSnippet, setTaskDone, splitDoc, WIKILINK_RE,
+  type Frontmatter, type NoteEvent, type Task,
 } from './markdown.ts';
 import { applyAiPatch, defaultAiConfig, normalizeAiConfig, toSettings, type AiConfig, type AiSettings, type AiSettingsPatch } from './ai/types.ts';
 import { baseText, unionText } from './merge.ts';
@@ -55,6 +55,7 @@ interface View {
   snippet: string;
   thumb: string | null;
   tasks: Task[];
+  events: NoteEvent[];
   links: string[];
 }
 
@@ -363,6 +364,7 @@ export class Vault implements VaultApi {
         snippet: type === 'note' ? plainSnippet(body) : '',
         thumb: firstImage(body) ?? null,
         tasks: type === 'note' ? parseTasks(body) : [],
+        events: type === 'note' ? parseEvents(body) : [],
         links: extractLinkIds(body),
       };
       this.views.set(id, view);
@@ -718,7 +720,13 @@ export class Vault implements VaultApi {
       if (v.daily && inRange(v.daily)) daily.push(this.summary(v, c));
       else if (inRange(localDay(v.created))) notes.push(this.summary(v, c));
     }
-    return { tasks, notes, daily };
+    const events: EventEntry[] = [];
+    for (const v of this.views.values()) {
+      if (v.type !== 'note' || this.inTrash(v) || v.template) continue;
+      for (const e of v.events) if (inRange(e.date)) events.push({ ...e, noteId: v.id, noteTitle: v.title, text: e.text || v.title });
+    }
+    events.sort((a, b) => a.date.localeCompare(b.date) || (a.start ?? '').localeCompare(b.start ?? ''));
+    return { tasks, notes, daily, events };
   }
 
   // ---------- templates & daily notes ----------
@@ -1215,9 +1223,9 @@ export class Vault implements VaultApi {
     const v = this.views.get(id);
     if (!v) throw new Error('Note not found');
     const safe = v.title.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'note';
-    const inlineFiles = (b: string) => b.replace(/\(ergo-file:([0-9a-f-]{36})\)/g, (m, fid: string) => {
+    const inlineFiles = (b: string) => b.replace(/\(ergo-file:([0-9a-f-]{36})((?:\s+"[^"]*")?)\)/g, (m, fid: string, title: string) => {
       const f = this.files.get(fid);
-      return f ? `(data:${f.mime};base64,${f.body.replace(/\s+/g, '')})` : m;
+      return f ? `(data:${f.mime};base64,${f.body.replace(/\s+/g, '')}${title ? ' ' + title.trim() : ''})` : m;
     });
     const plainBody = inlineFiles(v.body).replace(WIKILINK_RE, (_m, _id, t: string) => `[[${t}]]`);
     if (format === 'md') {
@@ -1225,17 +1233,35 @@ export class Vault implements VaultApi {
       return { filename: `${safe}.md`, mime: 'text/markdown', content: joinDoc(fm, plainBody) };
     }
     const md = new MarkdownIt({ html: false, linkify: true, breaks: false });
+    const audio: string[] = [];
+    const toc = v.body.split('\n').filter(l => /^#{1,3} \S/.test(l)).map(l => {
+      const lv = /^#+/.exec(l)![0].length;
+      return `${'  '.repeat(lv - 1)}- ${l.replace(/^#+\s+/, '')}`;
+    }).join('\n');
     const prepared = plainBody
       .replace(/```ergonote-excalidraw[\s\S]*?```/g, '*(drawing – open in Ergonotes)*')
+      .replace(/\[([^\]]*)\]\((data:audio\/[^)\s]+)\s+"audio"\)/g, (_m, label: string, uri: string) => { audio.push(uri); return `AUDIOMARK${audio.length - 1}:${label}`; })
+      .replace(/^\[TOC\][ \t]*$/gm, () => '\n' + (toc || ' ') + '\n')
+      .replace(/^\\newpage[ \t]*$/gm, 'PAGEBREAKMARK')
+      .replace(/^:::toggle[ \t]*(.*)$/gm, (_m, t: string) => `TOGGLEOPEN:${t || 'Details'}`)
+      .replace(/^:::[ \t]*$/gm, 'TOGGLECLOSE')
+      .replace(/^\$\$[ \t]*$/gm, '```\n')
       .replace(/^(\s*)[-*+] \[( |x|X)\] /gm, (_m, sp: string, c: string) => `${sp}- ${c === ' ' ? '☐' : '☑'} `)
       .replace(/\s*@(due|remind)\(([^)]+)\)/g, ' _($1 $2)_')
+      .replace(/\s*@event\(([^)]+)\)/g, ' _(event $1)_')
+      .replace(/@date\((\d{4}-\d{2}-\d{2})\)/g, '$1')
       .replace(/\s*@flag\b/g, ' ⚑');
+    const body = md.render(prepared)
+      .replace(/<p>PAGEBREAKMARK<\/p>/g, '<div style="break-after:page"></div><hr>')
+      .replace(/<p>TOGGLEOPEN:(.*?)<\/p>/g, '<details open><summary>$1</summary>')
+      .replace(/<p>TOGGLECLOSE<\/p>/g, '</details>')
+      .replace(/AUDIOMARK(\d+):([^<]*)/g, (_m, i: string, label: string) => `<audio controls src="${audio[Number(i)]}"></audio> ${label}`);
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${md.utils.escapeHtml(v.title)}</title>
 <style>body{font:16px/1.6 -apple-system,Segoe UI,Inter,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;color:#2d2d2d}
 h1{font-size:2em}code,pre{background:#f4f4f6;border-radius:4px}pre{padding:12px;overflow:auto}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:6px 10px}
-blockquote{border-left:3px solid #2dbe60;margin-left:0;padding-left:16px;color:#555}img{max-width:100%}</style></head>
+blockquote{border-left:3px solid #2dbe60;margin-left:0;padding-left:16px;color:#555}img{max-width:100%}details{border:1px solid #ddd;border-radius:6px;padding:6px 12px;margin:8px 0}summary{cursor:pointer;font-weight:600}</style></head>
 <body><h1>${md.utils.escapeHtml(v.title)}</h1>${v.tags.length ? `<p>${v.tags.map(t => `<code>${md.utils.escapeHtml(t)}</code>`).join(' ')}</p>` : ''}
-${md.render(prepared)}</body></html>`;
+${body}</body></html>`;
     return { filename: `${safe}.html`, mime: 'text/html', content: html };
   }
 }

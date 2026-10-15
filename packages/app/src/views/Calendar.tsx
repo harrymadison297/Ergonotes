@@ -10,9 +10,18 @@ import { NoteEditor } from '../components/NoteEditor';
 
 export function CalendarView({ noteId }: { noteId?: string }) {
   const app = useApp();
-  const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
-  const [sel, setSel] = useState(isoDay());
-  const [data, setData] = useState<CalendarData>({ tasks: [], notes: [], daily: [] });
+  const dayParam = app.route.name === 'calendar' ? app.route.day : undefined;
+  const startDay = dayParam && /^\d{4}-\d{2}-\d{2}$/.test(dayParam) ? dayParam : isoDay();
+  const [cursor, setCursor] = useState(() => { const d = new Date(`${startDay}T12:00`); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [sel, setSel] = useState(startDay);
+  // a date mention in a note sends us here: show that day
+  useEffect(() => {
+    if (!dayParam || !/^\d{4}-\d{2}-\d{2}$/.test(dayParam)) return;
+    const d = new Date(`${dayParam}T12:00`);
+    setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
+    setSel(dayParam);
+  }, [dayParam]);
+  const [data, setData] = useState<CalendarData>({ tasks: [], events: [], notes: [], daily: [] });
   const gridStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1 - cursor.getDay());
   const cells = Array.from({ length: 42 }, (_, i) => new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i));
   const from = `${isoDay(cells[0])}T00:00`, to = `${isoDay(cells[41])}T23:59`;
@@ -24,8 +33,10 @@ export function CalendarView({ noteId }: { noteId?: string }) {
   }, [app.api, from, to, app.items, app.tasks]);
 
   const byDay = useMemo(() => {
-    const m = new Map<string, { kind: 'task' | 'note' | 'daily'; label: string; id: string }[]>();
-    const add = (day: string, e: { kind: 'task' | 'note' | 'daily'; label: string; id: string }) => (m.get(day) ?? m.set(day, []).get(day)!).push(e);
+    type Entry = { kind: 'task' | 'event' | 'note' | 'daily'; label: string; id: string; when?: string };
+    const m = new Map<string, Entry[]>();
+    const add = (day: string, e: Entry) => (m.get(day) ?? m.set(day, []).get(day)!).push(e);
+    for (const e of data.events) add(e.date, { kind: 'event', label: e.text, id: e.noteId, when: e.start ? (e.end ? `${e.start}–${e.end}` : e.start) : 'All day' });
     for (const t of data.tasks) { const d = (t.due ?? t.remind ?? '').slice(0, 10); if (d) add(d, { kind: 'task', label: t.text, id: t.noteId }); }
     for (const n of data.notes) add(isoDay(new Date(n.created)), { kind: 'note', label: n.title, id: n.id });
     for (const n of data.daily) add(n.title.slice(0, 10), { kind: 'daily', label: n.title, id: n.id });
@@ -62,7 +73,7 @@ export function CalendarView({ noteId }: { noteId?: string }) {
       <button className="btn" onClick={() => void openDaily(sel)}><CalendarPlus size={15} /> Open daily note</button>
       <div style={{ marginTop: 14 }}>
         {selEvents.length === 0 && <p className="hint">Nothing scheduled.</p>}
-        {selEvents.map((e, i) => <a key={i} className="note-row" href={href({ name: 'calendar', note: e.id })} style={{ padding: '8px 4px' }}><span className="info"><span className="t">{e.label}</span><span className="when">{e.kind === 'task' ? 'Task due' : e.kind === 'daily' ? 'Daily note' : 'Created'}</span></span></a>)}
+        {selEvents.map((e, i) => <a key={i} className="note-row" href={href({ name: 'calendar', note: e.id })} style={{ padding: '8px 4px' }}><span className="info"><span className="t">{e.label}</span><span className="when">{e.kind === 'task' ? 'Task due' : e.kind === 'event' ? `Event · ${e.when}` : e.kind === 'daily' ? 'Daily note' : 'Created'}</span></span></a>)}
       </div>
     </aside>
   );

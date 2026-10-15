@@ -10,12 +10,16 @@ import TableRow from '@tiptap/extension-table-row';
 import { Markdown } from 'tiptap-markdown';
 import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
-  ChevronsLeft, ChevronsRight, EyeOff, Maximize2, Minimize2, Sparkles, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
+  ChevronsLeft, ChevronsRight, EyeOff, Maximize2, Minimize2, MoveHorizontal, AlignCenter, Sparkles, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
 } from 'lucide-react';
 import { mergeText, toB64, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, debounce, download, isoDay } from '../state/util';
-import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, Wikilink } from '../editor/extensions';
+import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, TagSuggest, TrailingParagraph, Wikilink } from '../editor/extensions';
+import { AudioClip, CodeWithDiagrams, Contents, DateMention, InlineCheckbox, MathBlock, MathInline, PageBreak, Toggle } from '../editor/blocks';
+import { INSERT_ITEMS, type InsertCtx } from '../editor/insertItems';
+import { InsertMenu } from './InsertMenu';
+import { DateDialog, EventDialog, LinkedNoteDialog } from './InsertDialogs';
 import { DrawingDialog } from './DrawingDialog';
 import { editorBridge } from '../state/editorBridge';
 import { suggestionRequest, cleanSuggestion, completeText } from '@ergonotes/core';
@@ -45,7 +49,12 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const fileInput = useRef<HTMLInputElement>(null);
   const exportMenu = useMenu();
   const moreMenu = useMenu();
-  const insertMenu = useMenu();
+  const [insertAt, setInsertAt] = useState<DOMRect | null>(null);
+  const [insertDialog, setInsertDialog] = useState<'event' | 'date' | 'linked' | null>(null);
+  const ctxRef = useRef<InsertCtx | null>(null);
+  const tagsRef = useRef<string[]>([]);
+  tagsRef.current = app.tags.map(t => t.tag);
+  const pickTagRef = useRef<(t: string) => void>(() => undefined);
   const styleMenu = useMenu();
   const [, force] = useState(0);
 
@@ -82,7 +91,10 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const editor = useEditor({
     extensions: [
       // list items hold a paragraph and nested lists only: tables and quotes inside a list item have no Markdown form
-      StarterKit.configure({ heading: { levels: [1, 2, 3] }, listItem: false, bulletList: false }),
+      StarterKit.configure({ heading: { levels: [1, 2, 3] }, listItem: false, bulletList: false, codeBlock: false }),
+      CodeWithDiagrams,
+      TrailingParagraph, Toggle, Contents, PageBreak, DateMention, InlineCheckbox, MathBlock, MathInline, AudioClip,
+      TagSuggest.configure({ tags: () => tagsRef.current, onPick: t => pickTagRef.current(t) }),
       MarkdownBulletList,
       ListItem.extend({ content: 'paragraph (bulletList | orderedList)*' }),
       Link.configure({ openOnClick: false, autolink: true, protocols: [{ scheme: 'ergo-file', optionalSlashes: true }], HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
@@ -110,10 +122,11 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       }),
       LinkSuggest.configure({ api }),
       SlashCommands.configure({
-        items: () => slashItems({
-          drawing: () => insertDrawing(),
-          image: () => fileInput.current?.click(),
-        }),
+        items: () => slashItems(() => INSERT_ITEMS.map(i => ({
+          id: i.id, label: i.label, hint: i.hint, keywords: i.keywords,
+          off: !!(ctxRef.current && i.unavailable?.(ctxRef.current)),
+          run: () => { if (ctxRef.current) i.run(ctxRef.current); },
+        }))),
       }),
       Markdown.configure({ html: false, tightLists: true, bulletListMarker: '-', linkify: true, breaks: false, transformPastedText: true }),
     ],
@@ -236,6 +249,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       const r = await app.run(api.addFile({ name: f.name, mime, data }));
       if (!r) continue;
       if (mime.startsWith('image/')) editor?.chain().focus().setImage({ src: `ergo-file:${r.id}`, alt: f.name }).run();
+      else if (mime.startsWith('audio/')) editor?.chain().focus().insertContent({ type: 'audioClip', attrs: { file: r.id, label: f.name } }).run();
       else editor?.chain().focus().insertContent({ type: 'text', text: f.name, marks: [{ type: 'link', attrs: { href: `ergo-file:${r.id}` } }] }).insertContent(' ').run();
     }
   };
@@ -264,11 +278,19 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     const onClick = (e: MouseEvent) => {
       const t = (e.target as HTMLElement).closest('[data-wikilink]');
       if (t) { e.preventDefault(); app.go({ name: 'notes', note: t.getAttribute('data-wikilink') ?? undefined }); return; }
+      const h = (e.target as HTMLElement).closest('.hashtag');
+      if (h) { e.preventDefault(); app.go({ name: 'notes', tag: h.getAttribute('data-tag') ?? undefined }); return; }
       const a = (e.target as HTMLElement).closest('a[href^="ergo-file:"]');
       if (a) { e.preventDefault(); app.setDialog({ kind: 'file', id: (a.getAttribute('href') ?? '').slice('ergo-file:'.length) }); }
     };
     dom.addEventListener('click', onClick);
     return () => dom.removeEventListener('click', onClick);
+  });
+
+  useEffect(() => {
+    const on = (e: Event) => app.go({ name: 'calendar', day: (e as CustomEvent<{ day: string }>).detail.day });
+    window.addEventListener('ergo-open-day', on);
+    return () => window.removeEventListener('ergo-open-day', on);
   });
 
   // lend the headings and the text to the right sidebar (contents tab, assistant tab)
@@ -333,6 +355,9 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     { label: doc.pinned ? 'Unpin' : 'Pin to sidebar', icon: doc.pinned ? <PinOff size={16} /> : <Pin size={16} />, onClick: async () => { await app.run(api.setPinned(id, !doc.pinned)); } },
     { label: 'Move to…', icon: <FolderIcon size={16} />, onClick: () => app.setDialog({ kind: 'move', id }) },
     { label: doc.private ? 'Allow AI to see this note' : 'Keep private from AI', icon: <EyeOff size={16} />, onClick: async () => { await app.run(api.setPrivate(id, !doc.private)); const d = await api.getNote(id); if (d) setDoc(x => x && ({ ...x, private: d.private })); await app.refresh(); } },
+    { label: 'Readable line length', icon: <AlignCenter size={16} />, checked: prefs.noteWidth === 'readable', onClick: () => setPrefs({ noteWidth: 'readable' }) },
+    { label: 'Full width', icon: <MoveHorizontal size={16} />, checked: prefs.noteWidth === 'full', onClick: () => setPrefs({ noteWidth: 'full' }) },
+    { sep: true },
     { label: doc.template ? 'Stop using as template' : 'Use as template', icon: <LayoutTemplate size={16} />, onClick: async () => { await app.run(api.setTemplate(id, !doc.template)); } },
     { label: 'Version history', icon: <HistoryIcon size={16} />, onClick: async () => { await flushNow(); app.setDialog({ kind: 'history', id }); } },
     { sep: true },
@@ -353,17 +378,20 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     if (d) setDoc(x => x && ({ ...x, tags: d.tags }));
   };
 
-  const insertEntries = (): MenuEntry[] => [
-    { label: 'Checklist', icon: <CheckSquare size={16} />, onClick: () => editor.chain().focus().toggleTaskList().run() },
-    { label: 'Table', icon: <Table2 size={16} />, onClick: () => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
-    { label: 'Drawing', icon: <Pencil size={16} />, onClick: insertDrawing },
-    { label: 'Image', icon: <ImageIcon size={16} />, onClick: () => { if (fileInput.current) { fileInput.current.accept = 'image/*'; fileInput.current.click(); } } },
-    { label: 'File (xlsx, csv, pptx, pdf…)', icon: <Paperclip size={16} />, onClick: () => { if (fileInput.current) { fileInput.current.accept = ''; fileInput.current.click(); } } },
-    { label: 'Link to a note', icon: <Link2 size={16} />, onClick: () => editor.chain().focus().insertContent('[[').run() },
-    { label: 'Divider', icon: <Minus size={16} />, onClick: () => editor.chain().focus().setHorizontalRule().run() },
-    { label: 'Code block', icon: <Code size={16} />, onClick: () => editor.chain().focus().toggleCodeBlock().run() },
-    { label: 'Callout', icon: <Quote size={16} />, onClick: () => editor.chain().focus().toggleBlockquote().insertContent('[!note] ').run() },
-  ];
+  pickTagRef.current = tag => { if (!doc.tags.includes(tag)) void app.run(api.setTags(id, [...doc.tags, tag])).then(async () => { const d = await api.getNote(id); if (d) setDoc(x => x && ({ ...x, tags: d.tags })); }); };
+  const insertCtx: InsertCtx = {
+    editor,
+    pickFile: accept => { if (fileInput.current) { fileInput.current.accept = accept; fileInput.current.click(); } },
+    drawing: insertDrawing,
+    eventDialog: () => setInsertDialog('event'),
+    dateDialog: () => setInsertDialog('date'),
+    linkedNoteDialog: () => setInsertDialog('linked'),
+    link: () => setLink(),
+    record: () => app.toast('Recording is not available yet.', 'error'),
+    transcribeDialog: () => app.toast('Transcription is not available yet.', 'error'),
+    stt: false,
+  };
+  ctxRef.current = insertCtx;
   const styleLabel = editor.isActive('heading', { level: 1 }) ? 'Heading 1' : editor.isActive('heading', { level: 2 }) ? 'Heading 2' : editor.isActive('heading', { level: 3 }) ? 'Heading 3' : 'Normal text';
   const styleEntries = (): MenuEntry[] => [
     { label: 'Normal text', checked: styleLabel === 'Normal text', onClick: () => editor.chain().focus().setParagraph().run() },
@@ -428,10 +456,11 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         <IconBtn label="Export" haspopup icon={<Share2 size={18} />} onClick={e => exportMenu.open(e, exportEntries(), 'right')} />
         <IconBtn label="More actions" haspopup icon={<MoreHorizontal size={20} />} onClick={e => moreMenu.open(e, moreEntries(), 'right')} />
       </div>
-      {exportMenu.node}{moreMenu.node}{insertMenu.node}{styleMenu.node}
+      {exportMenu.node}{moreMenu.node}{styleMenu.node}
+      {insertAt && <InsertMenu anchor={insertAt} ctx={insertCtx} onClose={() => setInsertAt(null)} />}
 
       <div className="toolbar" role="toolbar" aria-label="Formatting">
-        <button type="button" className="tb-btn accent" disabled={locked} onClick={e => insertMenu.open(e, insertEntries())}><span className="insert-dot"><Plus size={12} /></span> Insert <ChevronDown size={14} /></button>
+        <button type="button" className="tb-btn accent" disabled={locked} onClick={e => setInsertAt(e.currentTarget.getBoundingClientRect())}><span className="insert-dot"><Plus size={12} /></span> Insert <ChevronDown size={14} /></button>
         <TB locked={locked} label="Checklist" on={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={18} /></TB>
         <TB locked={locked} label={tokens.inTask ? 'Due date' : 'Due date (place the cursor in a task)'} on={!!tokens.due} disabled={!tokens.inTask} onClick={() => setDateDialog('due')}><CalendarDays size={18} /></TB>
         <TB locked={locked} label="Reminder" on={!!tokens.remind} disabled={!tokens.inTask} onClick={() => setDateDialog('remind')}><Bell size={18} /></TB>
@@ -455,7 +484,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
 
       <div className="editor-main">
       <div className="editor-scroll" ref={scrollRef} onScroll={trackHeading}>
-        <div className="editor-page">
+        <div className={classNames('editor-page', prefs.noteWidth === 'full' && 'full')}>
           <div className="edited">Edited {new Date(doc.updated).toLocaleDateString('en', { month: 'short', day: 'numeric' })}{doc.private && <span className="private-flag" title="The AI assistant and AI agents cannot see this note"><EyeOff size={12} /> Private</span>}</div>
           <input className="title-input" aria-label="Title" placeholder="Title" value={title} readOnly={locked}
             onChange={e => { setTitle(e.target.value); setSaveState('saving'); saveTitle(id, e.target.value); }}
@@ -511,6 +540,16 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
           setDrawing(null);
         }} />
       )}
+      {insertDialog === 'date' && <DateDialog onClose={() => setInsertDialog(null)} onInsert={day => { setInsertDialog(null); editor.chain().focus().insertContent([{ type: 'dateMention', attrs: { date: day } }, { type: 'text', text: ' ' }]).run(); }} />}
+      {insertDialog === 'event' && <EventDialog initialTitle={editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ')} onClose={() => setInsertDialog(null)}
+        onInsert={text => { setInsertDialog(null); editor.chain().focus().insertContent(text).run(); }} />}
+      {insertDialog === 'linked' && <LinkedNoteDialog onClose={() => setInsertDialog(null)} onCreate={async t => {
+        const n = await app.run(api.createNote({ title: t, parent: doc.parent ?? undefined }));
+        if (!n) return;
+        setInsertDialog(null);
+        editor.chain().focus().insertContent([{ type: 'wikilink', attrs: { id: n.id, title: n.title } }, { type: 'text', text: ' ' }]).run();
+        await app.refresh();
+      }} />}
       {dateDialog && <TaskDateDialog kind={dateDialog} value={dateDialog === 'due' ? tokens.due : tokens.remind} onClose={() => setDateDialog(null)}
         onSet={v => { setTaskToken(editor, dateDialog, v); setDateDialog(null); }} />}
     </div>

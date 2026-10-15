@@ -207,7 +207,7 @@ check('wiki link inserted from the picker', (await page.locator('.prose .wikilin
 
 // drawing block: opens the board and keeps an (empty) drawing block when done
 await page.getByRole('button', { name: /Insert/ }).click();
-await page.getByRole('menuitem', { name: 'Drawing' }).click();
+await page.getByRole('option', { name: /^Sketch/ }).click();
 await page.getByRole('dialog', { name: 'Drawing' }).waitFor({ timeout: 30000 });
 // keys go to the drawing board (rectangle tool), not to the note under it; then draw and finish
 await page.locator('.excalidraw canvas').first().waitFor({ timeout: 30000 });

@@ -98,6 +98,35 @@ export function parseTasks(body: string): Task[] {
   return out;
 }
 
+// ---------- events ----------
+/** A dated entry written as `Team sync @event(2026-10-20T09:00-10:30)` anywhere in a note. */
+export interface NoteEvent {
+  /** 0-based line number within the body */
+  line: number;
+  text: string;
+  /** `YYYY-MM-DD` */
+  date: string;
+  /** `HH:MM`, absent for an all-day event */
+  start?: string;
+  end?: string;
+}
+const EVENT_RE = /\s*@event\((\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2})(?:-(\d{2}:\d{2}))?)?\)/;
+
+export function parseEvents(body: string): NoteEvent[] {
+  const out: NoteEvent[] = [];
+  const lines = body.split('\n');
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*```/.test(lines[i])) inFence = !inFence;
+    if (inFence) continue;
+    const m = EVENT_RE.exec(lines[i]);
+    if (!m) continue;
+    const text = lines[i].replace(EVENT_RE, '').replace(/^\s*(?:[-*+] (?:\[[ xX]\] )?|\d+\. |> ?|#{1,6} )/, '').trim();
+    out.push({ line: i, text, date: m[1], start: m[2], end: m[3] });
+  }
+  return out;
+}
+
 export function setTaskDone(body: string, index: number, done: boolean): string {
   const t = parseTasks(body)[index];
   if (!t) return body;
@@ -118,6 +147,10 @@ export function plainSnippet(body: string, max = 180): string {
     .replace(/\[\[[0-9a-f-]{36}\|([^\]]*)\]\]/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/@(due|remind)\([^)]*\)|@flag\b/g, '')
+    .replace(/@event\(([^)]*)\)/g, '')
+    .replace(/@date\((\d{4}-\d{2}-\d{2})\)/g, '$1')
+    .replace(/^\[TOC\]$|^\\newpage$|^:::\s*(?:toggle\b)?/gm, ' ')
+    .replace(/\$\$[\s\S]*?\$\$/g, ' ')
     .replace(/^[#>\-*+\s]+/gm, '')
     .replace(/\[[ xX]\]\s*/g, '')
     .replace(/[*_`~]/g, '')

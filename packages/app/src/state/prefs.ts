@@ -17,6 +17,10 @@ export interface Prefs {
   sidebarW: number | null;
   listW: number | null;
   asideW: number | null;
+  /** note text column: a comfortable reading width, or all the room there is */
+  noteWidth: 'readable' | 'full';
+  /** Insert menu entries pinned to its top (item ids) */
+  insertFav: string[];
 }
 
 type Width = 'sidebarW' | 'listW' | 'asideW';
@@ -27,7 +31,7 @@ export const WIDTHS: Record<Width, { min: number; max: number; cssVar: string }>
 };
 
 const KEY = 'ergo.prefs';
-const DEFAULTS: Prefs = { aside: true, asideTab: 'toc', aiMode: 'edit', listView: 'cards', listHidden: false, focus: false, sidebarW: null, listW: null, asideW: null };
+const DEFAULTS: Prefs = { aside: true, asideTab: 'toc', aiMode: 'edit', listView: 'cards', listHidden: false, focus: false, sidebarW: null, listW: null, asideW: null, noteWidth: 'readable', insertFav: [] };
 const clampWidth = (k: Width, v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) ? Math.min(WIDTHS[k].max, Math.max(WIDTHS[k].min, Math.round(v))) : null;
 
@@ -44,6 +48,8 @@ function load(): Prefs {
       sidebarW: clampWidth('sidebarW', raw.sidebarW),
       listW: clampWidth('listW', raw.listW),
       asideW: clampWidth('asideW', raw.asideW),
+      noteWidth: raw.noteWidth === 'full' ? 'full' : 'readable',
+      insertFav: Array.isArray(raw.insertFav) ? raw.insertFav.filter((x): x is string => typeof x === 'string').slice(0, 12) : [],
     };
   } catch { return { ...DEFAULTS }; }
 }

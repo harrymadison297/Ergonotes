@@ -2,7 +2,7 @@
 // same methods over HTTP RPC against the Server peer.
 import type { S3Config } from './store-s3.ts';
 import type { WebDavConfig } from './store-webdav.ts';
-import type { Task } from './markdown.ts';
+import type { NoteEvent, Task } from './markdown.ts';
 import type { AiSettings, AiSettingsPatch } from './ai/types.ts';
 
 export interface FolderStoreConfig { type: 'folder'; path: string }
@@ -105,8 +105,14 @@ export interface Settings {
   theme: 'system' | 'light' | 'dark';
 }
 
+export interface EventEntry extends NoteEvent {
+  noteId: string;
+  noteTitle: string;
+}
+
 export interface CalendarData {
   tasks: TaskEntry[];
+  events: EventEntry[];
   notes: ItemSummary[];
   daily: ItemSummary[];
 }

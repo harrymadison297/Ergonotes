@@ -130,7 +130,8 @@ export const StoredImage = Image.extend({
 });
 
 // ---------------------------------------------------------------- @due(..) / @remind(..) / @flag chips and callouts
-const TOKEN_RE = /@(due|remind)\(([^)]+)\)|@flag\b/g;
+const TOKEN_RE = /@(due|remind)\(([^)]+)\)|@flag\b|@event\([^)]*\)/g;
+const HASHTAG_RE = /(?<![\p{L}\p{N}_&#/])#([\p{L}][\p{L}\p{N}_/-]*)/gu;
 export const InlineDecorations = Extension.create({
   name: 'inlineDecorations',
   addProseMirrorPlugins() {
@@ -140,21 +141,44 @@ export const InlineDecorations = Extension.create({
         decorations(state) {
           const decos: Decoration[] = [];
           const now = Date.now();
-          state.doc.descendants((node, pos) => {
+          state.doc.descendants((node, pos, parent) => {
             if (node.type.name === 'blockquote') {
               const first = node.firstChild?.textContent ?? '';
               if (/^\[![a-z]+\]/i.test(first)) decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'callout' }));
             }
             if (!node.isText || !node.text) return;
+            if (parent?.type.name === 'codeBlock' || node.marks.some(mk => mk.type.name === 'code' || mk.type.name === 'link')) return;
             TOKEN_RE.lastIndex = 0;
             let m: RegExpExecArray | null;
             while ((m = TOKEN_RE.exec(node.text))) {
               const overdue = m[1] === 'due' && parseDue(m[2]) < now;
-              decos.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length, { class: `task-meta${overdue ? ' overdue' : ''}` }));
+              const kind = m[0].startsWith('@event') ? ' event' : overdue ? ' overdue' : '';
+              decos.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length, { class: `task-meta${kind}` }));
+            }
+            if (parent?.type.name === 'heading') return;
+            HASHTAG_RE.lastIndex = 0;
+            while ((m = HASHTAG_RE.exec(node.text))) {
+              decos.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length, { class: 'hashtag', 'data-tag': m[1] }));
             }
           });
           return DecorationSet.create(state.doc, decos);
         },
+      },
+    })];
+  },
+});
+
+// ---------------------------------------------------------------- a paragraph always waits below the last block
+// After a table, a diagram, a formula or a divider the caret has nowhere to go; this keeps one empty paragraph there.
+export const TrailingParagraph = Extension.create({
+  name: 'trailingParagraph',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: new PluginKey('trailingParagraph'),
+      appendTransaction(_trs, _old, state) {
+        const last = state.doc.lastChild;
+        if (!last || last.type.name === 'paragraph') return null;
+        return state.tr.insert(state.doc.content.size, state.schema.nodes.paragraph.create());
       },
     })];
   },
@@ -185,23 +209,38 @@ export const LinkSuggest = Extension.create<{ api: VaultApi | null }>({
   },
 });
 
-export interface SlashItem extends PopupItem { run: (e: Editor) => void }
-export function slashItems(extra: { drawing: () => void; image: () => void }): SlashItem[] {
-  return [
-    { id: 'h1', label: 'Heading 1', hint: '#', run: e => e.chain().toggleHeading({ level: 1 }).run() },
-    { id: 'h2', label: 'Heading 2', hint: '##', run: e => e.chain().toggleHeading({ level: 2 }).run() },
-    { id: 'h3', label: 'Heading 3', hint: '###', run: e => e.chain().toggleHeading({ level: 3 }).run() },
-    { id: 'task', label: 'Task list', hint: '[ ]', run: e => e.chain().toggleTaskList().run() },
-    { id: 'bullet', label: 'Bulleted list', hint: '-', run: e => e.chain().toggleBulletList().run() },
-    { id: 'number', label: 'Numbered list', hint: '1.', run: e => e.chain().toggleOrderedList().run() },
-    { id: 'quote', label: 'Quote', hint: '>', run: e => e.chain().toggleBlockquote().run() },
-    { id: 'callout', label: 'Callout', run: e => e.chain().toggleBlockquote().insertContent('[!note] ').run() },
-    { id: 'code', label: 'Code block', hint: '```', run: e => e.chain().toggleCodeBlock().run() },
-    { id: 'table', label: 'Table', run: e => e.chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
-    { id: 'divider', label: 'Divider', hint: '---', run: e => e.chain().setHorizontalRule().run() },
-    { id: 'drawing', label: 'Drawing', run: () => extra.drawing() },
-    { id: 'image', label: 'Image…', run: () => extra.image() },
-  ];
+// `#` + letters: pick one of the vault's tags (or make a new one), written into the text and added to the note
+export interface TagItem extends PopupItem { tag: string }
+export const TagSuggest = Extension.create<{ tags: () => string[]; onPick: (tag: string) => void }>({
+  name: 'tagSuggest',
+  addOptions() { return { tags: () => [], onPick: () => undefined }; },
+  addProseMirrorPlugins() {
+    const { tags, onPick } = this.options;
+    return [Suggestion<TagItem>({
+      editor: this.editor,
+      pluginKey: new PluginKey('tagSuggest'),
+      char: '#',
+      allowSpaces: false,
+      // a bare "#" (a heading in the making) or "# " must not open anything
+      allow: ({ state, range }) => range.to - range.from >= 2 && !state.doc.resolve(range.from).parent.type.name.startsWith('heading') && !state.doc.resolve(range.from).parent.type.spec.code,
+      items: ({ query }) => {
+        const q = query.toLowerCase();
+        const have = tags().filter(t => t.toLowerCase().includes(q)).slice(0, 7);
+        const exact = tags().some(t => t.toLowerCase() === q);
+        return [...have.map(t => ({ id: t, label: `#${t}`, tag: t })), ...(!exact && q ? [{ id: `new:${query}`, label: `Create tag “${query}”`, tag: query }] : [])];
+      },
+      command: ({ editor, range, props }) => {
+        editor.chain().focus().insertContentAt(range, [{ type: 'text', text: `#${props.tag}` }, { type: 'text', text: ' ' }]).run();
+        onPick(props.tag);
+      },
+      render: popupRenderer<TagItem>(),
+    })];
+  },
+});
+
+export interface SlashItem extends PopupItem { run: (e: Editor) => void; keywords?: string; off?: boolean }
+export function slashItems(source: () => { id: string; label: string; hint?: string; keywords?: string; off?: boolean; run: () => void }[]): SlashItem[] {
+  return source().map(i => ({ id: i.id, label: i.label, hint: i.hint, keywords: i.keywords, off: i.off, run: () => i.run() }));
 }
 
 export const SlashCommands = Extension.create<{ items: () => SlashItem[] }>({
@@ -215,7 +254,13 @@ export const SlashCommands = Extension.create<{ items: () => SlashItem[] }>({
       char: '/',
       startOfLine: false,
       allowSpaces: false,
-      items: ({ query }) => getItems().filter(i => i.label.toLowerCase().includes(query.toLowerCase())).slice(0, 8),
+      items: ({ query }) => {
+        const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+        const q = words.join(' ');
+        // a name that starts with what was typed first, then one that contains it, then a match on the extra words
+        const rank = (i: SlashItem) => { const l = i.label.toLowerCase(); return l.startsWith(q) ? 0 : l.includes(q) ? 1 : 2; };
+        return getItems().filter(i => !i.off && words.every(w => `${i.label} ${i.keywords ?? ''}`.toLowerCase().includes(w))).sort((a, b) => rank(a) - rank(b)).slice(0, 14);
+      },
       command: ({ editor, range, props }) => {
         editor.chain().focus().deleteRange(range).run();
         props.run(editor);
