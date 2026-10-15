@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, File as FileIcon, FileSpreadsheet, FileText, Image as ImageIcon, Music, Presentation, Search, Video } from 'lucide-react';
-import type { FileInfo } from '@ergonotes/core';
+import { AudioLines, Download, File as FileIcon, FileSpreadsheet, FileText, Image as ImageIcon, Music, Presentation, Search, Video } from 'lucide-react';
+import { fmtClock, type FileInfo, type RecordInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames } from '../state/util';
@@ -8,7 +8,7 @@ import { FileImg } from '../components/FileImg';
 import { FilePreviewBody, useFilePreview } from '../components/FilePreview';
 import { Resizer } from '../components/Resizer';
 
-type Tab = 'all' | 'media' | 'docs';
+type Tab = 'all' | 'media' | 'docs' | 'records';
 const isMedia = (f: FileInfo) => /^(image|video|audio)\//.test(f.mime);
 
 export function fileSize(n: number): string {
@@ -52,13 +52,22 @@ export function FilesView({ fileId }: { fileId?: string }) {
   const [files, setFiles] = useState<FileInfo[] | null>(null);
   const [tab, setTab] = useState<Tab>('all');
   const [q, setQ] = useState('');
+  const [records, setRecords] = useState<RecordInfo[]>([]);
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     let live = true;
     void app.api.listFiles().then(f => { if (live) setFiles(f); });
+    void app.api.listRecords().then(r => { if (live) setRecords(r); });
     return () => { live = false; };
-  }, [app.api, app.items]);
+  }, [app.api, app.items, reload]);
+  const removeRecord = async (r: RecordInfo) => {
+    if (!confirm(`Delete this record for good? Its audio, ${r.frames.length} frame${r.frames.length === 1 ? '' : 's'} and transcript are removed${r.noteTitle ? `, and the player in “${r.noteTitle}” will say it is missing` : ''}.`)) return;
+    const paths = [...r.audio, ...r.frames.map(f => f.path), `${r.path}/record.json`, `${r.path}/transcript.txt`];
+    await app.run(app.api.removeFiles(paths));
+    setReload(n => n + 1);
+  };
 
-  const shown = useMemo(() => (files ?? []).filter(f =>
+  const shown = useMemo(() => tab === 'records' ? [] : (files ?? []).filter(f =>
     (tab === 'all' || (tab === 'media') === isMedia(f)) && (!q || f.name.toLowerCase().includes(q.toLowerCase()))), [files, tab, q]);
   const total = (files ?? []).reduce((a, f) => a + f.size, 0);
   const current = (files ?? []).find(f => f.id === fileId);
@@ -67,9 +76,9 @@ export function FilesView({ fileId }: { fileId?: string }) {
     <div className="pane-list">
       <Resizer pane="listW" edge="right" label="Resize list" />
       <div className="list-head files-head">
-        <h2><span className="ttl">Files</span><span className="count">{files?.length ?? 0}</span><span className="grow" /><span className="total">Total size: {fileSize(total)}</span></h2>
+        <h2><span className="ttl">Files</span><span className="count">{tab === 'records' ? records.length : files?.length ?? 0}</span><span className="grow" /><span className="total">Total size: {fileSize(tab === 'records' ? records.reduce((a, r) => a + r.size, 0) : total)}</span></h2>
         <div className="pills" role="tablist" aria-label="File kinds">
-          {([['all', 'Files'], ['media', 'Media'], ['docs', 'Docs']] as [Tab, string][]).map(([k, l]) => (
+          {([['all', 'Files'], ['media', 'Media'], ['docs', 'Docs'], ['records', 'Records']] as [Tab, string][]).map(([k, l]) => (
             <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>
           ))}
         </div>
@@ -78,7 +87,23 @@ export function FilesView({ fileId }: { fileId?: string }) {
           <Search size={16} aria-hidden />
         </label>
       </div>
-      <div className="list-scroll file-grid">
+      {tab === 'records' && (
+        <div className="list-scroll">
+          {records.length === 0 && <div className="empty"><AudioLines size={32} /><h3>No records</h3><p>Recordings and meetings you make in a note are listed here.</p></div>}
+          {records.map(r => (
+            <div key={r.path} className="record-row">
+              <AudioLines size={20} aria-hidden />
+              <div className="record-row-main">
+                <strong>{r.meta?.kind === 'meeting' ? 'Meeting' : 'Recording'} {r.meta?.startedAt ? new Date(r.meta.startedAt).toLocaleString() : r.path.slice(r.path.lastIndexOf('/') + 1)}</strong>
+                <span className="file-sub">{fmtClock(r.meta?.seconds ?? 0)} · {r.frames.length} frame{r.frames.length === 1 ? '' : 's'}{r.transcript ? ' · transcript' : ''} · {fileSize(r.size)}</span>
+                <span className="file-sub">{r.noteTitle ? <a href={href({ name: 'notes', note: r.noteId! })}>{r.noteTitle}</a> : 'Not in a note'}</span>
+              </div>
+              <button className="btn" onClick={() => void removeRecord(r)}>Delete</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="list-scroll file-grid" hidden={tab === 'records'}>
         {files && shown.length === 0 && <div className="empty"><FileIcon size={32} /><h3>No files</h3><p>Attach files from a note’s Insert menu and they show up here.</p></div>}
         {shown.map(f => (
           <a key={f.id} className={classNames('file-card', f.id === fileId && 'active')} href={href({ name: 'files', file: f.id })}>

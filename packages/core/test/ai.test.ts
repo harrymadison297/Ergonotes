@@ -825,3 +825,20 @@ describe('recommending frames to cut', () => {
     expect(parseCut('nothing', 4)).toBeNull();
   });
 });
+
+describe('reading a record', () => {
+  it('gives the assistant the transcript of the records a note shows, and nothing for a private note', async () => {
+    const { Vault: V } = await import('../src/vault.ts');
+    const v = await V.open({ persist: new MemPersist(), kdf: KDF, defaultDeviceName: 'T' });
+    await v.createVault(PASSWORD);
+    const dir = 'attachments/record_20260319_123410';
+    await v.addFile({ name: 'transcript.txt', mime: 'text/plain', data: Buffer.from('[0:00]\nHello class\n').toString('base64'), dir });
+    await v.addFile({ name: 'audio.webm', mime: 'audio/webm', data: Buffer.from('x').toString('base64'), dir });
+    const n = await v.createNote({ title: 'Lecture', body: `[Meeting](${dir} "type_record")\n` });
+    const tool = buildTools({ vault: v, scope: { kind: 'vault' } }).find(t => t.spec.name === 'read_record')!;
+    const out = JSON.parse(await tool.run({ id: n.id }));
+    expect(out[0]).toMatchObject({ record: dir, transcript: '[0:00]\nHello class\n' });
+    await v.setPrivate(n.id, true);
+    await expect(tool.run({ id: n.id })).rejects.toThrow(/not found/);
+  });
+});

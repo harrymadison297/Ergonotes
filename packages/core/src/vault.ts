@@ -22,7 +22,7 @@ import {
 } from './markdown.ts';
 import { applyAiPatch, defaultAiConfig, normalizeAiConfig, toSettings, type AiConfig, type AiSettings, type AiSettingsPatch } from './ai/types.ts';
 import { baseText, unionText } from './merge.ts';
-import { RECORD_LINK_TITLE, frameSecond, isPartName, isRecordDir, parseRecordMeta, recordDirOf, type RecordMeta } from './record.ts';
+import { RECORD_LINK_TITLE, fmtMark, frameSecond, isPartName, isRecordDir, parseRecordMeta, parseTranscript, recordDirOf, type RecordMeta } from './record.ts';
 import type { Persist } from './persist.ts';
 import { Replica, type SyncContext } from './replica.ts';
 import type { Store } from './store.ts';
@@ -757,6 +757,15 @@ export class Vault implements VaultApi {
         });
         if (typeof fm.sha === 'string') this.fileBySha.set(fm.sha, id);
         this.views.delete(id);
+        // a transcript arrived or changed: the notes that show its record are found by what was said
+        if (path.endsWith('/transcript.txt') && recordDirOf(path)) {
+          const dir = recordDirOf(path)!;
+          for (const n of this.views.values()) {
+            if (n.type !== 'note' || !this.recordDirsOf(n).includes(dir)) continue;
+            try { this.searchIndex.discard(n.id); } catch { /* not indexed */ }
+            this.addToSearch(n);
+          }
+        }
         continue;
       }
       const path = typeof res._ergo_path === 'string' && res._ergo_path ? res._ergo_path : 'Untitled.md';
@@ -793,10 +802,22 @@ export class Vault implements VaultApi {
         linkRefs: findLinks(p.body),
       };
       this.views.set(id, view);
-      this.searchIndex.add({ id, title: view.title, body: plainSnippet(p.body, 4000), tags: tags.join(' ') });
+      this.addToSearch(view);
     }
     this.linkIdx = null;
     this.syncFolders();
+  }
+
+  /** Words of a note for search: its text, and what was said in the records it shows. */
+  private addToSearch(view: View) {
+    let spoken = '';
+    for (const dir of this.recordDirsOf(view)) {
+      for (const f of this.files.values()) {
+        if (f.path !== `${dir}/transcript.txt` || f.trashed) continue;
+        try { spoken += ' ' + dec(fromB64(f.body.replace(/\s+/g, ''))).replace(/^\[\d+:\d\d\]\s*$/gm, ' '); } catch { /* unreadable */ }
+      }
+    }
+    this.searchIndex.add({ id: view.id, title: view.title, body: plainSnippet(view.body, 4000) + (spoken ? ' ' + spoken.slice(0, 40_000) : ''), tags: view.tags.join(' ') });
   }
 
   /** Folders are the directories on disk and the directories notes are in: derived, never stored. */
@@ -2051,7 +2072,12 @@ export class Vault implements VaultApi {
       const t = resolveLink(ref, v.path, idx);
       const f = t ? fileAt(t) : undefined;
       let text: string | null = null;
-      if (f) {
+      const rec = t && ref.kind === 'md' && isRecordDir(t) ? this.recordInfo(t) : null;
+      if (rec) {
+        // a record has no single file to embed: its name stays, with what was said (frames and audio stay in the vault)
+        const said = parseTranscript(rec.transcript ?? '').map(b => `**${fmtMark(b.at)}** ${b.text}`).join('\n\n');
+        text = said ? `${ref.label}\n\n<details>\n<summary>Transcript</summary>\n\n${said}\n\n</details>` : ref.label;
+      } else if (f) {
         const uri = `data:${f.mime};base64,${f.body.replace(/\s+/g, '')}`;
         text = ref.kind === 'md' ? `${ref.embed ? '!' : ''}[${ref.label}](${uri}${ref.title})` : ref.embed ? `![${f.name}](${uri})` : f.name;
       } else if (t && byPath.has(t) && !ref.embed) text = ref.kind === 'md' ? ref.label : titleOfPath(t);

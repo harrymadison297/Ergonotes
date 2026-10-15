@@ -19,7 +19,8 @@ Each element has one fixed text form. The editor reads it into the element and w
 | Tick box | `☐` / `☑` in running text (not a list item; a list item is a task) |
 | Formula | `$x^2$` inline, `$$` … `$$` as a block (KaTeX); "$5 and $6" stays prose |
 | Diagram | a ```` ```mermaid ```` fence, shown as the diagram, source one click away |
-| Voice note, recording | a link `[Voice note 14:30 · 0:42](attachments/Voice note.webm "audio")`; the title `audio` makes it a player |
+| Audio clip | a link `[Voice note 14:30 · 0:42](attachments/Voice note.webm "audio")`; the title `audio` makes it a player (clips made before ADR 0011 and attached audio files) |
+| Recording, meeting | a link to a folder, `[Meeting 2026-10-15 14:30](attachments/record_20261015_143000 "type_record")`; the title `type_record` makes it a player with frames and transcript (ADR 0011) |
 | Tag | not text in the note: tags are the `tags:` property (ADR 0010) |
 | New linked note | an ordinary `[Title](Title.md)` link to a note created beside this one |
 
@@ -29,21 +30,20 @@ Markdown tools already render.
 
 ### Recording and speech-to-text
 
-- A **voice note** is recorded in the app (the microphone is allowed only on https or localhost), stored once as a file
-  item and shown as an audio clip. It works with no AI at all.
-- **Writing it out** (voice dictation, a meeting's transcript, "Transcribe media") uses *speech-to-text*: a model of a
+> Superseded by ADR 0011 for recordings and meetings: a record is a folder (audio, frames, transcript), made as it is
+> recorded, with the transcript in a file. What follows still holds for speech-to-text itself, dictation and
+> "Transcribe media".
+
+- Recording happens in the app (the microphone is allowed only on https or localhost). It works with no AI at all.
+- **Writing it out** (voice dictation, a record's transcript, "Transcribe media") uses *speech-to-text*: a model of a
   **custom server** that speaks OpenAI's `/audio/transcriptions` (OpenAI, Groq, a local Whisper server). OpenRouter and
   Anthropic have no such endpoint, so they cannot be chosen for it. The call is made like the chat's (ADR 0008): by a
   device itself, or by the server peer in the web build, so the key stays off the browser.
 - The browser's own dictation is **not** used: it sends audio to the browser vendor, which would be a second, unannounced
   place for note content to go.
-- A **voice note** records the microphone only. A **meeting recording** records the microphone *and* the sound the
-  computer plays (the other people on a call): the browser's screen sharing is asked for with audio, and the two are
-  mixed into one track. Where that is not offered (Safari, Firefox, most webviews, Android) the option is off and the
-  microphone alone is recorded, which picks the call up if it is on the speakers. If the person cancels the share, or
-  shares without sound, nothing is recorded and they are told, rather than getting a recording of one side.
-- A meeting recording is a heading, the clip, a summary written by the chat model (if one is configured), and the
-  transcript in a toggle. The recording is kept even when writing it out fails.
+- A **meeting** records the microphone *and* the sound of the shared tab or window (the other people on a call), mixed
+  into one track; if the person cancels the share, or shares without sound, nothing is recorded and they are told,
+  rather than getting a recording of one side (ADR 0011).
 - **A private note's audio is never sent for transcription**, the same rule as for text (ADR 0008).
 
 ## Consequences
@@ -51,5 +51,5 @@ Markdown tools already render.
 - New element, new form: it is added to this table, to the skill file agents read, and gets a round-trip check.
 - The first version of this ADR used `:::toggle`, `[TOC]` and `\newpage`, which are conventions of some renderers, not
   standards; ADR 0010 replaced them with HTML that every Markdown tool understands, and removed the stored contents box.
-- Audio is stored in the Vault like any attachment (25 MB per file, about 80 minutes of speech at the recorder's
-  32 kbit/s); longer recordings are cut at the limit.
+- Audio is stored in the Vault like any attachment (100 MB per file since ADR 0011; a recording is cut into parts of
+  10 minutes while it is made, so it has no length limit).

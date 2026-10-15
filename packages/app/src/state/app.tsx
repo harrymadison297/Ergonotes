@@ -3,6 +3,7 @@ import type { AiSettings, AiTransport, AudioFile, ModelInfo, TimedTranscript, It
 import type { Backend } from '../backend';
 import { debounce, isoDay } from './util';
 import { useRoute, type Route } from './router';
+import { setRecordHost } from '../record/host';
 import { setApiRef } from './appRef';
 
 export interface Toast { id: number; msg: string; kind: 'info' | 'error'; action?: { label: string; run: () => void } }
@@ -167,6 +168,11 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
     go(where === 'calendar' ? { name: 'calendar', note: d.id } : { name: 'notes', note: d.id, folder: d.parent ?? undefined });
   }, [api, run, refresh, go]);
 
+  setRecordHost({
+    speechReady: ai.speechReady, visionReady: ai.visionReady, chatReady: ai.chatReady,
+    visionName: ai.visionModel.connection ? ai.visionModel.model : ai.chatModel.model,
+    transcribe: backend.aiTranscribeTimed, transport: backend.aiTransport, toast,
+  });
   const value: AppCtx = { api, mode: backend.mode, folder: backend.folder, status, items, byId, tasks, tags, conflicts, settings, ai, aiTransport: backend.aiTransport, aiModels: backend.aiModels, aiTranscribe: backend.aiTranscribe, aiTranscribeTimed: backend.aiTranscribeTimed, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

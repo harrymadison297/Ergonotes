@@ -45,9 +45,10 @@ attachments/record_20260319_123410/
 
 - **Written as it happens.** The folder and the link exist from the moment recording starts; each audio part and each
   frame is written to the Vault when it is complete. If the app dies, what had been written is there.
-- **Audio** is cut every 10 minutes (so little is lost), and once recording stops the parts are joined into one
-  `audio.webm`: the Opus packets are re-wrapped, not re-encoded. If joining fails the parts are kept and played in
-  order.
+- **Audio** is one continuous recording, without a gap. Every 10 minutes what it has produced is written as a part
+  (so little is lost if the app dies), and once recording stops the parts are joined into one `audio.webm`: the Opus
+  packets are re-wrapped, not re-encoded, and given a length and a clock so the file can be sought. If joining fails
+  the parts are kept and played in order.
 - **Frames** are taken every 1, 2 or 5 seconds (the person chooses), or by a button, from the shared screen as a JPEG of
   at most 1280 px on the long side. While recording, a frame that is practically the same as the last one kept is
   dropped on the device; the button's frames are always kept.
@@ -55,32 +56,35 @@ attachments/record_20260319_123410/
   person's vision model which of the remaining frames to cut. The answer is `keep` or `cut` per frame, nothing else. The
   frames to cut are shown to the person, who can change them; **nothing is deleted until the person confirms**. Without a
   vision model the stricter local pass is all it does, and it says so.
-- **Transcript** is made after stopping (or later, by a button) from the audio parts through the speech-to-text of
-  ADR 0009. Segments with times are asked for (`verbose_json`); a server that does not return them gets the audio
-  in one-minute pieces so the marks stay right. A failed transcript never loses the record.
+- **Transcript** is made after stopping (or later, by a button) from the audio, sent in windows of 10 minutes (each far
+  below a server's 25 MB) through the speech-to-text of ADR 0009. Segments with times are asked for (`verbose_json`); a
+  window whose answer has no times is sent again in one-minute pieces so the marks stay right. A failed transcript
+  never loses the record.
 - **Summary** is a button on the record: the chat model writes it from the transcript (never from frames) as ordinary
   text under the link in the note, where it can be edited.
 
 ### Limits and failure
 
 - A file of the Vault may be up to **100 MB** (was 25 MB). Records never come near it; a transcription server still takes
-  25 MB per request, which one 10-minute part is far below.
+  25 MB per request, which one 10-minute window is far below.
 - If the share or the microphone ends, the record stops there and what was captured is kept, with a message. A meeting is
   never continued with half of it.
-- Closing the note or the app while recording asks first.
+- Leaving the note while recording stops it and keeps what was recorded.
 
 ### Lifecycle
 
-- The folder is independent of the note: deleting the note moves the folder to `.trash/` with it; deleting only the link
-  leaves the folder, which then appears in the Files page as a record without a note, to be removed by hand.
+- A note in the Trash takes the records it shows with it (unless another note still shows them) and brings them back
+  when restored; deleting the note for good removes them with it. Deleting only the link leaves the folder, which is
+  then listed in the Files page, tab **Records**, as a record without a note, to be removed by hand.
 - Each file of the folder is an ordinary attachment item (ADR 0010): it syncs file by file.
-- The transcript text is part of what search and the assistant see of the note that links to the record, so the same
-  rules apply (ADR 0008): a private note's record is not found, not read and never transcribed or sent for filtering.
+- What was said is part of what the note is found by (search), and the assistant and MCP agents read it with
+  `read_record`; both follow ADR 0008: a private note's record is not found, not read and never transcribed or sent for
+  filtering. An exported note keeps the record's name and its transcript as a toggle.
 
 ### Private notes
 
-A record in a private note keeps audio and frames on the device, with the local filter only. No transcript, no AI
-filter, no summary, unless the person turns the transcript on by hand after a warning that the audio will be sent.
+A record in a private note keeps audio and frames on the device. No transcript, no model-assisted filter (the
+stricter local pass still works), no summary.
 
 ## Consequences
 

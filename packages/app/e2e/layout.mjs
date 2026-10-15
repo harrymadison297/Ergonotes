@@ -101,21 +101,26 @@ for (const theme of (process.env.THEMES ?? "light,dark").split(",")) {
     check(`${tag}: the Insert menu is inside the screen`, box && box.y >= 0 && box.y + box.height <= v.h + 1, JSON.stringify(box));
     await page.keyboard.press('Escape');
 
-    // Recorder: voice note and meeting
-    for (const [btn, title] of [['Voice note', 'Voice note'], ['Meeting recording', 'Meeting recording']]) {
+    // Recording and meeting: the dialogs fit; a recording runs as a bar that fits too, and leaves a record in the note
+    for (const [btn, title] of [['Recording', 'Recording'], ['Meeting', 'Meeting']]) {
       await page.getByRole('button', { name: btn, exact: true }).click();
       await page.getByRole('dialog', { name: title }).waitFor();
       await page.waitForTimeout(350);
-      await page.screenshot({ path: `${OUT}/${tag}-recorder-${btn.split(' ')[0].toLowerCase()}.png` });
+      await page.screenshot({ path: `${OUT}/${tag}-recorder-${btn.toLowerCase()}.png` });
       bad = await overflows(page);
       check(`${tag}: the ${title} dialog fits`, bad.length === 0, bad.join('; '));
-      if (btn === 'Voice note') {
-        await page.getByRole('button', { name: /Start recording/ }).click();
-        await page.locator('.recorder.recording').waitFor({ timeout: 8000 });
+      if (btn === 'Recording') {
+        await page.getByRole('button', { name: /^Start recording/ }).click();
+        await page.locator('.rec-bar .rec-dot.on').waitFor({ timeout: 8000 });
         await page.waitForTimeout(900);
         await page.screenshot({ path: `${OUT}/${tag}-recorder-recording.png` });
-        await page.getByRole('button', { name: /Stop and insert/ }).click();
-        await page.locator('.audio-clip').nth(1).waitFor({ timeout: 10000 }).catch(() => {});
+        bad = await overflows(page);
+        check(`${tag}: the recording bar fits`, bad.length === 0, bad.join('; '));
+        await page.getByRole('region', { name: 'Recording' }).getByRole('button', { name: /Stop/ }).click();
+        await page.locator('.record-card').first().waitFor({ timeout: 10000 }).catch(() => {});
+        await page.waitForTimeout(500);
+        bad = await overflows(page);
+        check(`${tag}: a note with a record fits`, bad.length === 0, bad.join('; '));
       } else {
         await page.keyboard.press('Escape');
       }

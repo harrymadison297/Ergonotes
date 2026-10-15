@@ -18,7 +18,7 @@ export interface InsertCtx {
   dateDialog(): void;
   linkedNoteDialog(): void;
   link(): void;
-  record(kind: 'voice' | 'meeting' | 'dictate'): void;
+  record(kind: 'recording' | 'meeting' | 'dictate'): void;
   transcribeDialog(): void;
   /** open the contents of the note (computed from its headings) */
   contents(): void;
@@ -78,8 +78,8 @@ export const INSERT_ITEMS: InsertItem[] = [
   // Media
   { id: 'image', group: 'Media', label: 'Image', icon: <ImageIcon size={S} />, keywords: 'picture photo', run: c => c.pickFile('image/*') },
   { id: 'file', group: 'Media', label: 'File', icon: <Paperclip size={S} />, keywords: 'attachment upload pdf xlsx csv pptx', run: c => c.pickFile('') },
-  { id: 'meeting', group: 'Media', label: 'Meeting recording', icon: <AudioLines size={S} />, keywords: 'record transcript summary minutes', run: c => c.record('meeting') },
-  { id: 'voice', group: 'Media', label: 'Voice note', icon: <Mic size={S} />, keywords: 'record audio microphone', run: c => c.record('voice') },
+  { id: 'meeting', group: 'Media', label: 'Meeting', icon: <AudioLines size={S} />, keywords: 'record meeting lecture call share screen frames transcript summary minutes', run: c => c.record('meeting') },
+  { id: 'voice', group: 'Media', label: 'Recording', icon: <Mic size={S} />, keywords: 'record audio microphone voice note transcript', run: c => c.record('recording') },
   { id: 'dictate', group: 'Media', label: 'Voice dictation', icon: <MicVocal size={S} />, keywords: 'speech to text type by voice', unavailable: NEEDS_STT, run: c => c.record('dictate') },
   { id: 'transcribe', group: 'Media', label: 'Transcribe media', icon: <FileText size={S} />, keywords: 'audio video file speech text', unavailable: NEEDS_STT, run: c => c.transcribeDialog() },
   { id: 'sketch', group: 'Media', label: 'Sketch', icon: <Pencil size={S} />, keywords: 'drawing draw excalidraw', run: c => c.drawing() },

@@ -118,3 +118,30 @@ describe('a note that shows a record', () => {
     expect((await v.getNote(n.id))!.body).toContain(`(../${DIR} "type_record")`);
   });
 });
+
+describe('finding a note by what was said in its record', () => {
+  it('finds it once the transcript is there, and again after the words are edited', async () => {
+    const { v } = await setup();
+    await makeRecord(v);
+    const n = await v.createNote({ title: 'Lecture', body: `[Meeting](${DIR} "type_record")\n` });
+    expect((await v.search('hello')).map(i => i.id)).toEqual([n.id]);
+    await v.addFile({ name: 'transcript.txt', mime: 'text/plain', data: b64('[0:00]\nSomething about photosynthesis\n\n[1:00]\nAnd mitochondria\n'), dir: DIR });
+    expect((await v.search('photosynthesis')).map(i => i.id)).toEqual([n.id]);
+    expect((await v.search('hello')).map(i => i.id)).toEqual([]);
+    expect((await v.search('0:00')).length).toBe(0); // the marks are not words
+  });
+});
+
+describe('exporting a note with a record', () => {
+  it('keeps the name and the words, as plain Markdown or HTML', async () => {
+    const { v } = await setup();
+    await makeRecord(v);
+    const n = await v.createNote({ title: 'Lecture', body: `Intro\n\n[Meeting 19 Mar](${DIR} "type_record")\n` });
+    const md = await v.exportNote(n.id, 'md');
+    expect(md.content).toContain('Meeting 19 Mar\n\n<details>\n<summary>Transcript</summary>\n\n**0:00** Hello\n\n</details>');
+    expect(md.content).not.toContain('record_');
+    const html = await v.exportNote(n.id, 'html');
+    expect(html.content).toContain('<summary>Transcript</summary>');
+    expect(html.content).toContain('<strong>0:00</strong> Hello');
+  });
+});

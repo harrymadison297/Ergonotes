@@ -7,7 +7,7 @@ description: Search, read and write the user's Ergonotes notes through the Ergon
 
 # Working with Ergonotes
 
-The \`ergonotes\` MCP server exposes the user's notes (Markdown). Tools: \`search_notes\`, \`list_recent\`, \`read_note\`,
+The \`ergonotes\` MCP server exposes the user's notes (Markdown). Tools: \`search_notes\`, \`list_recent\`, \`read_note\`, \`read_record\`,
 \`create_note\`, \`append_to_note\`, \`replace_text\`, \`insert_after_heading\`, \`update_note\`, \`rename_note\`, \`add_tags\`,
 \`move_note\`, \`list_folders\`, \`list_tasks\`, \`complete_task\`, \`daily_note\`.
 
@@ -37,7 +37,10 @@ Create the token in Ergonotes under **Settings → AI & agents**. One token per 
   (blocks inside), a page break is \`<div style="page-break-after: always;"></div>\`, a date is \`@date(2026-10-20)\`, an event is
   \`Team sync @event(2026-10-20T09:00-10:30)\` (or \`@event(2026-10-20)\`), a tick box is \`☐\` / \`☑\`, a formula is \`$x^2$\` or a
   \`$$\` … \`$$\` block, a diagram is a \`\`\`\`\` \`\`\`mermaid \`\`\`\`\` fence. Images and files are real files in \`attachments/\` embedded as
-  \`![alt](attachments/x.png)\`; a voice note is \`[Voice note](attachments/x.webm "audio")\`. The table of contents is not written
+  \`![alt](attachments/x.png)\`; a short clip is \`[Voice note](attachments/x.webm "audio")\`. A recording or a meeting is a
+  folder, \`[Meeting 2026-10-20 09:00](attachments/record_20261020_090000 "type_record")\`, holding its audio, the frames taken
+  from the shared screen and a transcript: keep that link as it is, and read what was said with \`read_record\` (a block per
+  minute, \`[m:ss]\` marks) instead of opening the files. The table of contents is not written
   down: the app builds it from the headings. Other syntax you do not know (\`![[x]]\`, \`%%…%%\`, HTML) belongs to other tools:
   leave it exactly as it is.
 `;

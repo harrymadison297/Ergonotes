@@ -1,9 +1,11 @@
 // The note tools, shared by the in-app chat agent and the MCP endpoint. Private notes are invisible here.
 import type { ItemSummary, NoteDoc, VaultApi } from '../api.ts';
 import type { AgentTool } from './agent.ts';
+import { dirname, joinPath, normalizePath } from '../folder.ts';
+import { RECORD_LINK_TITLE } from '../record.ts';
 
 export type ToolVault = Pick<VaultApi,
-  'search' | 'listItems' | 'getNote' | 'createNote' | 'saveNote' | 'rename' | 'move' | 'setTags' | 'tasks' | 'toggleTask' | 'dailyNote'>;
+  'search' | 'listItems' | 'getNote' | 'getRecord' | 'createNote' | 'saveNote' | 'rename' | 'move' | 'setTags' | 'tasks' | 'toggleTask' | 'dailyNote'>;
 
 /** How a note is read and written by the edit tools. The chat puts a review step in `write`; MCP writes directly. */
 export interface NoteIO {
@@ -103,6 +105,26 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
         const doc: NoteDoc | null = await vault.getNote(id);
         if (!doc || doc.private || doc.type !== 'note') throw new Error(NOT_FOUND);
         return json({ id: doc.id, title: n?.title ?? doc.title, folder: doc.path.map(p => p.title).join(' / '), tags: doc.tags, updated: doc.updated, body: n?.body ?? doc.body, backlinks: doc.backlinks });
+      },
+    },
+    {
+      spec: { name: 'read_record', description: 'Read the transcript (one block per minute, with its time mark) of the recordings and meetings a note shows, and how long and how many frames each has.', parameters: obj(idArg) },
+      run: async a => {
+        const doc: NoteDoc | null = await vault.getNote(target(a));
+        if (!doc || doc.private || doc.type !== 'note') throw new Error(NOT_FOUND);
+        const out: { record: string; kind: string; seconds: number; frames: number; transcript: string }[] = [];
+        const link = new RegExp(`\\]\\(<?([^)\\s>]+)>?\\s+["']${RECORD_LINK_TITLE}["']\\)`, 'g');
+        for (const m of doc.body.matchAll(link)) {
+          let raw = m[1];
+          try { raw = decodeURI(raw); } catch { /* as written */ }
+          for (const p of [normalizePath(joinPath(dirname(doc.filePath), raw)), normalizePath(raw)]) {
+            const r = p ? await vault.getRecord(p) : null;
+            if (!r) continue;
+            out.push({ record: r.path, kind: r.meta?.kind ?? 'recording', seconds: r.meta?.seconds ?? 0, frames: r.frames.length, transcript: (r.transcript ?? '(no transcript yet)').slice(0, 60_000) });
+            break;
+          }
+        }
+        return out.length ? json(out) : 'This note shows no recordings.';
       },
     },
     {

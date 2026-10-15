@@ -55,8 +55,8 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
   for. A new element is: a node with a `markdown` storage, an entry in that list, a line in ADR 0009 and in the skill.
 - `<details>`, the page-break `<div>` and `$$` are block rules added to markdown-it by the node's `parse.setup`; `☐`/`☑`
   and voice notes are recognised after rendering (`updateDOM`) because the inline text rule would swallow them.
-- A string passed to `insertContent` is read as Markdown by tiptap-markdown, which is how a recording lands as clip +
-  summary + toggle in one call. An editor always keeps one empty paragraph after a block (TrailingParagraph), so the
+- A string passed to `insertContent` is read as Markdown by tiptap-markdown, which is how a summary lands as text under
+  a record in one call. An editor always keeps one empty paragraph after a block (TrailingParagraph), so the
   caret has somewhere to go after a table, a diagram or a formula.
 - Recording uses MediaRecorder (Opus, 32 kbit/s) and needs a secure context; the microphone is not available on a plain
   http address other than localhost. Speech-to-text posts the file as multipart to `<custom server>/v1/audio/transcriptions`
@@ -124,3 +124,19 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 - The first `Join` of a very large vault downloads every commit; there is no progressive/lazy sync.
 - `overlays/` and `gc/` are announced through the inbox, but a full reconcile lists them (on "Sync now (full check)" and when this device was offline for 25+ days).
 - Two devices compacting the same note at the same instant is covered by reasoning and by the simulation only sequentially.
+
+## Records (ADR 0011)
+
+- `core/src/record.ts` is the pure part: folder and frame names, `record.json`, the `[m:ss]` transcript text, the frame
+  difference, and the WebM reader/writer. MediaRecorder writes a WebM with no size on the Segment or the Clusters and no
+  Duration; `parseWebm` reads that (and a file cut off at the end), `joinWebm` re-emits the same packets with a Duration and
+  sized elements, `sliceWebm` cuts a playable piece that starts at zero (what a transcription request is sent).
+- One MediaRecorder runs for the whole recording, so there is no gap; `record/session.ts` only writes the bytes it has
+  produced as `audio-00N.webm` every 10 minutes, and joins them on stop. Frames are drawn from a hidden `<video>` of the
+  share, compared as 160x90 gray pictures and dropped when under 0.3 % of the pixels differ from the last kept one.
+- A record's files are file items like any attachment. `Vault.addFile({ dir })` writes one under an exact name (and
+  replaces it when written again); `getRecord` / `listRecords` read a folder; the link index contains the folders so that
+  moving a note rewrites its `type_record` links. The Trash follows `followRecords`.
+- The player is an editor node view, outside the React providers: it reaches the api through `state/appRef` and the models
+  through `record/host.ts` (set by `AppProvider`). Players look again when `notifyRecord` fires.
+- Test: `packages/app/e2e/audio.mjs` (fake microphone, a canvas as the shared screen whose slide changes every 2.5 s).

@@ -5,8 +5,9 @@ PARA folders + Inbox + Zettelkasten links, Evernote-style editor, tasks and cale
 Markdown/HTML/PDF export, and an MCP endpoint for AI agents. **Your notes are plain Markdown files in a folder you
 choose**, like an Obsidian vault: put a pile of `.md` files there and they are notes; edit them with any other program
 and Ergonotes follows; what it does not understand is never rewritten (docs/adr/0010). The Insert menu puts toggles,
-page breaks, dates, events, formulas, Mermaid diagrams, voice notes and meeting recordings into a note, and every one of
-them is stored as standard Markdown (docs/adr/0009).
+page breaks, dates, events, formulas, Mermaid diagrams, recordings and meetings into a note, and every one of
+them is stored as standard Markdown (docs/adr/0009). A meeting is the audio of a call, pictures of the shared screen
+and a transcript, kept in one folder and played with the pictures marked on the timeline (docs/adr/0011).
 
 | | |
 |---|---|
