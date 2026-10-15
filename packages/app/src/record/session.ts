@@ -118,7 +118,7 @@ export class RecordSession {
         }
         this.streams.push(display);
         if (display.getAudioTracks().length === 0) {
-          throw new Error('The picture was shared but not its sound. Choose again and tick “Share tab audio” (or “Share system audio”) in the browser’s window.');
+          throw new Error('The picture was shared but not its sound. Choose again: a browser tab with “Share tab audio” ticked, or “Entire Screen” with “Share with system audio” turned on (a single window has no sound).');
         }
       }
       const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });

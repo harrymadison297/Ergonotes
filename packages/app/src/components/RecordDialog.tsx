@@ -102,7 +102,12 @@ export function RecordDialog({ kind, privateNote, onStarted, onDiscarded, onFini
           {kind === 'meeting' && !shareOk && (
             <p className="error-text" role="alert">This browser cannot share the screen, so a meeting cannot be recorded here. A recording of the microphone alone works.</p>
           )}
-          {kind === 'meeting' && shareOk && <p className="hint">The browser will ask what to share: choose the call’s tab or window and tick “Share audio”. Without the share nothing is recorded.</p>}
+          {kind === 'meeting' && shareOk && (
+            <p className="hint">
+              You will be asked what to share. In a browser choose the call’s tab and tick “Share tab audio”. In the Windows app choose
+              “Entire Screen” and turn on “Share with system audio” (a single window has no sound to share). Without the share nothing is recorded.
+            </p>
+          )}
           {kind === 'meeting' && (
             <label className={classNames('rec-opt', !shareOk && 'off')}>
               <input type="checkbox" checked={frames} disabled={!shareOk} onChange={e => setFrames(e.target.checked)} /> Take pictures of the shared screen

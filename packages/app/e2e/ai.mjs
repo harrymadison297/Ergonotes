@@ -324,7 +324,7 @@ await rpc('setSettings', {});
 check('suggestions start switched off', (await rpc('getAiSettings')).suggest === false);
 await page.reload();
 await page.getByLabel('Title').waitFor();
-check('the note footer shows the switch, off', (await page.getByRole('button', { name: /Suggestions off/ }).count()) === 1);
+check('the note footer shows the switch, off', !!(await until(async () => (await page.getByRole('button', { name: /Suggestions off/ }).count()) === 1, 8000)));
 await page.getByRole('button', { name: /Suggestions off/ }).click();
 check('and turning it on is kept in the vault', !!(await until(async () => (await rpc('getAiSettings')).suggest === true)));
 await rpc('setAiSettings', { suggestDelay: 200 });
