@@ -4,7 +4,7 @@ import { MemStore } from '../src/store.ts';
 import { Vault } from '../src/vault.ts';
 import type { StoreConfig } from '../src/api.ts';
 import {
-  applyAiPatch, buildTools, chatSystemPrompt, cleanSuggestion, completeText, defaultAiConfig, runAgent, sectionRange, streamChat, suggestionRequest,
+  apiBase, applyAiPatch, buildTools, listModels, toSettings, chatSystemPrompt, cleanSuggestion, completeText, defaultAiConfig, runAgent, sectionRange, streamChat, suggestionRequest,
   type AiConfig, type AiEvent, type AiMessage, type AiRequest, type AiTransport, type NoteIO,
 } from '../src/index.ts';
 
@@ -453,5 +453,60 @@ describe('busy providers', () => {
     const bad = (async () => { c2++; return new Response('{"error":{"message":"no"}}', { status: 401 }); }) as unknown as typeof fetch;
     await expect(collect(streamChat(cfg(), { model: 'chat', messages: [] }, { fetchImpl: bad }))).rejects.toThrow(/rejected the API key/);
     expect(c2).toBe(1);
+  });
+});
+
+describe('custom OpenAI-style server (Ollama)', () => {
+  const custom = (over: Partial<AiConfig> = {}): AiConfig => ({ ...defaultAiConfig(), provider: 'custom', customUrl: 'http://localhost:11434', keys: {}, chatModel: 'llama3.2', suggestModel: 'llama3.2', ...over });
+
+  it('finds the API from whatever address was typed', () => {
+    expect(apiBase('http://localhost:11434')).toBe('http://localhost:11434/v1');
+    expect(apiBase('http://localhost:11434/')).toBe('http://localhost:11434/v1');
+    expect(apiBase('https://gw.example.com/v1/')).toBe('https://gw.example.com/v1');
+    expect(apiBase('https://gw.example.com/openai/v1/chat/completions')).toBe('https://gw.example.com/openai/v1');
+    expect(apiBase('http://10.0.0.5:8080/api')).toBe('http://10.0.0.5:8080/api');
+  });
+
+  it('needs an address but not a key, and sends the key only when there is one', async () => {
+    expect(toSettings(custom({ customUrl: '' })).hasKey).toBe(false);
+    expect(toSettings(custom()).hasKey).toBe(true);
+    const seen: { url: string; auth: string | null; body: Record<string, unknown> }[] = [];
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      seen.push({ url, auth: new Headers(init.headers).get('authorization'), body: JSON.parse(init.body as string) });
+      return sse([{ choices: [{ delta: { content: 'hi' } }] }, { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c', function: { name: 'read_note', arguments: { id: 'n1' } } }] } }] }, '[DONE]']);
+    }) as unknown as typeof fetch;
+    const ev = await collect(streamChat(custom(), { model: 'suggest', messages: [{ role: 'user', content: 'x' }] }, { fetchImpl }));
+    expect(seen[0].url).toBe('http://localhost:11434/v1/chat/completions');
+    expect(seen[0].auth).toBeNull();
+    expect(seen[0].body.model).toBe('llama3.2');
+    expect('reasoning' in seen[0].body).toBe(false); // an OpenRouter-only option
+    expect(ev.find(e => e.type === 'tool_call')).toEqual({ type: 'tool_call', call: { id: 'c', name: 'read_note', args: { id: 'n1' } } });
+    await collect(streamChat(custom({ keys: { custom: 'secret' } }), { model: 'chat', messages: [] }, { fetchImpl }));
+    expect(seen[1].auth).toBe('Bearer secret');
+    await expect(collect(streamChat(custom({ customUrl: '' }), { model: 'chat', messages: [] }, { fetchImpl }))).rejects.toThrow(/address of your server/);
+  });
+
+  it('explains an unreachable server instead of "Failed to fetch"', async () => {
+    const down = (async () => { throw new TypeError('fetch failed'); }) as unknown as typeof fetch;
+    await expect(collect(streamChat(custom(), { model: 'chat', messages: [] }, { fetchImpl: down }))).rejects.toThrow(/Could not reach localhost:11434.*running/);
+  });
+
+  it('lists the models, from the OpenAI-style and the Ollama shapes', async () => {
+    const openai = (async (url: string) => { expect(url).toBe('http://localhost:11434/v1/models'); return new Response(JSON.stringify({ data: [{ id: 'qwen2.5:7b' }, { id: 'llama3.2:3b' }] })); }) as unknown as typeof fetch;
+    expect(await listModels(custom(), { fetchImpl: openai })).toEqual(['llama3.2:3b', 'qwen2.5:7b']);
+    const native = (async () => new Response(JSON.stringify({ models: [{ name: 'phi3' }, { name: 'gemma2' }] }))) as unknown as typeof fetch;
+    expect(await listModels(custom(), { fetchImpl: native })).toEqual(['gemma2', 'phi3']);
+    await expect(listModels(custom({ customUrl: '' }))).rejects.toThrow(/address/);
+  });
+
+  it('stores the address in the vault and refuses one that is not http(s)', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const s = await v.setAiSettings({ provider: 'custom', customUrl: ' http://192.168.1.20:11434 ', keys: { custom: 'k' } });
+    expect(s).toMatchObject({ provider: 'custom', customUrl: 'http://192.168.1.20:11434', hasKey: true, chatModel: 'llama3.2' });
+    expect(v.aiConfig().keys.custom).toBe('k');
+    await expect(v.setAiSettings({ customUrl: 'ftp://nope' })).rejects.toThrow(/http/);
+    await expect(v.setAiSettings({ customUrl: 'localhost:11434' })).rejects.toThrow(/http/);
+    expect((await v.setAiSettings({ customUrl: '' })).hasKey).toBe(false);
   });
 });

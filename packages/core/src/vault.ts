@@ -929,6 +929,7 @@ export class Vault implements VaultApi {
       return {
         provider: j.provider && AI_PROVIDERS.includes(j.provider) ? j.provider : base.provider,
         keys,
+        customUrl: typeof j.customUrl === 'string' ? j.customUrl : '',
         chatModel: typeof j.chatModel === 'string' && j.chatModel ? j.chatModel : base.chatModel,
         suggestModel: typeof j.suggestModel === 'string' && j.suggestModel ? j.suggestModel : base.suggestModel,
         wholeVault: j.wholeVault === true,

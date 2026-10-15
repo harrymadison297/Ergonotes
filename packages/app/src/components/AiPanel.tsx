@@ -422,8 +422,8 @@ export function AiPanel() {
             {noKey ? (
               <>
                 <h2>Connect an AI provider</h2>
-                <p>Ask questions about your notes, and have them written, edited or drawn for you. You bring your own API key.</p>
-                <button className="btn primary" onClick={() => app.setDialog({ kind: 'settings', tab: 'ai' })}>Add an API key</button>
+                <p>Ask questions about your notes, and have them written, edited or drawn for you. Use your own key, or a model running on your own machine.</p>
+                <button className="btn primary" onClick={() => app.setDialog({ kind: 'settings', tab: 'ai' })}>Set up AI</button>
               </>
             ) : isPrivate ? (
               <>
@@ -516,7 +516,7 @@ export function AiPanel() {
             </div>
           )}
           <textarea ref={area} aria-label="Message the assistant" rows={2} value={draft} disabled={disabled}
-            placeholder={noKey ? 'Add an API key first' : isPrivate ? 'This note is private' : 'Ask anything'}
+            placeholder={noKey ? 'Set up AI first' : isPrivate ? 'This note is private' : 'Ask anything'}
             onChange={e => onDraft(e.target.value, e.target.selectionStart)}
             onKeyDown={e => {
               if (picker && picks.length) {

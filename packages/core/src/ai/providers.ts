@@ -3,7 +3,7 @@ import type { AiConfig, AiEvent, AiMessage, AiRequest, AiToolCall } from './type
 
 export interface StreamOptions { fetchImpl?: typeof fetch; signal?: AbortSignal }
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
 export class AiError extends Error {
@@ -65,7 +65,25 @@ const parseArgs = (s: string): Record<string, unknown> => {
   try { const v: unknown = JSON.parse(s); return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}; } catch { return {}; }
 };
 
-// ---------------------------------------------------------------- OpenRouter
+/** Base of an OpenAI-style API from whatever the person typed: `http://host:11434`, `…/v1`, or the full chat URL. */
+export function apiBase(raw: string): string {
+  const u = new URL(raw.trim());
+  let p = u.pathname.replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
+  if (p === '') p = '/v1';
+  return u.origin + p;
+}
+
+/** fetch that explains a network failure: "Failed to fetch" tells nobody that their server is not running. */
+async function post(url: string, init: RequestInit, o: StreamOptions): Promise<Response> {
+  try { return await (o.fetchImpl ?? fetch)(url, init); } catch (e) {
+    if (o.signal?.aborted) throw e;
+    let host = url;
+    try { host = new URL(url).host; } catch { /* keep */ }
+    throw new AiError(`Could not reach ${host}. Is the server running and reachable from this device? (${e instanceof Error ? e.message : String(e)})`);
+  }
+}
+
+// ---------------------------------------------------------------- OpenRouter and any OpenAI-style server
 function openAiMessages(req: AiRequest): unknown[] {
   const out: unknown[] = [];
   if (req.system) out.push({ role: 'system', content: req.system });
@@ -80,9 +98,12 @@ function openAiMessages(req: AiRequest): unknown[] {
   return out;
 }
 
-async function* openRouter(cfg: AiConfig, req: AiRequest, o: StreamOptions): AsyncGenerator<AiEvent> {
-  const key = cfg.keys.openrouter;
-  if (!key) throw new AiError('Add an OpenRouter API key in Settings → AI.');
+async function* openAiStyle(cfg: AiConfig, req: AiRequest, o: StreamOptions): AsyncGenerator<AiEvent> {
+  const custom = cfg.provider === 'custom';
+  const key = custom ? cfg.keys.custom : cfg.keys.openrouter;
+  if (custom && !cfg.customUrl) throw new AiError('Add the address of your server in Settings → AI.');
+  if (!custom && !key) throw new AiError('Add an OpenRouter API key in Settings → AI.');
+  const url = `${custom ? apiBase(cfg.customUrl) : OPENROUTER_BASE}/chat/completions`;
   const model = req.model === 'chat' ? cfg.chatModel : cfg.suggestModel;
   const body: Record<string, unknown> = {
     model, messages: openAiMessages(req), stream: true, stream_options: { include_usage: true },
@@ -90,20 +111,20 @@ async function* openRouter(cfg: AiConfig, req: AiRequest, o: StreamOptions): Asy
     ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
   };
   // a suggestion has to be quick and short: a model that "thinks" first would spend the whole answer on it
-  if (req.model === 'suggest') body.reasoning = { enabled: false };
+  if (!custom && req.model === 'suggest') body.reasoning = { enabled: false };
   if (req.tools?.length) body.tools = req.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
-  const res = await (o.fetchImpl ?? fetch)(OPENROUTER_URL, {
+  const res = await post(url, {
     method: 'POST', signal: o.signal,
-    headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', 'x-title': 'Ergonotes' },
+    headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}), ...(custom ? {} : { 'x-title': 'Ergonotes' }) },
     body: JSON.stringify(body),
-  });
+  }, o);
   if (!res.ok) throw await failure(res);
   const calls = new Map<number, { id: string; name: string; args: string }>();
   for await (const data of sseData(res)) {
     if (data.trim() === '[DONE]') break;
     let j: {
       error?: { message?: string; metadata?: { raw?: unknown } };
-      choices?: { delta?: { content?: string | null; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[] }; finish_reason?: string | null }[];
+      choices?: { delta?: { content?: string | null; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string | Record<string, unknown> } }[] }; finish_reason?: string | null }[];
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
     try { j = JSON.parse(data); } catch { continue; }
@@ -115,7 +136,8 @@ async function* openRouter(cfg: AiConfig, req: AiRequest, o: StreamOptions): Asy
       const cur = calls.get(idx) ?? { id: '', name: '', args: '' };
       if (tc.id) cur.id = tc.id;
       if (tc.function?.name) cur.name += tc.function.name;
-      if (tc.function?.arguments) cur.args += tc.function.arguments;
+      const a = tc.function?.arguments;
+      if (a) cur.args += typeof a === 'string' ? a : JSON.stringify(a); // some servers send the arguments as an object
       calls.set(idx, cur);
     }
     if (j.usage) yield { type: 'usage', input: j.usage.prompt_tokens ?? 0, output: j.usage.completion_tokens ?? 0 };
@@ -154,7 +176,7 @@ async function* anthropic(cfg: AiConfig, req: AiRequest, o: StreamOptions): Asyn
     ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
   };
   if (req.tools?.length) body.tools = req.tools.map(t => ({ name: t.name, description: t.description, input_schema: t.parameters }));
-  const res = await (o.fetchImpl ?? fetch)(ANTHROPIC_URL, {
+  const res = await post(ANTHROPIC_URL, {
     method: 'POST', signal: o.signal,
     headers: {
       'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json',
@@ -162,7 +184,7 @@ async function* anthropic(cfg: AiConfig, req: AiRequest, o: StreamOptions): Asyn
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify(body),
-  });
+  }, o);
   if (!res.ok) throw await failure(res);
   const blocks = new Map<number, { id: string; name: string; json: string }>();
   let input = 0, output = 0;
@@ -198,7 +220,7 @@ async function* anthropic(cfg: AiConfig, req: AiRequest, o: StreamOptions): Asyn
 }
 
 function streamOnce(cfg: AiConfig, req: AiRequest, o: StreamOptions): AsyncGenerator<AiEvent> {
-  return cfg.provider === 'anthropic' ? anthropic(cfg, req, o) : openRouter(cfg, req, o);
+  return cfg.provider === 'anthropic' ? anthropic(cfg, req, o) : openAiStyle(cfg, req, o);
 }
 
 /** Busy providers answer 429/5xx, or break the stream before it starts: worth another try. */
@@ -239,4 +261,30 @@ export async function completeText(transport: (r: AiRequest, s?: AbortSignal) =>
   let out = '';
   for await (const e of transport(req, signal)) if (e.type === 'text') out += e.delta;
   return out;
+}
+
+/** The model names the provider offers, for the settings page. */
+export async function listModels(cfg: AiConfig, o: Pick<StreamOptions, 'fetchImpl' | 'signal'> = {}): Promise<string[]> {
+  const key = cfg.keys[cfg.provider];
+  let url: string;
+  const headers: Record<string, string> = {};
+  if (cfg.provider === 'custom') {
+    if (!cfg.customUrl) throw new AiError('Add the address of your server first.');
+    url = `${apiBase(cfg.customUrl)}/models`;
+    if (key) headers.authorization = `Bearer ${key}`;
+  } else if (cfg.provider === 'anthropic') {
+    if (!key) throw new AiError('Add an Anthropic API key first.');
+    url = 'https://api.anthropic.com/v1/models?limit=100';
+    headers['x-api-key'] = key;
+    headers['anthropic-version'] = '2023-06-01';
+    headers['anthropic-dangerous-direct-browser-access'] = 'true';
+  } else {
+    url = `${OPENROUTER_BASE}/models`;
+    if (key) headers.authorization = `Bearer ${key}`;
+  }
+  const res = await post(url, { method: 'GET', headers, signal: o.signal }, o);
+  if (!res.ok) throw await failure(res);
+  const j = (await res.json()) as { data?: { id?: string }[]; models?: { name?: string; model?: string }[] };
+  const names = [...(j.data ?? []).map(m => m.id), ...(j.models ?? []).map(m => m.name ?? m.model)].filter((x): x is string => !!x);
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
 }

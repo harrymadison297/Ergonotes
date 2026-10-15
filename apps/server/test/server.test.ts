@@ -199,6 +199,46 @@ describe('AI proxy', () => {
     });
   });
 
+  it('talks to a custom OpenAI-style server (Ollama) and lists its models', async () => {
+    const { createServer } = await import('node:http');
+    const calls: { url: string; auth: string | undefined; body: string }[] = [];
+    const ollama = createServer((req, res) => {
+      let body = '';
+      req.on('data', c => { body += c; });
+      req.on('end', () => {
+        calls.push({ url: req.url ?? '', auth: req.headers.authorization, body });
+        if (req.url === '/v1/models') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ data: [{ id: 'llama3.2:3b' }] })); return; }
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'local ' } }] })}\n\n`);
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'answer' } }] })}\n\ndata: [DONE]\n\n`);
+        res.end();
+      });
+    });
+    await new Promise<void>(r => ollama.listen(0, '127.0.0.1', r));
+    const port = (ollama.address() as { port: number }).port;
+    try {
+      await withServer({}, async (_s, u) => {
+        const created = await postJson(u, '/api/rpc/createVault', JSON.stringify([PASSWORD]));
+        const cookie = created.headers.get('set-cookie')!.split(';')[0];
+        const saved = await (await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ provider: 'custom', customUrl: `http://127.0.0.1:${port}` }]), { cookie })).json();
+        expect(saved).toMatchObject({ provider: 'custom', hasKey: true, chatModel: 'llama3.2' });
+        expect((await postJson(u, '/api/ai/models', '{}')).status).toBe(401);
+        const models = await (await postJson(u, '/api/ai/models', '{}', { cookie })).json();
+        expect(models).toEqual({ models: ['llama3.2:3b'] });
+        const r = await postJson(u, '/api/ai/stream', JSON.stringify({ model: 'chat', messages: [{ role: 'user', content: 'hi' }] }), { cookie });
+        const text = (await r.text()).trim().split('\n').map(l => JSON.parse(l) as { type: string; delta?: string }).filter(e => e.type === 'text').map(e => e.delta).join('');
+        expect(text).toBe('local answer');
+        expect(calls.at(-1)!.url).toBe('/v1/chat/completions');
+        expect(calls.at(-1)!.auth).toBeUndefined();
+        expect(JSON.parse(calls.at(-1)!.body).model).toBe('llama3.2');
+        // an address nobody listens on is explained, not a hang
+        await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ customUrl: 'http://127.0.0.1:9' }]), { cookie });
+        const down = await (await postJson(u, '/api/ai/stream', JSON.stringify({ model: 'chat', messages: [] }), { cookie })).text();
+        expect(JSON.parse(down.trim().split('\n').at(-1)!).message).toMatch(/Could not reach 127\.0\.0\.1:9/);
+      });
+    } finally { await new Promise<void>(r => ollama.close(() => r())); }
+  });
+
   it('reports a provider failure as an error event instead of hanging', async () => {
     const aiFetch = (async () => new Response(JSON.stringify({ error: { message: 'No credits' } }), { status: 402 })) as unknown as typeof fetch;
     await withServer({ aiFetch }, async (_s, u) => {

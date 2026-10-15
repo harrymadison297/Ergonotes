@@ -381,7 +381,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
 }
 
 // ---------------------------------------------------------------- AI provider, chat scope, suggestions
-const PROVIDER_NAME: Record<AiProvider, string> = { openrouter: 'OpenRouter', anthropic: 'Anthropic' };
+const PROVIDER_NAME: Record<AiProvider, string> = { openrouter: 'OpenRouter', anthropic: 'Anthropic', custom: 'Custom server (Ollama, LM Studio…)' };
 
 function AiSettings() {
   const app = useApp();
@@ -392,6 +392,11 @@ function AiSettings() {
   const [suggestModel, setSuggestModel] = useState(ai.suggestModel);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [url, setUrl] = useState(ai.customUrl);
+  const [models, setModels] = useState<string[]>([]);
+  const [modelsMsg, setModelsMsg] = useState<string | null>(null);
+  useEffect(() => { setUrl(ai.customUrl); }, [ai.customUrl]);
+  useEffect(() => { setModels([]); setModelsMsg(null); }, [ai.provider, ai.customUrl]);
   useEffect(() => { setChatModel(ai.chatModel); setSuggestModel(ai.suggestModel); }, [ai.chatModel, ai.suggestModel, ai.provider]);
 
   const save = async (patch: Parameters<typeof app.api.setAiSettings>[0]) => {
@@ -407,6 +412,15 @@ function AiSettings() {
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) }); }
     setBusy(false);
   };
+  const loadModels = async () => {
+    setModelsMsg('Loading…');
+    try {
+      const list = await app.aiModels();
+      setModels(list);
+      setModelsMsg(list.length ? `${list.length} model${list.length === 1 ? '' : 's'} found. Start typing in a model box to pick one.` : 'The server lists no models. For Ollama, pull one first: ollama pull llama3.2');
+    } catch (e) { setModelsMsg(e instanceof Error ? e.message : String(e)); }
+  };
+  const custom = ai.provider === 'custom';
   const check = (id: string, checked: boolean, on: (v: boolean) => void, label: string, hint?: string) => (
     <div className="field">
       <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontWeight: 600 }}>
@@ -425,26 +439,39 @@ function AiSettings() {
         <select id="ai-provider" className="input" value={ai.provider} onChange={e => void save({ provider: e.target.value as AiProvider })}>
           {(Object.keys(PROVIDER_NAME) as AiProvider[]).map(p => <option key={p} value={p}>{PROVIDER_NAME[p]}</option>)}
         </select></div>
-      <div className="field"><label htmlFor="ai-key">{PROVIDER_NAME[ai.provider]} API key</label>
+      {custom && (
+        <div className="field"><label htmlFor="ai-url">Server address</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input id="ai-url" className="input" value={url} onChange={e => setUrl(e.target.value)} spellCheck={false} placeholder="http://localhost:11434" />
+            <button className="btn primary" disabled={url.trim() === ai.customUrl} onClick={async () => { if (await save({ customUrl: url })) app.toast('Address saved'); }}>Save</button>
+          </div>
+          <span className="hint">Any server that speaks the OpenAI chat API. Ollama listens on http://localhost:11434 by default. The address is reached from {app.mode === 'remote' ? 'the Ergonotes server, so “localhost” means that machine' : 'this device'}.</span></div>
+      )}
+      <div className="field"><label htmlFor="ai-key">{custom ? 'API key (optional)' : `${PROVIDER_NAME[ai.provider]} API key`}</label>
         <div style={{ display: 'flex', gap: 8 }}>
           <input id="ai-key" className="input" type="password" autoComplete="off" spellCheck={false} value={key} onChange={e => setKey(e.target.value)}
-            placeholder={ai.hasKey ? `Saved (ends in ${ai.keyHint ?? '····'}). Paste a new key to replace it.` : ai.provider === 'openrouter' ? 'sk-or-…' : 'sk-ant-…'} />
+            placeholder={ai.keyHint ? `Saved (ends in ${ai.keyHint}). Paste a new key to replace it.` : custom ? 'Leave empty for Ollama' : ai.provider === 'openrouter' ? 'sk-or-…' : 'sk-ant-…'} />
           <button className="btn primary" disabled={!key.trim()} onClick={async () => { if (await save({ keys: { [ai.provider]: key } })) { setKey(''); app.toast('Key saved'); } }}>Save</button>
-          {ai.hasKey && <button className="btn" onClick={async () => { if (await save({ keys: { [ai.provider]: null } })) app.toast('Key removed'); }}>Remove</button>}
+          {ai.keyHint && <button className="btn" onClick={async () => { if (await save({ keys: { [ai.provider]: null } })) app.toast('Key removed'); }}>Remove</button>}
         </div>
         <span className="hint">Stored encrypted in your vault, so your other devices can use it too. {app.mode === 'remote' ? 'The server calls the provider; the key never reaches this browser.' : 'This device calls the provider directly.'}</span></div>
       <div className="field"><label htmlFor="ai-chat">Chat model</label>
         <div style={{ display: 'flex', gap: 8 }}>
-          <input id="ai-chat" className="input" value={chatModel} onChange={e => setChatModel(e.target.value)} spellCheck={false} />
+          <input id="ai-chat" className="input" list="ai-models" value={chatModel} onChange={e => setChatModel(e.target.value)} spellCheck={false} />
           <button className="btn" disabled={chatModel.trim() === ai.chatModel || !chatModel.trim()} onClick={() => void save({ chatModel })}>Save</button>
         </div>
         <span className="hint">For example {DEFAULT_MODELS[ai.provider].chat}. It needs to support tools.</span></div>
       <div className="field"><label htmlFor="ai-suggest">Suggestion model</label>
         <div style={{ display: 'flex', gap: 8 }}>
-          <input id="ai-suggest" className="input" value={suggestModel} onChange={e => setSuggestModel(e.target.value)} spellCheck={false} />
+          <input id="ai-suggest" className="input" list="ai-models" value={suggestModel} onChange={e => setSuggestModel(e.target.value)} spellCheck={false} />
           <button className="btn" disabled={suggestModel.trim() === ai.suggestModel || !suggestModel.trim()} onClick={() => void save({ suggestModel })}>Save</button>
         </div>
         <span className="hint">A small, fast model is best: it is asked every time you pause typing.</span></div>
+      <datalist id="ai-models">{models.map(m => <option key={m} value={m} />)}</datalist>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+        <button className="btn" disabled={!ai.hasKey} onClick={() => void loadModels()}>List available models</button>
+        {modelsMsg && <span role="status" className="hint">{modelsMsg}</span>}
+      </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
         <button className="btn" disabled={!ai.hasKey || busy} onClick={() => void test()}>{busy ? <Loader2 size={16} className="spin" /> : <Check size={16} />} Test connection</button>
         {msg && <span role="status" className={msg.ok ? undefined : 'error-text'}>{msg.text}</span>}

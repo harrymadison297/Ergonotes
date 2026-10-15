@@ -1,4 +1,4 @@
-import { streamChat, Vault, VAULT_METHODS, type AiEvent, type AiTransport, type VaultApi, type VaultEvent, type VaultStatus } from '@ergonotes/core';
+import { listModels, streamChat, Vault, VAULT_METHODS, type AiEvent, type AiTransport, type VaultApi, type VaultEvent, type VaultStatus } from '@ergonotes/core';
 import { IdbPersist } from '@ergonotes/core/browser';
 
 export interface Backend {
@@ -8,6 +8,8 @@ export interface Backend {
   mode: 'local' | 'remote';
   /** how the chat and the suggestions reach the AI provider: directly, or through the server that holds the key */
   aiTransport: AiTransport;
+  /** the model names the provider offers */
+  aiModels(): Promise<string[]>;
   /** called once the vault is ready (starts sync timers in local mode) */
   start(): void;
 }
@@ -18,6 +20,13 @@ class HttpBackend implements Backend {
   private listeners = new Set<(e: VaultEvent) => void>();
   private es: EventSource | null = null;
   api: VaultApi;
+
+  aiModels = async (): Promise<string[]> => {
+    const r = await fetch('./api/ai/models', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: '{}' });
+    const b = await r.json().catch(() => null) as { models?: string[]; error?: string } | null;
+    if (!r.ok) throw new Error(b?.error ?? `Request failed (${r.status})`);
+    return b?.models ?? [];
+  };
 
   /** The server calls the provider with the key it holds and streams the events back as one JSON object per line. */
   aiTransport: AiTransport = async function* (req, signal) {
@@ -89,10 +98,12 @@ class LocalBackend implements Backend {
   private vault: Vault;
   private started = false;
   aiTransport: AiTransport;
+  aiModels: () => Promise<string[]>;
 
   constructor(vault: Vault, fetchImpl?: typeof fetch) {
     this.vault = vault;
     this.aiTransport = (req, signal) => streamChat(vault.aiConfig(), req, { fetchImpl, signal });
+    this.aiModels = () => listModels(vault.aiConfig(), { fetchImpl });
     this.api = vault;
     window.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') void vault.flush();

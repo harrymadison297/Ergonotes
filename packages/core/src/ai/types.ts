@@ -1,11 +1,14 @@
 // Shared shapes for the AI features: provider configuration, the chat protocol and the stream of events.
-export type AiProvider = 'openrouter' | 'anthropic';
-export const AI_PROVIDERS: readonly AiProvider[] = ['openrouter', 'anthropic'];
+/** `custom`: a server that speaks the OpenAI chat API: Ollama, LM Studio, vLLM, LiteLLM… */
+export type AiProvider = 'openrouter' | 'anthropic' | 'custom';
+export const AI_PROVIDERS: readonly AiProvider[] = ['openrouter', 'anthropic', 'custom'];
 
 /** What is stored in the vault (encrypted, synced). Keys never leave a device that holds the vault, except to the provider. */
 export interface AiConfig {
   provider: AiProvider;
   keys: Partial<Record<AiProvider, string>>;
+  /** address of the custom server, e.g. http://localhost:11434 or https://host/v1 */
+  customUrl: string;
   chatModel: string;
   suggestModel: string;
   /** the chat may search and read the whole vault, not only the open note */
@@ -21,8 +24,9 @@ export interface AiConfig {
 /** What a client may see: the same without the key. */
 export interface AiSettings {
   provider: AiProvider;
-  /** a key is saved for the selected provider */
+  /** ready to use: a key is saved (or, for a custom server, an address is set: its key is optional) */
   hasKey: boolean;
+  customUrl: string;
   /** last characters of the saved key, for recognising it in the settings page */
   keyHint: string | null;
   chatModel: string;
@@ -37,6 +41,7 @@ export interface AiSettingsPatch {
   provider?: AiProvider;
   /** `null` forgets the key of that provider */
   keys?: Partial<Record<AiProvider, string | null>>;
+  customUrl?: string;
   chatModel?: string;
   suggestModel?: string;
   wholeVault?: boolean;
@@ -48,10 +53,11 @@ export interface AiSettingsPatch {
 export const DEFAULT_MODELS: Record<AiProvider, { chat: string; suggest: string }> = {
   openrouter: { chat: 'google/gemma-4-31b-it:free', suggest: 'google/gemma-4-31b-it:free' },
   anthropic: { chat: 'claude-sonnet-5-5', suggest: 'claude-haiku-5-5' },
+  custom: { chat: 'llama3.2', suggest: 'llama3.2' },
 };
 
 export function defaultAiConfig(): AiConfig {
-  return { provider: 'openrouter', keys: {}, chatModel: DEFAULT_MODELS.openrouter.chat, suggestModel: DEFAULT_MODELS.openrouter.suggest, wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400 };
+  return { provider: 'openrouter', keys: {}, customUrl: '', chatModel: DEFAULT_MODELS.openrouter.chat, suggestModel: DEFAULT_MODELS.openrouter.suggest, wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400 };
 }
 
 export interface AiToolCall { id: string; name: string; args: Record<string, unknown> }
@@ -92,7 +98,7 @@ export type AiTransport = (req: AiRequest, signal?: AbortSignal) => AsyncIterabl
 export function toSettings(c: AiConfig): AiSettings {
   const key = c.keys[c.provider];
   return {
-    provider: c.provider, hasKey: !!key, keyHint: key ? key.slice(-4) : null,
+    provider: c.provider, hasKey: c.provider === 'custom' ? !!c.customUrl : !!key, keyHint: key ? key.slice(-4) : null, customUrl: c.customUrl,
     chatModel: c.chatModel, suggestModel: c.suggestModel, wholeVault: c.wholeVault, autoApply: c.autoApply,
     suggest: c.suggest, suggestDelay: c.suggestDelay,
   };
@@ -110,6 +116,15 @@ export function applyAiPatch(c: AiConfig, p: AiSettingsPatch): AiConfig {
   for (const [prov, k] of Object.entries(p.keys ?? {}) as [AiProvider, string | null | undefined][]) {
     if (!AI_PROVIDERS.includes(prov) || k === undefined) continue;
     if (k === null || k.trim() === '') delete next.keys[prov]; else next.keys[prov] = k.trim();
+  }
+  if (typeof p.customUrl === 'string') {
+    const u = p.customUrl.trim();
+    if (u) {
+      let ok = false;
+      try { ok = /^https?:$/.test(new URL(u).protocol); } catch { /* not a URL */ }
+      if (!ok) throw new Error('The server address must start with http:// or https://');
+    }
+    next.customUrl = u;
   }
   if (typeof p.chatModel === 'string' && p.chatModel.trim()) next.chatModel = p.chatModel.trim();
   if (typeof p.suggestModel === 'string' && p.suggestModel.trim()) next.suggestModel = p.suggestModel.trim();

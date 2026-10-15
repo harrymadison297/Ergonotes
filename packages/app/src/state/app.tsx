@@ -20,6 +20,7 @@ export interface AppCtx {
   /** AI provider settings (the key itself never reaches the UI) */
   ai: AiSettings;
   aiTransport: AiTransport;
+  aiModels: () => Promise<string[]>;
   route: Route;
   go: (r: Route, replace?: boolean) => void;
   refresh: () => Promise<void>;
@@ -75,7 +76,7 @@ function useMedia(q: string): boolean {
 }
 
 const EMPTY_SETTINGS: Settings = { captureFolder: null, dailyFolder: null, theme: 'system' };
-const EMPTY_AI: AiSettings = { provider: 'openrouter', hasKey: false, keyHint: null, chatModel: '', suggestModel: '', wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400 };
+const EMPTY_AI: AiSettings = { provider: 'openrouter', hasKey: false, keyHint: null, customUrl: '', chatModel: '', suggestModel: '', wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400 };
 
 export function AppProvider({ backend, status: initial, children }: { backend: Backend; status: VaultStatus; children: ReactNode }) {
   const api = backend.api;
@@ -162,6 +163,6 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
     go(where === 'calendar' ? { name: 'calendar', note: d.id } : { name: 'notes', note: d.id, folder: d.parent ?? undefined });
   }, [api, run, refresh, go]);
 
-  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, ai, aiTransport: backend.aiTransport, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
+  const value: AppCtx = { api, mode: backend.mode, status, items, byId, tasks, tags, conflicts, settings, ai, aiTransport: backend.aiTransport, aiModels: backend.aiModels, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

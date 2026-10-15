@@ -66,14 +66,14 @@ await page.getByLabel('Title').waitFor();
 
 // ---- no key yet: the panel says so, and nothing is sent
 await page.getByRole('button', { name: 'AI assistant', exact: true }).first().click();
-await page.getByRole('button', { name: 'Add an API key' }).waitFor();
+await page.getByRole('button', { name: 'Set up AI' }).waitFor();
 check('without a key the panel asks for one', true);
 check('the assistant is a tab of the right sidebar, beside the contents', (await page.getByRole('tab', { name: 'Contents' }).count()) === 1 && (await page.locator('.aside').count()) === 1);
 check('and the contents are not shown while it is open', (await page.locator('.toc').count()) === 0);
 await page.getByRole('tab', { name: 'Contents' }).click();
 check('the contents tab lists the headings', (await page.locator('.toc .toc-item', { hasText: 'Packing' }).count()) === 1);
 await page.getByRole('tab', { name: 'Assistant' }).click();
-await page.getByRole('button', { name: 'Add an API key' }).click();
+await page.getByRole('button', { name: 'Set up AI' }).click();
 await page.getByLabel('OpenRouter API key').fill('sk-or-test-0000');
 await page.getByRole('button', { name: 'Save', exact: true }).first().click();
 await until(async () => (await rpc('getAiSettings')).hasKey);
@@ -83,6 +83,24 @@ await page.getByRole('button', { name: 'Test connection' }).waitFor();
 script.push([{ type: 'text', delta: 'ok' }]);
 await page.getByRole('button', { name: 'Test connection' }).click();
 check('test connection reports success', !!(await until(async () => (await page.getByRole('status').filter({ hasText: 'Connected' }).count()) > 0)));
+// a custom server (Ollama): address, optional key, model list
+await page.route('**/api/ai/models', async route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: ['llama3.2:3b', 'qwen2.5:7b'] }) }));
+await page.getByLabel('Provider').selectOption('custom');
+await page.getByLabel('Server address').waitFor();
+check('a custom server asks for an address and its key is optional', (await page.getByLabel('API key (optional)').count()) === 1);
+check('and is not ready until it has one', (await rpc('getAiSettings')).hasKey === false);
+await page.getByLabel('Server address').fill('http://localhost:11434');
+await page.getByRole('button', { name: 'Save', exact: true }).first().click();
+check('the address is kept in the vault', !!(await until(async () => { const a = await rpc('getAiSettings'); return a.provider === 'custom' && a.customUrl === 'http://localhost:11434' && a.hasKey === true && a.chatModel === 'llama3.2'; })));
+await page.getByRole('button', { name: 'List available models' }).click();
+await page.getByText('2 models found').waitFor({ timeout: 8000 });
+check('models offered by the server fill the pick-list', (await page.locator('#ai-models option').count()) === 2);
+await page.getByLabel('Server address').fill('localhost:11434');
+await page.getByRole('button', { name: 'Save', exact: true }).first().click();
+await page.getByText(/must start with http/).waitFor({ timeout: 8000 });
+check('an address without http:// is refused with a reason', true);
+await page.getByLabel('Provider').selectOption('openrouter');
+await until(async () => (await rpc('getAiSettings')).provider === 'openrouter');
 await page.keyboard.press('Escape');
 await page.locator('.dialog').waitFor({ state: 'detached' }).catch(() => undefined);
 

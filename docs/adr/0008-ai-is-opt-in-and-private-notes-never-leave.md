@@ -11,6 +11,10 @@ reversible exception with these rules, so the exception stays small and visible.
 - **The person's own key.** There is no Ergonotes account or proxy of ours. The key lives in the Vault as an encrypted
   item (`type: config`, a fixed id) that syncs to the person's other Devices; it is never returned by the API, so a
   browser only learns that a key exists and its last four characters.
+- **A model of your own.** A third provider, *Custom server*, is any server that speaks the OpenAI chat API (Ollama,
+  LM Studio, vLLM, LiteLLM): the person gives its address and, optionally, a key. Text then goes only where the person
+  pointed it. The address is reached from the machine that makes the call: with the web build that is the Ergonotes
+  server, so "localhost" is that machine, and only the signed-in owner can change the address.
 - **Where the call is made.** A Device that holds the Vault calls the provider itself. In the web build the Server peer
   calls it (`/api/ai/stream`) so the key never reaches the browser.
 - **What is sent.** By default the open Note and the conversation. "Let the assistant search and read all my notes" is a

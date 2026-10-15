@@ -27,6 +27,11 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 
 ## AI limits
 
+- *Custom server* means the OpenAI chat API (`/v1/chat/completions`, `/v1/models`). A model without tool support can
+  chat but cannot edit. Reasoning is not switched off for it (an OpenRouter-only option), so a thinking model may be
+  slow for suggestions. Some servers refuse browser requests from another origin: the Tauri apps and the server peer are
+  not affected, a plain browser build without a server is (Ollama: set `OLLAMA_ORIGINS`).
+
 - A free OpenRouter model can be rate limited for minutes (`429 … temporarily rate-limited upstream`); the chat shows the
   provider's message. The optional live test (`ai-live.test.ts`) skips instead of failing in that case.
 - A reasoning model spends tokens thinking first: suggestions turn reasoning off on OpenRouter, the chat does not.
