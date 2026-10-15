@@ -27,6 +27,10 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 
 ## AI limits
 
+- The model picker lists what the provider's `/models` returns (OpenRouter: name, context, free, tools and reasoning
+  flags; Anthropic: names; Ollama and OpenAI-style servers: ids). It is fetched when the AI tab opens and can be reloaded;
+  a name that is not in the list can still be typed. The list goes through the server peer in the web build.
+
 - Thinking levels map to what each provider accepts: OpenRouter `reasoning.effort` / `reasoning.enabled=false`,
   OpenAI-style servers `reasoning_effort` (`none` for Off), Anthropic `thinking.budget_tokens` 1024 / 4096 / 10000 on top
   of the answer's tokens (and no temperature). A model or server that does not think ignores it. `<think>` tags in the

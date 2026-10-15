@@ -224,7 +224,7 @@ describe('AI proxy', () => {
         expect(saved).toMatchObject({ provider: 'custom', hasKey: true, chatModel: 'llama3.2' });
         expect((await postJson(u, '/api/ai/models', '{}')).status).toBe(401);
         const models = await (await postJson(u, '/api/ai/models', '{}', { cookie })).json();
-        expect(models).toEqual({ models: ['llama3.2:3b'] });
+        expect(models).toEqual({ models: [{ id: 'llama3.2:3b' }] });
         const r = await postJson(u, '/api/ai/stream', JSON.stringify({ model: 'chat', messages: [{ role: 'user', content: 'hi' }] }), { cookie });
         const text = (await r.text()).trim().split('\n').map(l => JSON.parse(l) as { type: string; delta?: string }).filter(e => e.type === 'text').map(e => e.delta).join('');
         expect(text).toBe('local answer');

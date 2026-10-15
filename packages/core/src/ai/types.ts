@@ -71,6 +71,19 @@ export function defaultAiConfig(): AiConfig {
   return { provider: 'openrouter', keys: {}, customUrl: '', chatModel: DEFAULT_MODELS.openrouter.chat, suggestModel: DEFAULT_MODELS.openrouter.suggest, chatThinking: 'auto', suggestThinking: 'off', wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400 };
 }
 
+/** One model a provider offers, for the picker in the settings. Only `id` is always known. */
+export interface ModelInfo {
+  id: string;
+  name?: string;
+  /** context window, tokens */
+  context?: number;
+  free?: boolean;
+  /** can call tools (needed for the assistant to edit notes) */
+  tools?: boolean;
+  /** can think before answering */
+  thinking?: boolean;
+}
+
 /** A thought of the model that has to be sent back with its answer (Anthropic checks the signature). */
 export interface AiThinkingBlock { text: string; signature?: string; redacted?: string }
 

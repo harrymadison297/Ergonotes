@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { AiSettings, AiTransport, ItemSummary, Settings, TaskEntry, VaultApi, VaultStatus } from '@ergonotes/core';
+import type { AiSettings, AiTransport, ModelInfo, ItemSummary, Settings, TaskEntry, VaultApi, VaultStatus } from '@ergonotes/core';
 import type { Backend } from '../backend';
 import { debounce, isoDay } from './util';
 import { useRoute, type Route } from './router';
@@ -20,7 +20,7 @@ export interface AppCtx {
   /** AI provider settings (the key itself never reaches the UI) */
   ai: AiSettings;
   aiTransport: AiTransport;
-  aiModels: () => Promise<string[]>;
+  aiModels: () => Promise<ModelInfo[]>;
   route: Route;
   go: (r: Route, replace?: boolean) => void;
   refresh: () => Promise<void>;

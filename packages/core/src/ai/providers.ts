@@ -1,5 +1,5 @@
 // Streaming chat against OpenRouter (OpenAI-style) and Anthropic (Messages API), normalised to AiEvent.
-import type { AiConfig, AiEvent, AiMessage, AiRequest, AiThinkingBlock, AiToolCall, ThinkingLevel } from './types.ts';
+import type { AiConfig, AiEvent, AiMessage, AiRequest, AiThinkingBlock, AiToolCall, ModelInfo, ThinkingLevel } from './types.ts';
 
 export interface StreamOptions { fetchImpl?: typeof fetch; signal?: AbortSignal }
 
@@ -328,8 +328,8 @@ export async function completeText(transport: (r: AiRequest, s?: AbortSignal) =>
   return out;
 }
 
-/** The model names the provider offers, for the settings page. */
-export async function listModels(cfg: AiConfig, o: Pick<StreamOptions, 'fetchImpl' | 'signal'> = {}): Promise<string[]> {
+/** The models the provider offers, for the settings page. */
+export async function listModels(cfg: AiConfig, o: Pick<StreamOptions, 'fetchImpl' | 'signal'> = {}): Promise<ModelInfo[]> {
   const key = cfg.keys[cfg.provider];
   let url: string;
   const headers: Record<string, string> = {};
@@ -349,7 +349,23 @@ export async function listModels(cfg: AiConfig, o: Pick<StreamOptions, 'fetchImp
   }
   const res = await post(url, { method: 'GET', headers, signal: o.signal }, o);
   if (!res.ok) throw await failure(res);
-  const j = (await res.json()) as { data?: { id?: string }[]; models?: { name?: string; model?: string }[] };
-  const names = [...(j.data ?? []).map(m => m.id), ...(j.models ?? []).map(m => m.name ?? m.model)].filter((x): x is string => !!x);
-  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+  const j = (await res.json()) as {
+    data?: { id?: string; name?: string; display_name?: string; context_length?: number; pricing?: { prompt?: string; completion?: string }; supported_parameters?: string[] }[];
+    models?: { name?: string; model?: string }[];
+  };
+  const byId = new Map<string, ModelInfo>();
+  for (const m of j.data ?? []) {
+    if (!m.id) continue;
+    const params = m.supported_parameters;
+    const info: ModelInfo = { id: m.id };
+    const name = m.name ?? m.display_name;
+    if (name && name !== m.id) info.name = name;
+    if (typeof m.context_length === 'number') info.context = m.context_length;
+    if (m.pricing) info.free = Number(m.pricing.prompt) === 0 && Number(m.pricing.completion) === 0;
+    else if (m.id.endsWith(':free')) info.free = true;
+    if (params) { info.tools = params.includes('tools'); info.thinking = params.includes('reasoning') || params.includes('include_reasoning'); }
+    byId.set(m.id, info);
+  }
+  for (const m of j.models ?? []) { const id = m.name ?? m.model; if (id && !byId.has(id)) byId.set(id, { id }); }
+  return [...byId.values()].sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
 }

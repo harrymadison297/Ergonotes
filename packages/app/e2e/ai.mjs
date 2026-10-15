@@ -39,6 +39,12 @@ const scripted = async route => {
   await route.fulfill({ status: 200, contentType: 'application/x-ndjson', body });
 };
 await page.route('**/api/ai/stream', scripted);
+const OPENROUTER_LIST = [
+  { id: 'anthropic/claude-sonnet-4.5', name: 'Anthropic: Claude Sonnet 4.5', context: 200000, free: false, tools: true, thinking: true },
+  { id: 'google/gemma-4-31b-it:free', name: 'Google: Gemma 4 31B (free)', context: 262144, free: true, tools: true, thinking: false },
+  { id: 'tiny/no-tools:free', name: 'Tiny no tools', context: 8000, free: true, tools: false, thinking: false },
+];
+await page.route('**/api/ai/models', async route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: OPENROUTER_LIST }) }));
 const call = (name, args) => ({ type: 'tool_call', call: { id: `c${Math.random().toString(36).slice(2, 8)}`, name, args } });
 
 // ---- set up
@@ -83,6 +89,23 @@ await page.getByRole('button', { name: 'Test connection' }).waitFor();
 script.push([{ type: 'text', delta: 'ok' }]);
 await page.getByRole('button', { name: 'Test connection' }).click();
 check('test connection reports success', !!(await until(async () => (await page.getByRole('status').filter({ hasText: 'Connected' }).count()) > 0)));
+// the model is chosen from the list the provider offers
+await page.locator('#ai-chat').click();
+await page.getByRole('option', { name: /Claude Sonnet 4.5/ }).waitFor({ timeout: 8000 });
+check('the models of the provider are listed, with their name', (await page.locator('.model-panel [role=option]').count()) >= 3);
+check('a model without tools is flagged for the assistant', (await page.locator('.model-panel [role=option]', { hasText: 'no tools' }).count()) === 1);
+await page.getByLabel('Search models').fill('claude');
+check('the list can be searched', (await page.locator('.model-panel [role=option]', { hasText: 'Sonnet' }).count()) === 1 && (await page.locator('.model-panel [role=option]', { hasText: 'Gemma' }).count()) === 0);
+await page.getByRole('option', { name: /Claude Sonnet 4.5/ }).click();
+check('choosing one saves it', !!(await until(async () => (await rpc('getAiSettings')).chatModel === 'anthropic/claude-sonnet-4.5')));
+await page.locator('#ai-suggest').click();
+await page.getByLabel('Free models only').check();
+check('free models can be filtered', (await page.locator('.model-panel [role=option]').count()) === 2);
+await page.getByLabel('Search models').fill('my-own/model:1b');
+await page.getByLabel('Search models').press('Enter');
+check('a name that is not in the list can be used', !!(await until(async () => (await rpc('getAiSettings')).suggestModel === 'my-own/model:1b')));
+await rpc('setAiSettings', { chatModel: 'google/gemma-4-31b-it:free', suggestModel: 'google/gemma-4-31b-it:free' });
+
 // thinking is set per job, on the same model
 await page.locator('#ai-chat-think').selectOption('high');
 await until(async () => (await rpc('getAiSettings')).chatThinking === 'high');
@@ -93,7 +116,8 @@ check('and it can be changed separately', !!(await until(async () => (await rpc(
 await rpc('setAiSettings', { chatThinking: 'auto', suggestThinking: 'off' });
 
 // a custom server (Ollama): address, optional key, model list
-await page.route('**/api/ai/models', async route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: ['llama3.2:3b', 'qwen2.5:7b'] }) }));
+await page.unroute('**/api/ai/models');
+await page.route('**/api/ai/models', async route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: [{ id: 'llama3.2:3b' }, { id: 'qwen2.5:7b' }] }) }));
 await page.getByLabel('Provider').selectOption('custom');
 await page.getByLabel('Server address').waitFor();
 check('a custom server asks for an address and its key is optional', (await page.getByLabel('API key (optional)').count()) === 1);
@@ -101,9 +125,11 @@ check('and is not ready until it has one', (await rpc('getAiSettings')).hasKey =
 await page.getByLabel('Server address').fill('http://localhost:11434');
 await page.getByRole('button', { name: 'Save', exact: true }).first().click();
 check('the address is kept in the vault', !!(await until(async () => { const a = await rpc('getAiSettings'); return a.provider === 'custom' && a.customUrl === 'http://localhost:11434' && a.hasKey === true && a.chatModel === 'llama3.2'; })));
-await page.getByRole('button', { name: 'List available models' }).click();
-await page.getByText('2 models found').waitFor({ timeout: 8000 });
-check('models offered by the server fill the pick-list', (await page.locator('#ai-models option').count()) === 2);
+await page.locator('#ai-chat').click();
+await page.getByRole('option', { name: /qwen2.5:7b/ }).waitFor({ timeout: 8000 });
+check('what the server has installed fills the list', (await page.locator('.model-panel [role=option]').count()) === 2);
+await page.getByRole('option', { name: /qwen2.5:7b/ }).click();
+check('and one is chosen from it', !!(await until(async () => (await rpc('getAiSettings')).chatModel === 'qwen2.5:7b')));
 await page.getByLabel('Server address').fill('localhost:11434');
 await page.getByRole('button', { name: 'Save', exact: true }).first().click();
 await page.getByText(/must start with http/).waitFor({ timeout: 8000 });

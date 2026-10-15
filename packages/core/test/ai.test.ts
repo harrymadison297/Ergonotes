@@ -493,9 +493,9 @@ describe('custom OpenAI-style server (Ollama)', () => {
 
   it('lists the models, from the OpenAI-style and the Ollama shapes', async () => {
     const openai = (async (url: string) => { expect(url).toBe('http://localhost:11434/v1/models'); return new Response(JSON.stringify({ data: [{ id: 'qwen2.5:7b' }, { id: 'llama3.2:3b' }] })); }) as unknown as typeof fetch;
-    expect(await listModels(custom(), { fetchImpl: openai })).toEqual(['llama3.2:3b', 'qwen2.5:7b']);
+    expect((await listModels(custom(), { fetchImpl: openai })).map(m => m.id)).toEqual(['llama3.2:3b', 'qwen2.5:7b']);
     const native = (async () => new Response(JSON.stringify({ models: [{ name: 'phi3' }, { name: 'gemma2' }] }))) as unknown as typeof fetch;
-    expect(await listModels(custom(), { fetchImpl: native })).toEqual(['gemma2', 'phi3']);
+    expect((await listModels(custom(), { fetchImpl: native })).map(m => m.id)).toEqual(['gemma2', 'phi3']);
     await expect(listModels(custom({ customUrl: '' }))).rejects.toThrow(/address/);
   });
 
@@ -602,5 +602,29 @@ describe('thinking', () => {
     expect(await v.getAiSettings()).toMatchObject({ chatThinking: 'auto', suggestThinking: 'off' });
     expect(await v.setAiSettings({ chatThinking: 'high', suggestThinking: 'low' })).toMatchObject({ chatThinking: 'high', suggestThinking: 'low' });
     expect(await v.setAiSettings({ chatThinking: 'extreme' as never })).toMatchObject({ chatThinking: 'high' });
+  });
+});
+
+describe('model list', () => {
+  it('reads what OpenRouter says about each model', async () => {
+    const fetchImpl = (async () => new Response(JSON.stringify({ data: [
+      { id: 'google/gemma-4-31b-it:free', name: 'Google: Gemma 4 31B (free)', context_length: 262144, pricing: { prompt: '0', completion: '0' }, supported_parameters: ['tools', 'temperature'] },
+      { id: 'anthropic/claude-sonnet-4.5', name: 'Anthropic: Claude Sonnet 4.5', context_length: 200000, pricing: { prompt: '0.000003', completion: '0.000015' }, supported_parameters: ['tools', 'reasoning'] },
+      { id: 'tiny/model', pricing: { prompt: '0.1', completion: '0.1' }, supported_parameters: [] },
+    ] }))) as unknown as typeof fetch;
+    const list = await listModels(cfg(), { fetchImpl });
+    const by = Object.fromEntries(list.map(m => [m.id, m]));
+    expect(by['google/gemma-4-31b-it:free']).toMatchObject({ name: 'Google: Gemma 4 31B (free)', context: 262144, free: true, tools: true, thinking: false });
+    expect(by['anthropic/claude-sonnet-4.5']).toMatchObject({ free: false, tools: true, thinking: true });
+    expect(by['tiny/model']).toMatchObject({ free: false, tools: false });
+    expect(list[0].id).toBe('anthropic/claude-sonnet-4.5');
+  });
+
+  it('reads the Anthropic list', async () => {
+    let seen: Headers | null = null;
+    const fetchImpl = (async (_u: string, init: RequestInit) => { seen = new Headers(init.headers); return new Response(JSON.stringify({ data: [{ id: 'claude-sonnet-5-5', display_name: 'Claude Sonnet 5.5', type: 'model' }] })); }) as unknown as typeof fetch;
+    const list = await listModels(cfg({ provider: 'anthropic' }), { fetchImpl });
+    expect(list).toEqual([{ id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' }]);
+    expect(seen!.get('x-api-key')).toBe('sk-ant-test');
   });
 });

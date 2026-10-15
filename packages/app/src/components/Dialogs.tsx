@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Check, Copy, FileDown, FileUp, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
-import { applyHunks, completeText, DEFAULT_MODELS, THINKING_LEVELS, ERGONOTES_SKILL_MD, joinDoc, lineDiff, splitDoc, type AiProvider, type ThinkingLevel, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
+import { applyHunks, completeText, DEFAULT_MODELS, THINKING_LEVELS, ERGONOTES_SKILL_MD, joinDoc, lineDiff, splitDoc, type AiProvider, type ModelInfo, type ThinkingLevel, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, download, relTime } from '../state/util';
 import { Dialog, IconBtn } from './ui';
+import { ModelPicker } from './ModelPicker';
 import { setPrefs, usePrefs } from '../state/prefs';
 import { StoreForm, formFromStore, storeFromForm, type StoreFormState } from './StoreForm';
 
@@ -389,16 +390,13 @@ function AiSettings() {
   const prefs = usePrefs();
   const ai = app.ai;
   const [key, setKey] = useState('');
-  const [chatModel, setChatModel] = useState(ai.chatModel);
-  const [suggestModel, setSuggestModel] = useState(ai.suggestModel);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [url, setUrl] = useState(ai.customUrl);
-  const [models, setModels] = useState<string[]>([]);
-  const [modelsMsg, setModelsMsg] = useState<string | null>(null);
+  const [models, setModels] = useState<ModelInfo[] | null>(null);
+  const [modelsErr, setModelsErr] = useState<string | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(false);
   useEffect(() => { setUrl(ai.customUrl); }, [ai.customUrl]);
-  useEffect(() => { setModels([]); setModelsMsg(null); }, [ai.provider, ai.customUrl]);
-  useEffect(() => { setChatModel(ai.chatModel); setSuggestModel(ai.suggestModel); }, [ai.chatModel, ai.suggestModel, ai.provider]);
 
   const save = async (patch: Parameters<typeof app.api.setAiSettings>[0]) => {
     const r = await app.run(app.api.setAiSettings(patch));
@@ -413,14 +411,18 @@ function AiSettings() {
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) }); }
     setBusy(false);
   };
+  /** the list of models is fetched when it can be (a key or an address is there) and again when the provider changes */
+  const listKey = `${ai.provider}|${ai.customUrl}|${ai.keyHint ?? ''}`;
   const loadModels = async () => {
-    setModelsMsg('Loading…');
-    try {
-      const list = await app.aiModels();
-      setModels(list);
-      setModelsMsg(list.length ? `${list.length} model${list.length === 1 ? '' : 's'} found. Start typing in a model box to pick one.` : 'The server lists no models. For Ollama, pull one first: ollama pull llama3.2');
-    } catch (e) { setModelsMsg(e instanceof Error ? e.message : String(e)); }
+    setModelsLoading(true); setModelsErr(null);
+    try { setModels(await app.aiModels()); } catch (e) { setModels(null); setModelsErr(e instanceof Error ? e.message : String(e)); }
+    setModelsLoading(false);
   };
+  useEffect(() => {
+    setModels(null); setModelsErr(null);
+    // OpenRouter's list is public; the others need a key or an address first
+    if (ai.provider === 'openrouter' || ai.hasKey) void loadModels();
+  }, [listKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const custom = ai.provider === 'custom';
   const check = (id: string, checked: boolean, on: (v: boolean) => void, label: string, hint?: string) => (
     <div className="field">
@@ -457,31 +459,22 @@ function AiSettings() {
         </div>
         <span className="hint">Stored encrypted in your vault, so your other devices can use it too. {app.mode === 'remote' ? 'The server calls the provider; the key never reaches this browser.' : 'This device calls the provider directly.'}</span></div>
       <div className="field"><label htmlFor="ai-chat">Chat model</label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input id="ai-chat" className="input" list="ai-models" value={chatModel} onChange={e => setChatModel(e.target.value)} spellCheck={false} />
-          <button className="btn" disabled={chatModel.trim() === ai.chatModel || !chatModel.trim()} onClick={() => void save({ chatModel })}>Save</button>
-        </div>
-        <span className="hint">For example {DEFAULT_MODELS[ai.provider].chat}. It needs to support tools.</span>
+        <ModelPicker id="ai-chat" label="Chat model" value={ai.chatModel} models={models} error={modelsErr} loading={modelsLoading} needsTools
+          onPick={m => void save({ chatModel: m })} onRefresh={() => void loadModels()} />
+        <span className="hint">It needs to support tools for the assistant to edit notes.</span>
         <div className="think-row"><label htmlFor="ai-chat-think">Thinking</label>
           <select id="ai-chat-think" className="input" value={ai.chatThinking} onChange={e => void save({ chatThinking: e.target.value as ThinkingLevel })}>
             {THINKING_LEVELS.map(l => <option key={l} value={l}>{THINK_NAME[l]}</option>)}
           </select></div></div>
       <div className="field"><label htmlFor="ai-suggest">Suggestion model</label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input id="ai-suggest" className="input" list="ai-models" value={suggestModel} onChange={e => setSuggestModel(e.target.value)} spellCheck={false} />
-          <button className="btn" disabled={suggestModel.trim() === ai.suggestModel || !suggestModel.trim()} onClick={() => void save({ suggestModel })}>Save</button>
-        </div>
-        <span className="hint">A small, fast model is best: it is asked every time you pause typing.</span>
+        <ModelPicker id="ai-suggest" label="Suggestion model" value={ai.suggestModel} models={models} error={modelsErr} loading={modelsLoading}
+          onPick={m => void save({ suggestModel: m })} onRefresh={() => void loadModels()} />
+        <span className="hint">A small, fast model is best: it is asked every time you pause typing. It can be the same model as the chat.</span>
         <div className="think-row"><label htmlFor="ai-suggest-think">Thinking</label>
           <select id="ai-suggest-think" className="input" value={ai.suggestThinking} onChange={e => void save({ suggestThinking: e.target.value as ThinkingLevel })}>
             {THINKING_LEVELS.map(l => <option key={l} value={l}>{THINK_NAME[l]}</option>)}
           </select>
           <span className="hint">Chat and suggestions think independently, even with the same model. Off is best for suggestions; models that cannot think ignore this.</span></div></div>
-      <datalist id="ai-models">{models.map(m => <option key={m} value={m} />)}</datalist>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-        <button className="btn" disabled={!ai.hasKey} onClick={() => void loadModels()}>List available models</button>
-        {modelsMsg && <span role="status" className="hint">{modelsMsg}</span>}
-      </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
         <button className="btn" disabled={!ai.hasKey || busy} onClick={() => void test()}>{busy ? <Loader2 size={16} className="spin" /> : <Check size={16} />} Test connection</button>
         {msg && <span role="status" className={msg.ok ? undefined : 'error-text'}>{msg.text}</span>}
