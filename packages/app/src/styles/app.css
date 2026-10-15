@@ -907,3 +907,44 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .rec-meter i { display: block; height: 100%; width: 100%; background: var(--green-mark); transform-origin: left; transition: transform 90ms linear; border-radius: 4px; }
 .rec-opt { display: inline-flex; align-items: center; gap: 8px; }
 .rec-opt.off { color: var(--text-3); }
+
+
+/* =====================================================================
+   Layout safety: nothing may be wider than the screen it is on
+   ===================================================================== */
+.scrim { grid-template-columns: minmax(0, 1fr); }
+.dialog { max-width: 100%; min-width: 0; }
+.dialog > .content { min-width: 0; overflow-x: hidden; }
+.dialog > header h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tabs { overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { white-space: nowrap; flex: none; }
+.conn { flex-wrap: wrap; }
+.conn-main { flex: 1 1 200px; }
+.think-row .input { min-width: 0; max-width: 100%; }
+
+/* Not enough room for the sidebar, the list, the note and the side panel: while the side panel is open and a note is
+   open, the note list steps aside, so the note keeps the width to be read (close the panel to see the list again). */
+@media (max-width: 1439px) {
+  .app.has-aside:not(.rail) .split:has(.pane-body .editor) { grid-template-columns: minmax(0, 1fr); }
+  .app.has-aside:not(.rail) .split:has(.pane-body .editor) .pane-list { display: none; }
+  .app.has-aside:not(.rail) .split:has(.pane-body .editor) .pane-body { margin-left: 8px; }
+}
+@media (max-width: 1299px) {
+  .app.has-aside.rail .split:has(.pane-body .editor) { grid-template-columns: minmax(0, 1fr); }
+  .app.has-aside.rail .split:has(.pane-body .editor) .pane-list { display: none; }
+  .app.has-aside.rail .split:has(.pane-body .editor) .pane-body { margin-left: 8px; }
+}
+@media (max-width: 1023px) { :root { --sidebar-w: 190px; --list-w: 248px; --aside-w: 270px; } }
+
+/* wide content scrolls inside its own block */
+.math-block { max-width: 100%; }
+.math-view { display: block; max-width: 100%; }
+.math-inline .math-view { display: inline-block; }
+.math-out .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; max-width: 100%; }
+.math-inline .math-out { max-width: 100%; }
+.diagram-out { overflow-x: auto; }
+.rec-opt { text-align: left; align-items: flex-start; max-width: 100%; }
+.rec-opt input { margin-top: 3px; flex: none; }
+.rec-opt .hint { display: block; }
+.audio-ico { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--green-fill); color: #fff; flex: none; }

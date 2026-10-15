@@ -39,7 +39,8 @@ function load(): Prefs {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Prefs> & { toc?: boolean; ai?: boolean };
     return {
-      aside: raw.aside ?? raw.toc !== false,
+      // the side panel floats over the note on a small window, so it starts closed there
+      aside: raw.aside ?? (raw.toc !== undefined ? raw.toc !== false : window.innerWidth >= 1300),
       asideTab: raw.asideTab === 'ai' || (raw.asideTab === undefined && raw.ai === true) ? 'ai' : 'toc',
       aiMode: raw.aiMode === 'ask' ? 'ask' : 'edit',
       listView: raw.listView === 'list' ? 'list' : 'cards',

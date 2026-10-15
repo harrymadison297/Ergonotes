@@ -13,7 +13,7 @@ import { Node, mergeAttributes, type Editor } from '@tiptap/core';
 import CodeBlock from '@tiptap/extension-code-block';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Pause, Play, Trash2 } from 'lucide-react';
+import { AudioLines, ChevronRight, Trash2 } from 'lucide-react';
 import type MarkdownIt from 'markdown-it';
 import { getApi } from '../state/appRef';
 
@@ -460,6 +460,12 @@ function loadMermaid() {
   });
   return mermaidReady;
 }
+/** A diagram keeps its natural width (up to a point) and scrolls sideways in a narrow note, instead of shrinking to a smear. */
+function DiagramSvg({ svg }: { svg: string }) {
+  const w = Number(/max-width:\s*([\d.]+)px/.exec(svg)?.[1] ?? 0);
+  return <div style={{ minWidth: w ? Math.min(w, 960) : undefined, margin: '0 auto' }} dangerouslySetInnerHTML={{ __html: svg }} />;
+}
+
 function MermaidView({ node, editor, extension }: NodeViewProps) {
   const lang = String(node.attrs.language ?? '');
   const source = node.textContent;
@@ -497,13 +503,13 @@ function MermaidView({ node, editor, extension }: NodeViewProps) {
       )}
       {isDiagram && !editing && (
         <div className="diagram-out" contentEditable={false}>
-          {err ? <p className="error-text" role="alert">{err}</p> : svg ? <div dangerouslySetInnerHTML={{ __html: svg }} /> : <p className="hint">Empty diagram</p>}
+          {err ? <p className="error-text" role="alert">{err}</p> : svg ? <DiagramSvg svg={svg} /> : <p className="hint">Empty diagram</p>}
         </div>
       )}
       <pre style={isDiagram && !editing ? { display: 'none' } : undefined}><NodeViewContent as="code" /></pre>
       {isDiagram && editing && source.trim() !== '' && (
         <div className="diagram-out live" contentEditable={false}>
-          {err ? <p className="error-text" role="alert">{err}</p> : svg ? <div dangerouslySetInnerHTML={{ __html: svg }} /> : null}
+          {err ? <p className="error-text" role="alert">{err}</p> : svg ? <DiagramSvg svg={svg} /> : null}
         </div>
       )}
     </NodeViewWrapper>
@@ -521,8 +527,6 @@ const audioUrls = new Map<string, string>();
 function AudioView({ node, selected }: NodeViewProps) {
   const id = String(node.attrs.file);
   const [url, setUrl] = useState<string | null>(audioUrls.get(id) ?? null);
-  const [playing, setPlaying] = useState(false);
-  const el = useRef<HTMLAudioElement>(null);
   useEffect(() => {
     if (url) return;
     let live = true;
@@ -535,13 +539,11 @@ function AudioView({ node, selected }: NodeViewProps) {
     });
     return () => { live = false; };
   }, [id, url]);
-  const toggle = () => { const a = el.current; if (!a) return; if (a.paused) void a.play(); else a.pause(); };
   return (
     <NodeViewWrapper className={`audio-clip${selected ? ' ProseMirror-selectednode' : ''}`} contentEditable={false} data-drag-handle>
-      <button type="button" className="icon-btn primary" aria-label={playing ? 'Pause' : 'Play'} onClick={toggle} disabled={!url}>{playing ? <Pause size={18} /> : <Play size={18} />}</button>
+      <span className="audio-ico" aria-hidden><AudioLines size={18} /></span>
       <span className="audio-label">{String(node.attrs.label || 'Voice note')}</span>
-      {url ? <audio ref={el} src={url} controls preload="metadata" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
-        : <span className="hint">Loading…</span>}
+      {url ? <audio src={url} controls preload="metadata" aria-label={String(node.attrs.label || 'Voice note')} /> : <span className="hint">Loading…</span>}
     </NodeViewWrapper>
   );
 }
