@@ -20,6 +20,7 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 | Search popup | Search by title, text, tag | `searchHits` (core) returns folders by name and notes with the folder path and the passage that matched (at most 40); `Ctrl/Cmd+K` or the round search button opens it. "Show all results" still goes to the filtered list | Needed passages, not just summaries. |
 | Pane widths, table of contents | Brand guidelines §6 | Per-device preferences in `localStorage` (`state/prefs.ts`), not synced. Widths are CSS variables on the root, clamped to 50 % of the window by the grid. The contents panel is on by default and hidden below 900 px. There is no interface scale: browser/webview zoom does that | A phone and a desktop want different layouts. |
 | AI settings | ADR 0008 | Provider, key, models and the two scope switches are one encrypted `config` item (fixed id) in the Vault, so they sync like a note but are never listed or exported. Suggestion on/off and its delay are per-device preferences. Two Devices saving at once: the newest wins (no conflict screen) | A key typed once works on every Device; a conflict screen about a key would be absurd. |
+| Conversations | ADR 0008 | One `chat` item per conversation (id chosen by the app, JSON in the body, long tool results cut). Two Devices extending one at once: newest wins. A conversation is capped at 4 MB | History on every Device without a new sync mechanism. |
 | Assistant edits | ADR 0008 | The chat proposes a whole new body for a note; the diff is computed for display and the accepted text goes through the editor (so it autosaves like typing). If the note changed meanwhile the proposal is three-way merged, and refused when the same place changed | Keeps a single writer for an open note. |
 | Diagrams | "draw for me" | The model writes Mermaid; the app converts it with `@excalidraw/mermaid-to-excalidraw` and stores an ordinary drawing block. Only diagrams, no free illustration; the tool exists only in the app (not on MCP, which has no browser to convert with) | Mermaid is far more reliable from a model than raw Excalidraw JSON. |
 | Argon2id cost | 64 MiB, 3 passes | Implemented with `hash-wasm` (WASM). Not measured on a real phone | Measure on a mid-range device and adjust `DEFAULT_KDF`. |
@@ -29,7 +30,8 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 - A free OpenRouter model can be rate limited for minutes (`429 … temporarily rate-limited upstream`); the chat shows the
   provider's message. The optional live test (`ai-live.test.ts`) skips instead of failing in that case.
 - A reasoning model spends tokens thinking first: suggestions turn reasoning off on OpenRouter, the chat does not.
-- The conversation is kept in memory for the session only, and the assistant has no memory of earlier sessions.
+- A conversation is saved as a `chat` item after each turn (title = first message). The assistant has no memory across conversations; opening one from History continues it with the text it was sent.
+- Free models often fail on the first try (429 / "JSON error injected into SSE stream"): the provider layer retries twice before anything was produced, and says so in the panel.
 - Streaming goes through the Tauri HTTP plugin on devices; it was not exercised on Android/Windows in this change.
 - There is no cost cap or step limit: the loop stops by itself after 50 tool rounds in one request.
 

@@ -21,7 +21,13 @@ reversible exception with these rules, so the exception stays small and visible.
 - **Edits are proposals.** The assistant's changes to a Note are shown as a diff that the person accepts or rejects; an
   accepted change goes through the editor like typing and is therefore an ordinary Commit. "Apply without asking" is a
   setting. There is no delete tool.
-- **Nothing about conversations is stored in the Vault.** A conversation lives for the app session.
+- **Attachments are explicit.** The person can attach notes and files to a message (`@`, `+`); only those are added to
+  the prompt, whatever the "all my notes" setting says. A private note cannot be attached. A file from the device is read
+  in the app and sent with the message; it is not stored.
+- **Ask or Edit.** In Ask mode the assistant has no tool that creates or changes anything.
+- **Conversations are kept in the Vault** as encrypted `chat` items (never listed as notes), so each Device has the same
+  history. They hold what was sent to the provider, including attached text; deleting a conversation purges the item.
+  Proposals that were still open when it was saved come back as "Not applied".
 
 ## Consequences
 

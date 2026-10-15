@@ -128,6 +128,10 @@ export interface SearchHit {
   updated: string;
 }
 
+/** A saved assistant conversation. `data` is opaque to the core (the app serialises its own chat state). */
+export interface ChatSummary { id: string; title: string; created: string; updated: string }
+export interface ChatRecord extends ChatSummary { data: string }
+
 export interface ExportResult { filename: string; mime: string; content: string }
 
 export interface VaultApi {
@@ -178,6 +182,12 @@ export interface VaultApi {
   versionText(id: string, commit: string): Promise<string | null>;
   restoreVersion(id: string, commit: string): Promise<void>;
 
+  /** assistant conversations, newest first; they sync like notes but are not notes */
+  listChats(): Promise<ChatSummary[]>;
+  getChat(id: string): Promise<ChatRecord | null>;
+  saveChat(input: { id?: string; title: string; data: string }): Promise<ChatSummary>;
+  deleteChat(id: string): Promise<void>;
+
   getSettings(): Promise<Settings>;
   setSettings(s: Partial<Settings>): Promise<Settings>;
   /** AI provider settings as a client may see them (the API key itself is never returned). */
@@ -200,6 +210,6 @@ export const VAULT_METHODS = [
   'listItems', 'getNote', 'createNote', 'saveNote', 'createFolder', 'capture', 'rename', 'move', 'setTags',
   'renameTag', 'setPinned', 'setPrivate', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'searchHits', 'linkTargets', 'tags', 'tasks', 'toggleTask',
   'calendar', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
-  'resolveConflict', 'history', 'versionText', 'restoreVersion', 'getSettings', 'setSettings', 'getAiSettings', 'setAiSettings', 'setStore',
+  'resolveConflict', 'history', 'versionText', 'restoreVersion', 'listChats', 'getChat', 'saveChat', 'deleteChat', 'getSettings', 'setSettings', 'getAiSettings', 'setAiSettings', 'setStore',
   'sync', 'flush', 'addFile', 'listFiles', 'getFile', 'importMarkdown', 'exportNote',
 ] as const satisfies readonly (keyof VaultApi)[];

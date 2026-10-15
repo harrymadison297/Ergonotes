@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, ChevronDown, ChevronRight, FileText, Folder as FolderIcon, FolderPlus, Home, Keyboard, LayoutTemplate,
   MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Search, Settings as SettingsIcon, Star, Tag as TagIcon, Trash2,
-  CheckCircle2, FilePlus2, Upload,
+  CheckCircle2, FilePlus2, Sparkles, Upload,
 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
@@ -11,6 +11,7 @@ import { activateKeys, classNames, rowClick } from '../state/util';
 import { tagStyle } from '../state/tags';
 import { dragSource, dropZone, useDropState, useMoveInto, type Dragged } from '../state/dnd';
 import { IconBtn, useMenu, type MenuEntry } from './ui';
+import { setPrefs, usePrefs } from '../state/prefs';
 import { Resizer } from './Resizer';
 import { useSync } from './useSync';
 
@@ -36,6 +37,7 @@ function useStoredSet(key: string): [Set<string>, (id: string) => void] {
 
 export function Sidebar() {
   const app = useApp();
+  const prefs = usePrefs();
   const { items, route, tags, conflicts, go, rail, toggleRail } = app;
   const [openFolders, toggleFolder] = useStoredSet('ergo.openFolders');
   const [openTags, toggleTag] = useStoredSet('ergo.openTags');
@@ -248,6 +250,8 @@ export function Sidebar() {
       <div className="sidebar-foot">
         <IconBtn label={sync.label} icon={sync.icon} dot={sync.dot} onClick={() => void sync.run()} />
         <span className={classNames('grow', 'sync-text', sync.err && 'err')} title={sync.label}>{sync.text}</span>
+        <IconBtn label="AI assistant" icon={<Sparkles size={18} />} active={prefs.aside && prefs.asideTab === 'ai'}
+          onClick={() => setPrefs(prefs.aside && prefs.asideTab === 'ai' ? { aside: false } : { aside: true, asideTab: 'ai' })} />
         <IconBtn label="Keyboard shortcuts" icon={<Keyboard size={18} />} onClick={() => app.setDialog({ kind: 'shortcuts' })} />
         <IconBtn label="Settings" icon={<SettingsIcon size={18} />} onClick={() => app.setDialog({ kind: 'settings' })} />
         <IconBtn label={rail ? 'Expand sidebar' : 'Collapse sidebar'} icon={rail ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />} onClick={toggleRail} />

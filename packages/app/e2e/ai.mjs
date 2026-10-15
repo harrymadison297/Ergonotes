@@ -64,10 +64,14 @@ await page.goto(`${base}/#/notes/${note.id}`);
 await page.getByLabel('Title').waitFor();
 
 // ---- no key yet: the panel says so, and nothing is sent
-await page.getByRole('button', { name: 'AI assistant' }).click();
+await page.getByRole('button', { name: 'AI assistant', exact: true }).first().click();
 await page.getByRole('button', { name: 'Add an API key' }).waitFor();
 check('without a key the panel asks for one', true);
-check('toc gives its place to the panel', (await page.locator('.toc').count()) === 0);
+check('the assistant is a tab of the right sidebar, beside the contents', (await page.getByRole('tab', { name: 'Contents' }).count()) === 1 && (await page.locator('.aside').count()) === 1);
+check('and the contents are not shown while it is open', (await page.locator('.toc').count()) === 0);
+await page.getByRole('tab', { name: 'Contents' }).click();
+check('the contents tab lists the headings', (await page.locator('.toc .toc-item', { hasText: 'Packing' }).count()) === 1);
+await page.getByRole('tab', { name: 'Assistant' }).click();
 await page.getByRole('button', { name: 'Add an API key' }).click();
 await page.getByLabel('OpenRouter API key').fill('sk-or-test-0000');
 await page.getByRole('button', { name: 'Save', exact: true }).first().click();
@@ -85,12 +89,58 @@ await page.locator('.dialog').waitFor({ state: 'detached' }).catch(() => undefin
 script.push([{ type: 'text', delta: 'You still need ' }, { type: 'text', delta: 'a charger and a passport.' }, { type: 'usage', input: 120, output: 12 }]);
 await page.getByLabel('Message the assistant').fill('What do I need to pack?');
 await page.getByLabel('Message the assistant').press('Enter');
-await page.locator('.ai-msg.bot', { hasText: 'a charger and a passport' }).waitFor({ timeout: 8000 });
+await page.locator('.ai-md', { hasText: 'a charger and a passport' }).waitFor({ timeout: 8000 });
 check('streamed answer is shown', true);
 const first = requests.at(-1);
 check('the request carries the open note and only the note tools', first.system.includes('book the hotel') && first.system.includes(note.id)
   && first.tools.some(t => t.name === 'replace_text') && !first.tools.some(t => t.name === 'search_notes'));
 check('token usage is shown', (await page.locator('.ai-usage').innerText()).includes('120'));
+
+// ---- answers are rendered as Markdown
+script.push([{ type: 'text', delta: 'You need **two** things:\n\n- a passport\n- a charger\n\n<script>alert(1)</script>' }]);
+await page.getByLabel('Message the assistant').fill('list it');
+await page.getByLabel('Message the assistant').press('Enter');
+await page.locator('.ai-md strong', { hasText: 'two' }).waitFor({ timeout: 8000 });
+check('Markdown in an answer is rendered', (await page.locator('.ai-md li').count()) === 2);
+check('and raw HTML in it is not run', (await page.locator('.ai-md script').count()) === 0);
+
+// ---- history: the conversation is kept and can be reopened
+const chats = await until(async () => { const l = await rpc('listChats'); return l.length === 1 ? l : null; });
+check('the conversation is saved to the vault', !!chats && chats[0].title === 'What do I need to pack?');
+await page.getByRole('button', { name: 'New chat' }).click();
+check('new chat clears the panel', (await page.locator('.ai-bubble').count()) === 0);
+await page.getByRole('button', { name: 'Chat history' }).click();
+await page.locator('.ai-history-open', { hasText: 'What do I need to pack' }).click();
+check('history reopens an earlier conversation', !!(await until(async () => (await page.locator('.ai-md', { hasText: 'a charger and a passport' }).count()) === 1)));
+
+// ---- @ mention: another note is attached to the message
+const budget = await rpc('createNote', { title: 'Budget 2026', body: 'The reserve is FORTY-TWO-ZEBRAS euro.' });
+const secret = await rpc('createNote', { title: 'Budget secrets', body: 'private stuff' });
+await rpc('setPrivate', secret.id, true);
+await page.waitForTimeout(600);
+await page.getByLabel('Message the assistant').fill('what is in @Budg');
+await page.getByRole('option', { name: /Budget 2026/ }).waitFor({ timeout: 8000 });
+check('typing @ lists matching notes, never private ones', (await page.getByRole('option', { name: /Budget secrets/ }).count()) === 0);
+await page.getByLabel('Message the assistant').press('Enter');
+check('choosing one attaches it as a chip', (await page.locator('.ai-composer .ai-chip', { hasText: 'Budget 2026' }).count()) === 1);
+script.push([{ type: 'text', delta: 'The reserve is 42 zebras.' }]);
+await page.getByLabel('Message the assistant').fill('what is in the budget?');
+await page.getByLabel('Message the assistant').press('Enter');
+await page.locator('.ai-md', { hasText: '42 zebras' }).waitFor({ timeout: 8000 });
+const withMention = requests.at(-1);
+check('the attached note reaches the model with the message', JSON.stringify(withMention.messages).includes('FORTY-TWO-ZEBRAS'));
+check('the private note does not', !JSON.stringify(requests).includes('private stuff'));
+
+// ---- Ask mode cannot change anything
+await page.getByRole('button', { name: /Mode:/ }).click();
+await page.getByRole('menuitem', { name: /Ask: answers only/ }).click();
+script.push([{ type: 'text', delta: 'Only reading.' }]);
+await page.getByLabel('Message the assistant').fill('fix it');
+await page.getByLabel('Message the assistant').press('Enter');
+await page.locator('.ai-md', { hasText: 'Only reading.' }).waitFor({ timeout: 8000 });
+check('in Ask mode no tool can write', !requests.at(-1).tools.some(t => /replace_text|append_to_note|update_note|create_note|insert_diagram/.test(t.name)) && requests.at(-1).system.includes('Ask mode'));
+await page.getByRole('button', { name: /Mode:/ }).click();
+await page.getByRole('menuitem', { name: /Edit: may change notes/ }).click();
 
 // ---- an edit arrives as a suggestion; accept writes it through the editor
 script.push([call('insert_after_heading', { heading: 'Packing', markdown: '- sunscreen' })]);
@@ -136,7 +186,7 @@ await page.getByRole('button', { name: 'More actions' }).click();
 await page.getByRole('menuitem', { name: 'Keep private from AI' }).click();
 await until(async () => (await rpc('getNote', note.id)).private === true);
 check('a note can be made private', !!(await until(async () => (await page.locator('.private-flag').count()) === 1)));
-check('the panel stops for a private note', !!(await until(async () => page.getByText('This note is private').isVisible())));
+check('the panel stops for a private note', !!(await until(async () => (await page.locator('.ai-context', { hasText: 'Private note' }).count()) === 1)));
 check('and its input is disabled', await page.getByLabel('Message the assistant').isDisabled());
 await page.screenshot({ path: `${shots}/ai-03-private.png` });
 await page.getByRole('button', { name: 'More actions' }).click();
@@ -171,12 +221,28 @@ await page.locator('.ghost-text').waitFor({ timeout: 8000 });
 await page.keyboard.press('Escape');
 check('Escape dismisses a suggestion', (await page.locator('.ghost-text').count()) === 0);
 
+// a failing suggestion says so in the note's footer
+await page.unroute('**/api/ai/stream');
+await page.route('**/api/ai/stream', async route => route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: JSON.stringify({ type: 'error', message: 'Rate limited: upstream is busy' }) + '\n' }));
+await page.keyboard.type(' plus snacks');
+await page.locator('.ghost-status.err', { hasText: 'Rate limited' }).waitFor({ timeout: 8000 });
+check('a failed suggestion is reported in the footer', true);
+
+// ---- the sidebar is available on every page, not only beside a note
+await page.goto(`${base}/#/tasks`);
+await page.getByRole('button', { name: 'AI assistant', exact: true }).first().click();
+await page.locator('.aside').waitFor();
+check('the assistant opens on a page without a note', (await page.locator('.ai-context', { hasText: 'No note open' }).count()) === 1);
+await page.getByRole('button', { name: 'Close sidebar' }).click();
+await page.goto(`${base}/#/notes/${note.id}`);
+await page.getByLabel('Title').waitFor();
+
 // ---- a failure is shown, not swallowed
-await page.getByRole('button', { name: 'AI assistant' }).click();
+await page.getByRole('button', { name: 'AI assistant', exact: true }).first().click();
 await page.route('**/api/ai/stream', async route => route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: JSON.stringify({ type: 'error', message: 'No credits left' }) + '\n' }));
 await page.getByLabel('Message the assistant').fill('hello?');
 await page.getByLabel('Message the assistant').press('Enter');
-await page.locator('.ai-msg.error', { hasText: 'No credits left' }).waitFor({ timeout: 8000 });
+await page.locator('.ai-error', { hasText: 'No credits left' }).waitFor({ timeout: 8000 });
 check('a provider error is shown in the chat', true);
 
 // ---- mobile: the panel is a full screen overlay with a close button
@@ -188,14 +254,14 @@ await mp.getByRole('button', { name: 'Sign in' }).click();
 await mp.getByRole('navigation', { name: 'Main' }).waitFor({ timeout: 20000 });
 await mp.goto(`${base}/#/notes/${note.id}`);
 await mp.locator('.m-note .prose').waitFor();
-await mp.getByRole('button', { name: 'AI assistant' }).click();
-await mp.locator('.ai-panel.mobile').waitFor();
-const box = await mp.locator('.ai-panel.mobile').boundingBox();
+await mp.getByRole('button', { name: 'AI assistant', exact: true }).first().click();
+await mp.locator('.aside-wrap.mobile').waitFor();
+const box = await mp.locator('.aside-wrap.mobile').boundingBox();
 check('on a phone the assistant covers the screen', !!box && box.width >= 380 && box.height >= 800);
 check('and has no horizontal overflow', await mp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 await mp.screenshot({ path: `${shots}/ai-05-mobile.png` });
-await mp.getByRole('button', { name: 'Close assistant' }).click();
-check('it closes again', (await mp.locator('.ai-panel').count()) === 0);
+await mp.getByRole('button', { name: 'Close sidebar' }).click();
+check('it closes again', (await mp.locator('.aside-wrap').count()) === 0);
 
 const real = errors.filter(e => !/favicon|ResizeObserver|Failed to load resource|Failed to use workers for subsetting/.test(e));
 check('no console errors', real.length === 0, real.slice(0, 3).join(' | '));

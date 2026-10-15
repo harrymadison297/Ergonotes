@@ -408,7 +408,7 @@ export const GhostText = Extension.create<GhostOptions>({
             // only at the end of a line of prose: not in code, and not in the middle of a sentence
             if (!$p.parent.isTextblock || $p.parent.type.spec.code || $p.parentOffset !== $p.parent.content.size) return;
             const before = doc.textBetween(Math.max(0, $p.pos - 1500), $p.pos, '\n', ' ');
-            if (before.trim().length < 12) return;
+            if (before.trim().length < 3) return;
             const pos = $p.pos;
             timer = setTimeout(() => {
               timer = null;

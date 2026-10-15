@@ -12,12 +12,17 @@ export interface NoteIO {
   write(id: string, patch: { title?: string; body?: string }): Promise<string>;
 }
 
-export type ToolScope = { kind: 'vault' } | { kind: 'note'; noteId: string | null };
+export type ToolScope =
+  | { kind: 'vault' }
+  /** the open note, plus notes the person attached to the conversation */
+  | { kind: 'note'; noteId: string | null; allow?: string[] };
 
 export interface ToolContext {
   vault: ToolVault;
   scope: ToolScope;
   io?: NoteIO;
+  /** answer only: no tool that creates or changes anything */
+  readOnly?: boolean;
   /** tools only the host can provide (the app adds insert_diagram) */
   extra?: AgentTool[];
 }
@@ -61,13 +66,14 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
   const io = ctx.io ?? directIO(vault);
   const whole = scope.kind === 'vault';
   const current = scope.kind === 'note' ? scope.noteId : null;
+  const allowed = new Set(scope.kind === 'note' ? scope.allow ?? [] : []);
   const json = (o: unknown) => JSON.stringify(o, null, 2);
 
   /** Note id of a call: explicit, or the open note when the chat is limited to it. */
   const target = (a: Record<string, unknown>): string => {
     const id = typeof a.id === 'string' && a.id ? a.id : current;
     if (!id) throw new Error('Give the id of the note.');
-    if (!whole && id !== current) throw new Error(NOT_FOUND);
+    if (!whole && id !== current && !allowed.has(id)) throw new Error(NOT_FOUND);
     return id;
   };
   const readOrThrow = async (id: string) => {
@@ -77,7 +83,7 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
   };
   const idArg = { id: { ...str, description: 'Note id. Optional when a note is open.' } };
 
-  const all: (AgentTool & { vaultOnly?: boolean })[] = [
+  const all: (AgentTool & { vaultOnly?: boolean; write?: boolean })[] = [
     {
       vaultOnly: true,
       spec: { name: 'search_notes', description: 'Full-text search over note titles, text and tags.', parameters: obj({ query: str }, ['query']) },
@@ -100,6 +106,7 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
       },
     },
     {
+      write: true,
       spec: { name: 'create_note', description: 'Create a note (in the Inbox unless a folder id is given). Use it to write a new document for the user.', parameters: obj({ title: str, body: { ...str, description: 'Markdown' }, folder: str, tags: { type: 'array', items: str } }, ['title']) },
       run: async a => {
         const n = await vault.createNote({ title: String(a.title), body: String(a.body ?? ''), parent: whole && a.folder ? String(a.folder) : undefined, tags: Array.isArray(a.tags) ? a.tags.map(String) : undefined });
@@ -107,6 +114,7 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
       },
     },
     {
+      write: true,
       spec: { name: 'append_to_note', description: 'Append Markdown to the end of an existing note.', parameters: obj({ ...idArg, text: str }, ['text']) },
       run: async a => {
         const id = target(a);
@@ -115,6 +123,7 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
       },
     },
     {
+      write: true,
       spec: {
         name: 'replace_text',
         description: 'Replace one passage of a note with other text. `find` must match exactly one place; include enough surrounding text to be unique.',
@@ -132,6 +141,7 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
       },
     },
     {
+      write: true,
       spec: {
         name: 'insert_after_heading',
         description: 'Add Markdown at the end of the section that a heading opens (before the next heading of the same level).',
@@ -155,6 +165,7 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
       },
     },
     {
+      write: true,
       spec: { name: 'update_note', description: 'Replace the title and/or the whole Markdown body of a note. Prefer replace_text or append_to_note for small changes.', parameters: obj({ ...idArg, title: str, body: str }) },
       run: async a => {
         const id = target(a);
@@ -163,10 +174,12 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
       },
     },
     {
+      write: true,
       spec: { name: 'rename_note', description: 'Change the title of a note.', parameters: obj({ ...idArg, title: str }, ['title']) },
       run: async a => { const id = target(a); await readOrThrow(id); await vault.rename(id, String(a.title ?? '')); return 'Renamed.'; },
     },
     {
+      write: true,
       spec: { name: 'add_tags', description: 'Add tags to a note (existing tags stay).', parameters: obj({ ...idArg, tags: { type: 'array', items: str } }, ['tags']) },
       run: async a => {
         const id = target(a);
@@ -178,6 +191,7 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
     },
     {
       vaultOnly: true,
+      write: true,
       spec: { name: 'move_note', description: 'Move a note or folder into a folder (folder id from list_folders), or to the top level when `folder` is empty.', parameters: obj({ id: str, folder: str }, ['id']) },
       run: async a => {
         const n = await vault.getNote(String(a.id));
@@ -202,6 +216,7 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
     },
     {
       vaultOnly: true,
+      write: true,
       spec: { name: 'complete_task', description: 'Mark a checklist item done (use noteId and index from list_tasks).', parameters: obj({ noteId: str, index: { type: 'number' } }, ['noteId', 'index']) },
       run: async a => {
         const n = await vault.getNote(String(a.noteId));
@@ -212,6 +227,7 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
     },
     {
       vaultOnly: true,
+      write: true,
       spec: { name: 'daily_note', description: 'Open (creating if needed) the daily note for a date (YYYY-MM-DD).', parameters: obj({ date: str }, ['date']) },
       run: async a => {
         const d = await vault.dailyNote(String(a.date));
@@ -220,8 +236,8 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
       },
     },
   ];
-  const own = all.filter(t => whole || !t.vaultOnly).map(({ vaultOnly: _v, ...t }) => t);
-  return [...own, ...(ctx.extra ?? [])];
+  const own = all.filter(t => (whole || !t.vaultOnly) && !(ctx.readOnly && t.write)).map(({ vaultOnly: _v, write: _w, ...t }) => t);
+  return [...own, ...(ctx.readOnly ? [] : ctx.extra ?? [])];
 }
 
 function sectionHeadings(body: string): string[] {

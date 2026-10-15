@@ -6,7 +6,8 @@ export interface AgentTool { spec: AiToolSpec; run(args: Record<string, unknown>
 export type AgentEvent =
   | { type: 'text'; delta: string }
   | { type: 'tool'; call: AiToolCall; result: string; error: boolean }
-  | { type: 'usage'; input: number; output: number };
+  | { type: 'usage'; input: number; output: number }
+  | { type: 'notice'; text: string };
 
 export interface AgentRun {
   transport: AiTransport;
@@ -36,6 +37,7 @@ export async function runAgent(run: AgentRun): Promise<AiMessage[]> {
       if (e.type === 'text') { text += e.delta; run.onEvent({ type: 'text', delta: e.delta }); }
       else if (e.type === 'tool_call') calls.push(e.call);
       else if (e.type === 'usage') run.onEvent({ type: 'usage', input: e.input, output: e.output });
+      else if (e.type === 'notice') run.onEvent({ type: 'notice', text: e.text });
     }
     const assistant: AiMessage = { role: 'assistant', content: text, ...(calls.length ? { toolCalls: calls } : {}) };
     messages.push(assistant);
@@ -70,6 +72,8 @@ export interface PromptInput {
   /** the open note, when there is one */
   note: { id: string; title: string; body: string } | null;
   wholeVault: boolean;
+  /** `ask` may only read; `edit` may propose changes */
+  mode?: 'ask' | 'edit';
   today: string;
 }
 
@@ -84,8 +88,9 @@ export function chatSystemPrompt(p: PromptInput): string {
     'To draw a diagram, call insert_diagram with Mermaid source (flowchart, sequenceDiagram, mindmap, classDiagram). Do not hand-write drawing data.',
     p.wholeVault
       ? 'You may search and read any note except those the user marked private.'
-      : 'You can only see the note that is open. You cannot search or list other notes.',
-  ];
+      : 'You can only see the note that is open and notes the user attached to a message. You cannot search or list other notes.',
+    p.mode === 'ask' ? 'You are in Ask mode: you cannot create or change anything. If the user wants a change, say they can switch to Edit mode.' : '',
+  ].filter(Boolean);
   if (p.note) {
     const body = p.note.body.length > MAX_NOTE_CHARS ? p.note.body.slice(0, MAX_NOTE_CHARS) + '\n…(truncated)' : p.note.body;
     lines.push('', `The open note has id ${p.note.id} and the title "${p.note.title}". Its Markdown:`, '<<<NOTE', body, 'NOTE>>>');

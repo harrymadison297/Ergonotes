@@ -3,7 +3,7 @@
 import MarkdownIt from 'markdown-it';
 import MiniSearch from 'minisearch';
 import type {
-  CalendarData, ConflictChoice, ConflictDetail, ExportResult, FileBlob, FileInfo, HeadInfo, ImportFile, ItemSummary, NoteDoc, SearchHit,
+  CalendarData, ChatRecord, ChatSummary, ConflictChoice, ConflictDetail, ExportResult, FileBlob, FileInfo, HeadInfo, ImportFile, ItemSummary, NoteDoc, SearchHit,
   Settings, StoreConfig, SyncReport, TaskEntry, VaultApi, VaultState, VaultStatus, VersionInfo,
 } from './api.ts';
 import {
@@ -118,6 +118,7 @@ export class Vault implements VaultApi {
   private pullTimer: ReturnType<typeof setInterval> | null = null;
   private unsub: (() => void) | null = null;
   private aiBody: string | null = null;
+  private chats = new Map<string, ChatRecord>();
 
   private constructor(opts: VaultOptions) {
     this.opts = opts;
@@ -257,6 +258,7 @@ export class Vault implements VaultApi {
     this.files.clear(); // attachments are plaintext in memory
     this.fileBySha.clear();
     this.aiBody = null;
+    this.chats.clear();
     this.searchIndex.removeAll();
     await this.setMeta('rememberedKey', undefined);
     delete this.meta.rememberedKey;
@@ -316,10 +318,19 @@ export class Vault implements VaultApi {
       const text = r.text(id);
       const prev = this.views.get(id);
       if (prev) { try { this.searchIndex.discard(id); } catch { /* not indexed */ } }
-      if (text === null) { this.views.delete(id); this.files.delete(id); if (id === AI_CONFIG_ID) this.aiBody = null; continue; }
+      if (text === null) { this.views.delete(id); this.files.delete(id); this.chats.delete(id); if (id === AI_CONFIG_ID) this.aiBody = null; continue; }
       const { fm, body } = splitDoc(text);
       if (fm.type === 'config') {
         if (id === AI_CONFIG_ID) this.aiBody = body;
+        this.views.delete(id);
+        continue;
+      }
+      if (fm.type === 'chat') {
+        this.chats.set(id, {
+          id, title: typeof fm.title === 'string' && fm.title ? fm.title : 'Conversation',
+          created: typeof fm.created === 'string' ? fm.created : '', updated: typeof fm.updated === 'string' ? fm.updated : '',
+          data: body,
+        });
         this.views.delete(id);
         continue;
       }
@@ -761,7 +772,7 @@ export class Vault implements VaultApi {
   private conflictIds(): string[] {
     const r = this.replica!;
     // a deleted-here / edited-there note is a conflict too: the deleting device must be asked
-    return r.items().filter(i => i !== AI_CONFIG_ID && r.hasConflict(i) && (!r.isPurged(i) || r.otherHeads(i).some(h => r.g.get(h)!.kind !== 'purge')));
+    return r.items().filter(i => i !== AI_CONFIG_ID && !this.chats.has(i) && r.hasConflict(i) && (!r.isPurged(i) || r.otherHeads(i).some(h => r.g.get(h)!.kind !== 'purge')));
   }
 
   private conflictTitle(id: string): string {
@@ -941,13 +952,48 @@ export class Vault implements VaultApi {
     return toSettings(next);
   }
 
-  /** Two devices saved the AI settings at the same time: the newer one wins, nobody has to choose. */
+  /** Two devices saved the AI settings (or one conversation) at the same time: the newer one wins, nobody has to choose. */
   private async settleAiConfig(): Promise<void> {
     const r = this.replica;
-    if (!r || !r.hasConflict(AI_CONFIG_ID)) return;
-    const local = r.headId(AI_CONFIG_ID)!;
-    const newest = [local, ...r.otherHeads(AI_CONFIG_ID)].map(h => r.g.get(h)!).filter(c => c.kind !== 'purge').sort((a, b) => b.ts - a.ts)[0];
-    if (newest) await this.resolveConflict(AI_CONFIG_ID, newest.id === local ? { kind: 'local' } : { kind: 'other', commit: newest.id });
+    if (!r) return;
+    for (const id of r.items().filter(i => (i === AI_CONFIG_ID || this.chats.has(i)) && r.hasConflict(i))) {
+      const local = r.headId(id)!;
+      const newest = [local, ...r.otherHeads(id)].map(h => r.g.get(h)!).filter(c => c.kind !== 'purge').sort((a, b) => b.ts - a.ts)[0];
+      if (newest) await this.resolveConflict(id, newest.id === local ? { kind: 'local' } : { kind: 'other', commit: newest.id });
+    }
+  }
+
+  // ---------- assistant conversations ----------
+  async listChats(): Promise<ChatSummary[]> {
+    this.ready();
+    return [...this.chats.values()].map(({ data: _d, ...s }) => s).sort((a, b) => b.updated.localeCompare(a.updated));
+  }
+
+  async getChat(id: string): Promise<ChatRecord | null> {
+    this.ready();
+    return this.chats.get(id) ?? null;
+  }
+
+  async saveChat(input: { id?: string; title: string; data: string }): Promise<ChatSummary> {
+    const r = this.ready();
+    if (input.data.length > 4_000_000) throw new Error('This conversation is too long to keep. Start a new one.');
+    const id = input.id && this.chats.has(input.id) ? input.id : input.id && /^[0-9a-f-]{36}$/.test(input.id) ? input.id : newId();
+    const prev = this.chats.get(id);
+    const t = this.iso();
+    const title = input.title.trim().slice(0, 120) || 'Conversation';
+    const fm: Frontmatter = { id, type: 'chat', title, created: prev?.created || t, updated: t };
+    await r.commit(id, joinDoc(fm, input.data.replace(/\r?\n/g, ' ')), this.now());
+    this.refresh([id]);
+    const c = this.chats.get(id)!;
+    return { id: c.id, title: c.title, created: c.created, updated: c.updated };
+  }
+
+  async deleteChat(id: string): Promise<void> {
+    const r = this.ready();
+    if (!this.chats.has(id)) return;
+    await r.purge(id, this.now());
+    this.chats.delete(id);
+    this.refresh([id]);
   }
 
   private async buildStore(cfg: StoreConfig): Promise<Store> {

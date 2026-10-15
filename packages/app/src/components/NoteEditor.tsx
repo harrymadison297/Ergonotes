@@ -17,10 +17,9 @@ import { useApp } from '../state/app';
 import { classNames, debounce, download, isoDay } from '../state/util';
 import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, Wikilink } from '../editor/extensions';
 import { DrawingDialog } from './DrawingDialog';
-import { AiPanel } from './AiPanel';
+import { editorBridge } from '../state/editorBridge';
 import { suggestionRequest, cleanSuggestion, completeText } from '@ergonotes/core';
 import { Dialog, IconBtn, TagPill, useMenu, type MenuEntry } from './ui';
-import { Resizer } from './Resizer';
 import { href } from '../state/router';
 import { setPrefs, usePrefs } from '../state/prefs';
 
@@ -62,6 +61,8 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   titleRef.current = title;
   const ghostRef = useRef({ on: false, delay: 400, transport: app.aiTransport });
   ghostRef.current = { on: prefs.ghost && app.ai.hasKey && !app.byId.get(id)?.private, delay: prefs.ghostDelay, transport: app.aiTransport };
+  const [ghostState, setGhostState] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  const outlineRef = useRef<{ headings: { text: string; level: number }[]; active: number; goto(i: number): void } | null>(null);
   const saveBody = useMemo(() => debounce((nid: string, body: string, seq: number) => {
     setSaveState('saving');
     inflight.current = api.saveNote(nid, { body }).then(s => {
@@ -94,8 +95,16 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         enabled: () => ghostRef.current.on,
         delay: () => ghostRef.current.delay,
         suggest: async (ctx, signal) => {
-          const raw = await completeText(ghostRef.current.transport, suggestionRequest({ title: titleRef.current, before: ctx.before, after: ctx.after }), signal);
-          return cleanSuggestion(raw, ctx.before);
+          setGhostState({ busy: true, error: null });
+          try {
+            const raw = await completeText(ghostRef.current.transport, suggestionRequest({ title: titleRef.current, before: ctx.before, after: ctx.after }), signal);
+            setGhostState({ busy: false, error: null });
+            return cleanSuggestion(raw, ctx.before);
+          } catch (e) {
+            // an abort is the person typing on: not an error
+            setGhostState({ busy: false, error: signal.aborted ? null : e instanceof Error ? e.message : String(e) });
+            throw e;
+          }
         },
       }),
       LinkSuggest.configure({ api }),
@@ -261,15 +270,34 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     return () => dom.removeEventListener('click', onClick);
   });
 
-  if (missing) return <div className="empty"><h3>This note is no longer available</h3><p>It may have been deleted on another device.</p></div>;
-  if (!doc || !editor) return <div className="empty" aria-busy="true" />;
+  // lend the headings and the text to the right sidebar (contents tab, assistant tab)
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
+  useEffect(() => {
+    const o = outlineRef.current;
+    if (!o || !editor) { editorBridge.set(null); return; }
+    editorBridge.set({
+      outline: { noteId: id, locked: lockedRef.current, headings: o.headings, active: o.active },
+      fns: {
+        goto: o.goto,
+        live: () => ({ title: titleRef.current, body: (editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown() }),
+        apply: patch => {
+          if (patch.title !== undefined) { setTitle(patch.title); titleRef.current = patch.title; saveTitle(idRef.current, patch.title); }
+          if (patch.body !== undefined) editor.commands.setContent(patch.body, true);
+        },
+      },
+    });
+  });
+  useEffect(() => () => editorBridge.set(null), []);
+
+  if (missing) { outlineRef.current = null; return <div className="empty"><h3>This note is no longer available</h3><p>It may have been deleted on another device.</p></div>; }
+  if (!doc || !editor) { outlineRef.current = null; return <div className="empty" aria-busy="true" />; }
 
   // table of contents: the headings of this note, in order
   const headings: { pos: number; level: number; text: string }[] = [];
   editor.state.doc.descendants((node, pos) => {
     if (node.type.name === 'heading' && node.textContent.trim()) headings.push({ pos, level: Number(node.attrs.level) || 1, text: node.textContent });
   });
-  const showToc = prefs.toc && !app.isMobile;
   const trackHeading = () => {
     const box = scrollRef.current;
     if (!box || !headings.length) return;
@@ -285,6 +313,10 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     setActiveHeading(i);
   };
 
+  outlineRef.current = { headings: headings.map(h => ({ text: h.text, level: h.level })), active: activeHeading, goto: i => { const h = headings[i]; if (h) gotoHeading(h, i); } };
+
+  const aiOpen = prefs.aside && prefs.asideTab === 'ai';
+  const tocOpen = prefs.aside && prefs.asideTab === 'toc';
   const tokens = currentTaskTokens(editor);
   const path = doc.path;
   const words = editor.getText().trim().split(/\s+/).filter(Boolean).length;
@@ -388,9 +420,10 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
             </span>
           ))}
         </nav>
-        <IconBtn label={prefs.ai ? 'Hide AI assistant' : 'AI assistant'} active={prefs.ai} icon={<Sparkles size={18} />} onClick={() => setPrefs({ ai: !prefs.ai })} />
-        {!app.isMobile && <IconBtn label={prefs.toc ? 'Hide table of contents' : 'Show table of contents'} active={prefs.toc} icon={<TableOfContents size={18} />}
-          className="toc-toggle" onClick={() => setPrefs({ toc: !prefs.toc })} />}
+        <IconBtn label={aiOpen ? 'Hide AI assistant' : 'AI assistant'} active={aiOpen} icon={<Sparkles size={18} />}
+          onClick={() => setPrefs(aiOpen ? { aside: false } : { aside: true, asideTab: 'ai' })} />
+        {!app.isMobile && <IconBtn label={tocOpen ? 'Hide table of contents' : 'Show table of contents'} active={tocOpen} icon={<TableOfContents size={18} />}
+          className="toc-toggle" onClick={() => setPrefs(tocOpen ? { aside: false } : { aside: true, asideTab: 'toc' })} />}
         <IconBtn label="Export" haspopup icon={<Share2 size={18} />} onClick={e => exportMenu.open(e, exportEntries(), 'right')} />
         <IconBtn label="More actions" haspopup icon={<MoreHorizontal size={20} />} onClick={e => moreMenu.open(e, moreEntries(), 'right')} />
       </div>
@@ -435,28 +468,6 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
           )}
         </div>
       </div>
-      {prefs.ai && (
-        <AiPanel noteId={id} locked={locked} onClose={() => setPrefs({ ai: false })}
-          live={() => ({ title, body: (editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown() })}
-          applyToEditor={patch => {
-            if (patch.title !== undefined) { setTitle(patch.title); saveTitle(id, patch.title); }
-            if (patch.body !== undefined) editor.commands.setContent(patch.body, true);
-          }} />
-      )}
-      {showToc && !prefs.ai && (
-        <aside className="toc" aria-label="Table of contents">
-          <Resizer pane="tocW" edge="left" label="Resize table of contents" />
-          <div className="toc-scroll">
-            <h3>Contents</h3>
-            {headings.length === 0
-              ? <p className="toc-empty">Headings you add to this note show up here.</p>
-              : <nav>{headings.map((h, i) => (
-                <button key={`${h.pos}-${i}`} className={classNames('toc-item', i === activeHeading && 'active')} style={{ paddingLeft: 10 + (h.level - 1) * 14 }}
-                  title={h.text} onClick={() => gotoHeading(h, i)}>{h.text}</button>
-              ))}</nav>}
-          </div>
-        </aside>
-      )}
       </div>
 
       <div className="editor-foot">
@@ -470,6 +481,8 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
             onBlur={() => void addTag(tagDraft)} />
         )}
         <span className="grow" />
+        {ghostState.busy && <span className="ghost-status" role="status"><Sparkles size={12} /> Thinking of a suggestion…</span>}
+        {!ghostState.busy && ghostState.error && <span className="ghost-status err" role="status" title={ghostState.error}>Suggestion unavailable: {ghostState.error.length > 60 ? ghostState.error.slice(0, 59) + '…' : ghostState.error}</span>}
         <span>{words} word{words === 1 ? '' : 's'}</span>
         <span role="status" aria-live="polite">{saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Could not save' : 'All changes saved'}</span>
       </div>

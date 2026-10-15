@@ -48,7 +48,8 @@ node dist/server/server.mjs            # PORT, HOST, ERGONOTES_DATA, ERGONOTES_W
   `move_note`, `list_folders`, `list_tasks`, `complete_task`, `daily_note`. Notes marked private are invisible to agents.
   The skill that teaches Claude Code to use them is `docs/agents/ergonotes-skill/SKILL.md` (also a download button).
 * Assistant: *Settings → AI* takes an OpenRouter or Anthropic API key (stored encrypted in the vault). On the server the
-  key stays on the server and the browser streams through `/api/ai/stream`. See ADR 0008.
+  key stays on the server and the browser streams through `/api/ai/stream`. The right sidebar holds the note's contents
+  and the assistant (history, `@` to attach notes and files, Ask/Edit mode). See ADR 0008.
 
 ## Building the apps
 

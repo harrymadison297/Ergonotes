@@ -74,6 +74,8 @@ export type AiEvent =
   | { type: 'text'; delta: string }
   | { type: 'tool_call'; call: AiToolCall }
   | { type: 'usage'; input: number; output: number }
+  /** the provider is busy; the request is being tried again */
+  | { type: 'notice'; text: string }
   | { type: 'done' };
 
 /** Anything that turns a request into a stream of events: a direct call to the provider, or the Server peer's proxy. */

@@ -33,7 +33,7 @@ export type Preview =
   | { kind: 'text'; text: string }
   | { kind: 'none' };
 
-async function buildPreview(f: FileBlob): Promise<Preview> {
+export async function buildPreview(f: FileBlob): Promise<Preview> {
   const name = f.name.toLowerCase();
   const bytes = fromB64(f.data);
   if (f.mime.startsWith('image/')) return { kind: 'image', url: `data:${f.mime};base64,${f.data}` };
@@ -62,6 +62,19 @@ async function buildPreview(f: FileBlob): Promise<Preview> {
   }
   if (f.mime.startsWith('text/') || /\.(txt|md|json|log)$/.test(name)) return { kind: 'text', text: new TextDecoder().decode(bytes) };
   return { kind: 'none' };
+}
+
+const MAX_FILE_TEXT = 60_000;
+
+/** The text of an attachment for the assistant: spreadsheets as rows, slides as text; null for images, PDFs and the rest. */
+export async function fileToText(f: FileBlob): Promise<string | null> {
+  const pv = await buildPreview(f);
+  let text: string | null = null;
+  if (pv.kind === 'text') text = pv.text;
+  else if (pv.kind === 'table') text = pv.sheets.map(s => `## ${s.name}\n${s.rows.map(r => r.join(' | ')).join('\n')}`).join('\n\n');
+  else if (pv.kind === 'slides') text = pv.slides.map((l, i) => `Slide ${i + 1}: ${l.join(' / ')}`).join('\n');
+  if (text === null) return null;
+  return text.length > MAX_FILE_TEXT ? text.slice(0, MAX_FILE_TEXT) + '\n…(cut)' : text;
 }
 
 /** Loads one attachment and builds its preview. */

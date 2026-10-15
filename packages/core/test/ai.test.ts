@@ -325,3 +325,102 @@ describe('agent skill', () => {
     for (const t of buildTools({ vault: v, scope: { kind: 'vault' } })) expect(ERGONOTES_SKILL_MD).toContain(`\`${t.spec.name}\``);
   });
 });
+
+describe('conversations in the vault', () => {
+  it('saves, lists, reopens and deletes a conversation, and syncs it to another device', async () => {
+    shared.set('chat1', new MemStore());
+    const A = await open('Laptop');
+    await A.createVault(PASSWORD);
+    await A.setStore(cfgFor('chat1'));
+    const saved = await A.saveChat({ title: 'Trip ideas', data: JSON.stringify({ items: ['line one\nline two', '---'] }) });
+    expect((await A.listChats()).map(c => c.title)).toEqual(['Trip ideas']);
+    const again = await A.saveChat({ id: saved.id, title: 'Trip ideas (2)', data: '{"items":[]}' });
+    expect(again.id).toBe(saved.id);
+    expect(again.created).toBe(saved.created);
+    expect((await A.listChats())).toHaveLength(1);
+    // a conversation is not a note
+    expect((await A.listItems()).some(i => i.id === saved.id)).toBe(false);
+    expect(await A.conflicts()).toHaveLength(0);
+    await A.saveChat({ id: saved.id, title: 'Trip ideas', data: JSON.stringify({ items: ['---\nid: x', 'tail'] }) });
+    await A.sync();
+
+    const B = await open('Phone');
+    await B.joinVault(cfgFor('chat1'), PASSWORD);
+    const got = await B.getChat(saved.id);
+    expect(JSON.parse(got!.data).items).toEqual(['---\nid: x', 'tail']);
+    await B.deleteChat(saved.id);
+    expect(await B.listChats()).toEqual([]);
+    await B.sync(); await A.sync();
+    expect(await A.listChats()).toEqual([]);
+  });
+
+  it('settles a conversation both devices extended', async () => {
+    shared.set('chat2', new MemStore());
+    const A = await open('Laptop');
+    await A.createVault(PASSWORD);
+    await A.setStore(cfgFor('chat2'));
+    const c = await A.saveChat({ title: 'Plan', data: '{"n":1}' });
+    await A.sync();
+    const B = await open('Phone');
+    await B.joinVault(cfgFor('chat2'), PASSWORD);
+    await A.saveChat({ id: c.id, title: 'Plan', data: '{"n":2,"by":"A"}' });
+    await new Promise(r => setTimeout(r, 5));
+    await B.saveChat({ id: c.id, title: 'Plan', data: '{"n":2,"by":"B"}' });
+    await A.sync(); await B.sync(); await A.sync(); await B.sync(); await A.sync();
+    expect(await A.conflicts()).toHaveLength(0);
+    expect(await B.conflicts()).toHaveLength(0);
+    expect((await A.getChat(c.id))!.data).toBe((await B.getChat(c.id))!.data);
+  });
+});
+
+describe('attached notes and answer-only mode', () => {
+  it('lets the chat work on notes the person attached, and nothing else', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const open1 = await v.createNote({ title: 'Open', body: 'one' });
+    const attached = await v.createNote({ title: 'Attached', body: 'two' });
+    const other = await v.createNote({ title: 'Other', body: 'three' });
+    const tools = buildTools({ vault: v, scope: { kind: 'note', noteId: open1.id, allow: [attached.id] } });
+    const run = (n: string, a: Record<string, unknown>) => tools.find(t => t.spec.name === n)!.run(a);
+    expect(JSON.parse(await run('read_note', { id: attached.id })).body).toBe('two');
+    await run('append_to_note', { id: attached.id, text: 'more' });
+    await expect(run('read_note', { id: other.id })).rejects.toThrow(/not found/);
+  });
+
+  it('answer-only mode has no tool that changes anything', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const names = buildTools({ vault: v, scope: { kind: 'vault' }, readOnly: true, extra: [{ spec: { name: 'insert_diagram', description: '', parameters: {} }, run: async () => '' }] }).map(t => t.spec.name);
+    expect(names).toEqual(expect.arrayContaining(['search_notes', 'read_note', 'list_folders', 'list_tasks']));
+    for (const w of ['create_note', 'append_to_note', 'replace_text', 'insert_after_heading', 'update_note', 'rename_note', 'add_tags', 'move_note', 'complete_task', 'daily_note', 'insert_diagram']) expect(names).not.toContain(w);
+  });
+});
+
+describe('busy providers', () => {
+  it('retries before anything was produced, and reports it', async () => {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      if (calls < 3) return new Response(JSON.stringify({ error: { message: 'Provider returned error', metadata: { raw: 'model is temporarily rate-limited upstream' } } }), { status: 429 });
+      return sse([{ choices: [{ delta: { content: 'finally' } }] }, '[DONE]']);
+    }) as unknown as typeof fetch;
+    const ev = await collect(streamChat(cfg(), { model: 'chat', messages: [] }, { fetchImpl }));
+    expect(calls).toBe(3);
+    expect(ev.filter(e => e.type === 'notice')).toHaveLength(2);
+    expect(ev.find(e => e.type === 'text')).toEqual({ type: 'text', delta: 'finally' });
+  }, 15_000);
+
+  it('does not repeat text that was already produced, and does not retry a bad key', async () => {
+    let calls = 0;
+    const broken = (async () => {
+      calls++;
+      return sse([{ choices: [{ delta: { content: 'half' } }] }, { error: { message: 'JSON error injected into SSE stream' } }]);
+    }) as unknown as typeof fetch;
+    await expect(collect(streamChat(cfg(), { model: 'chat', messages: [] }, { fetchImpl: broken }))).rejects.toThrow(/injected/);
+    expect(calls).toBe(1);
+    let c2 = 0;
+    const bad = (async () => { c2++; return new Response('{"error":{"message":"no"}}', { status: 401 }); }) as unknown as typeof fetch;
+    await expect(collect(streamChat(cfg(), { model: 'chat', messages: [] }, { fetchImpl: bad }))).rejects.toThrow(/rejected the API key/);
+    expect(c2).toBe(1);
+  });
+});

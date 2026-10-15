@@ -43,8 +43,7 @@
   --sidebar-w: 264px;
   --rail-w: 94px;
   --list-w: 370px;
-  --toc-w: 240px;
-  --ai-w: 360px;
+  --aside-w: 360px;
   /* type scale, measured from the reference (Evernote web, 100 %) */
   --fs-2xs: 11px;   /* dates on Home cards, file sizes */
   --fs-xs: 12px;    /* meta, counts, dates in lists */

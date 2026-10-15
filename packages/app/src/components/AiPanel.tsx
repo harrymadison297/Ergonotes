@@ -1,30 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Loader2, RotateCcw, Send, Settings as SettingsIcon, Sparkles, Square, Trash2, Wrench, X } from 'lucide-react';
-import { buildTools, chatSystemPrompt, lineDiff, mergeText, runAgent, type AgentTool, type NoteIO } from '@ergonotes/core';
+import {
+  AtSign, Check, ChevronDown, FileText, History as HistoryIcon, Info, Lightbulb, Loader2, Paperclip, Pencil, Plus, RotateCcw, Search, Send, Shapes,
+  SquarePen, Square, Trash2, WandSparkles, X,
+} from 'lucide-react';
+import { buildTools, chatSystemPrompt, lineDiff, mergeText, runAgent, type AgentTool, type ChatSummary, type NoteIO } from '@ergonotes/core';
 import { useApp } from '../state/app';
-import { chat, pendingFor, useChat, type Proposal } from '../state/aiChat';
-import { classNames } from '../state/util';
+import { chat, parseChat, pendingFor, serializeChat, useChat, type Mention, type Proposal } from '../state/aiChat';
+import { toB64 } from '@ergonotes/core';
+import { editorBridge, useOutline } from '../state/editorBridge';
+import { renderMarkdown } from '../state/markdown';
+import { setPrefs, usePrefs } from '../state/prefs';
+import { classNames, relTime } from '../state/util';
 import { drawingBlock, mermaidToScene } from '../editor/diagram';
-import { IconBtn } from './ui';
-import { Resizer } from './Resizer';
+import { fileToText } from './FilePreview';
+import { IconBtn, useMenu } from './ui';
 
-export interface AiPanelProps {
-  noteId: string;
-  /** the note as it is on screen, unsaved typing included */
-  live: () => { title: string; body: string };
-  /** the note cannot be changed (trash, read-only) */
-  locked: boolean;
-  /** write into the open note through the editor so it saves like typing does */
-  applyToEditor: (patch: { title?: string; body?: string }) => void;
-  onClose: () => void;
-}
-
-const QUICK = [
-  { label: 'Summarize', prompt: 'Summarize this note in a few bullet points. Do not change the note.' },
-  { label: 'Fix spelling', prompt: 'Fix spelling and grammar mistakes in this note. Change nothing else.' },
-  { label: 'Continue writing', prompt: 'Continue writing this note where it stops, in the same style.' },
-  { label: 'Draw a diagram', prompt: 'Draw a diagram that explains the main idea of this note and add it to the note.' },
-];
+const WRITE_TOOLS = /^(create_note|append_to_note|replace_text|insert_after_heading|update_note|rename_note|add_tags|move_note|complete_task|daily_note|insert_diagram)$/;
 
 function toolLabel(name: string, a: Record<string, unknown>): string {
   const q = (v: unknown) => (typeof v === 'string' && v ? ` “${v.length > 40 ? v.slice(0, 39) + '…' : v}”` : '');
@@ -76,25 +67,133 @@ function Diff({ p }: { p: Proposal }) {
   );
 }
 
-export function AiPanel({ noteId, live, locked, applyToEditor, onClose }: AiPanelProps) {
+function Markdown({ text }: { text: string }) {
+  const html = useMemo(() => renderMarkdown(text), [text]);
+  return <div className="ai-md" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+// ---------------------------------------------------------------- header actions: new chat, history
+export function AiHeaderActions() {
+  const app = useApp();
+  const st = useChat();
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState<ChatSummary[] | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+
+  const load = async () => { try { setList(await app.api.listChats()); } catch { setList([]); } };
+  useEffect(() => {
+    if (!open) return;
+    void load();
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="ai-actions" ref={box}>
+      <IconBtn label="New chat" icon={<SquarePen size={18} />} disabled={st.busy || st.items.length === 0} onClick={() => chat.reset()} />
+      <IconBtn label="Chat history" icon={<HistoryIcon size={18} />} active={open} haspopup onClick={() => setOpen(o => !o)} />
+      {open && (
+        <div className="ai-history" role="dialog" aria-label="Chat history">
+          <h4>History</h4>
+          {list === null && <div className="ai-history-empty"><Loader2 size={16} className="spin" /></div>}
+          {list?.length === 0 && <div className="ai-history-empty">Your conversations will show up here.</div>}
+          <ul>
+            {(list ?? []).map(c => (
+              <li key={c.id} className={classNames(c.id === st.convId && 'current')}>
+                <button className="ai-history-open" disabled={st.busy} onClick={async () => {
+                  const rec = await app.run(app.api.getChat(c.id));
+                  const parsed = rec ? parseChat(rec.id, rec.data) : null;
+                  if (!parsed) { app.toast('That conversation could not be opened', 'error'); return; }
+                  chat.load(parsed);
+                  setOpen(false);
+                }}>
+                  <span className="ai-history-title">{c.title}</span>
+                  <span className="ai-history-when">{relTime(c.updated)}</span>
+                </button>
+                <IconBtn label={`Delete “${c.title}”`} icon={<Trash2 size={15} />} onClick={async () => {
+                  await app.run(app.api.deleteChat(c.id));
+                  if (c.id === st.convId) chat.reset();
+                  await load();
+                }} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- the panel
+const SUGGESTIONS: { icon: JSX.Element; label: string; prompt: string; needsNote?: boolean; send?: boolean }[] = [
+  { icon: <Info size={18} />, label: 'What can the Assistant do?', prompt: 'What can you do here? Answer briefly, with examples.', send: true },
+  { icon: <Search size={18} />, label: 'Ask my notes about…', prompt: 'Ask my notes about ' },
+  { icon: <WandSparkles size={18} />, label: 'Draft a note to organize my day', prompt: 'Draft a note that helps me organize my day, with a checklist.', send: true },
+  { icon: <FileText size={18} />, label: 'Summarize this note', prompt: 'Summarize this note in a few bullet points.', needsNote: true, send: true },
+  { icon: <Lightbulb size={18} />, label: 'Help me brainstorm', prompt: 'Help me brainstorm about ', },
+  { icon: <Shapes size={18} />, label: 'Draw a diagram of this note', prompt: 'Draw a diagram that explains the main idea of this note and add it to the note.', needsNote: true, send: true },
+];
+
+interface Pick extends Mention { hint?: string }
+
+export function AiPanel() {
   const app = useApp();
   const { api, ai } = app;
   const st = useChat();
+  const prefs = usePrefs();
+  const outline = useOutline();
+  const modeMenu = useMenu();
+  const plusMenu = useMenu();
+  const upload = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState('');
+  const [mentions, setMentions] = useState<Mention[]>([]);
+  const [picker, setPicker] = useState<{ query: string; at: number } | null>(null);
+  const [pickIndex, setPickIndex] = useState(0);
+  const [files, setFiles] = useState<{ id: string; name: string }[] | null>(null);
   const abort = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const isPrivate = !!app.byId.get(noteId)?.private;
+  const area = useRef<HTMLTextAreaElement>(null);
+
+  // the note the person is looking at: the one in the editor, else the one in the address
+  const route = app.route;
+  const routeNote = 'note' in route ? route.note ?? null : null;
+  const noteId = outline?.noteId ?? routeNote;
+  const summary = noteId ? app.byId.get(noteId) : undefined;
+  const isPrivate = !!summary?.private;
+  const locked = !!outline?.locked || !!summary?.inTrash;
   const idRef = useRef(noteId);
   idRef.current = noteId;
-  const liveRef = useRef(live);
-  liveRef.current = live;
+  const mode = prefs.aiMode;
 
-  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [st.items.length, st.items.at(-1)]);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [st.items.length, st.items.at(-1), st.notice]);
   useEffect(() => () => abort.current?.abort(), []);
 
-  /** Put a text into a note: the open note goes through the editor, any other note straight to the vault. */
+  // ---- keep the conversation in the vault (once a turn has finished)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (st.busy || st.items.length === 0) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const s = chat.get();
+      if (s.busy || s.items.length === 0) return;
+      const id = s.convId ?? crypto.randomUUID();
+      const first = s.items.find(i => i.kind === 'user');
+      const title = (first && first.kind === 'user' ? first.text : 'Conversation').replace(/\s+/g, ' ').slice(0, 80);
+      if (!s.convId) chat.set(x => (x.convId ? x : { ...x, convId: id }));
+      void api.saveChat({ id, title, data: serializeChat(chat.get()) }).catch(() => undefined);
+    }, 700);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, [st.items, st.proposals, st.busy, api]);
+
+  // ---- reading and writing notes for the tools
+  const liveBody = () => (idRef.current && outline && outline.noteId === idRef.current ? editorBridge.fns()?.live() ?? null : null);
+
   const applyNow = async (id: string, patch: { title?: string; body?: string }) => {
-    if (id === idRef.current) { applyToEditor(patch); return; }
+    const fns = editorBridge.fns();
+    if (fns && id === idRef.current && outline?.noteId === id) { fns.apply(patch); return; }
     await api.saveNote(id, patch);
   };
 
@@ -103,7 +202,8 @@ export function AiPanel({ noteId, live, locked, applyToEditor, onClose }: AiPane
       const p = pendingFor(chat.get(), id);
       if (p) return { id, title: p.title, body: p.body };
       if (app.byId.get(id)?.private) return null;
-      if (id === idRef.current) { const l = liveRef.current(); return { id, title: l.title, body: l.body }; }
+      const live = id === idRef.current ? liveBody() : null;
+      if (live) return { id, title: live.title, body: live.body };
       const n = await api.getNote(id);
       return n && n.type === 'note' && !n.private ? { id, title: n.title, body: n.body } : null;
     },
@@ -113,13 +213,13 @@ export function AiPanel({ noteId, live, locked, applyToEditor, onClose }: AiPane
       const existing = pendingFor(chat.get(), id);
       const next = { title: patch.title ?? cur.title, body: patch.body ?? cur.body };
       if (ai.autoApply) {
-        const was = id === idRef.current ? liveRef.current() : cur;
+        const was = (id === idRef.current ? liveBody() : null) ?? cur;
         await applyNow(id, patch);
         const done: Proposal = { id: `p${chat.nextId()}`, noteId: id, baseTitle: was.title, baseBody: was.body, ...next, state: 'accepted' };
         chat.set(s => ({ ...s, proposals: { ...s.proposals, [done.id]: done }, items: [...s.items, { id: chat.nextId(), kind: 'proposal', proposalId: done.id }] }));
         return 'Updated.';
       }
-      const base = existing ? { title: existing.baseTitle, body: existing.baseBody } : id === idRef.current ? liveRef.current() : cur;
+      const base = existing ? { title: existing.baseTitle, body: existing.baseBody } : (id === idRef.current ? liveBody() : null) ?? cur;
       const prop: Proposal = { id: existing?.id ?? `p${chat.nextId()}`, noteId: id, baseTitle: base.title, baseBody: base.body, ...next, state: 'pending' };
       chat.set(s => ({
         ...s,
@@ -155,36 +255,62 @@ export function AiPanel({ noteId, live, locked, applyToEditor, onClose }: AiPane
     },
   });
 
+  // ---- sending
+  /** The text of what the person attached, read now: the model gets it in the message itself. */
+  const attachmentText = async (list: Mention[]): Promise<string> => {
+    const parts: string[] = [];
+    for (const m of list) {
+      if (m.kind === 'note') {
+        const n = app.byId.get(m.id)?.private ? null : await api.getNote(m.id);
+        if (!n || n.private) { parts.push(`### Note: ${m.title}\n(not available)`); continue; }
+        parts.push(`### Note: ${n.title} (id: ${n.id})\n<<<\n${n.body.slice(0, 60_000)}\n>>>`);
+      } else {
+        const f = m.text === undefined ? await api.getFile(m.id) : null;
+        const t = m.text !== undefined ? m.text : f ? await fileToText(f).catch(() => null) : null;
+        parts.push(t === null ? `### File: ${m.title}\n(this kind of file cannot be read as text)` : `### File: ${m.title}\n<<<\n${t}\n>>>`);
+      }
+    }
+    return parts.length ? `\n\nAttached for context:\n${parts.join('\n\n')}` : '';
+  };
+
   const send = async (text: string) => {
     const msg = text.trim();
     if (!msg || st.busy) return;
-    setDraft('');
+    const attached = mentions;
+    setDraft(''); setMentions([]); setPicker(null);
     const ctl = new AbortController();
     abort.current = ctl;
-    const userItem = { id: chat.nextId(), kind: 'user' as const, text: msg };
-    chat.set(s => ({ ...s, busy: true, items: [...s.items, userItem] }));
-    const history = [...chat.get().history, { role: 'user' as const, content: msg }];
+    chat.set(s => ({ ...s, busy: true, notice: null, items: [...s.items, { id: chat.nextId(), kind: 'user', text: msg, mentions: attached }] }));
     try {
-      const cur = await io().read(noteId);
-      const base = buildTools({ vault: api, scope: ai.wholeVault ? { kind: 'vault' } : { kind: 'note', noteId }, io: io() });
-      const tools = locked ? base.filter(t => !/^(append_to_note|replace_text|insert_after_heading|update_note|rename_note|add_tags)$/.test(t.spec.name)) : [...base, diagramTool(base)];
+      const content = msg + (await attachmentText(attached));
+      const history = [...chat.get().history, { role: 'user' as const, content }];
+      const cur = noteId ? await io().read(noteId) : null;
+      const allow = chat.get().items.flatMap(i => (i.kind === 'user' ? i.mentions.filter(m => m.kind === 'note').map(m => m.id) : []));
+      const base = buildTools({
+        vault: api, io: io(), readOnly: mode === 'ask',
+        scope: ai.wholeVault ? { kind: 'vault' } : { kind: 'note', noteId, allow },
+      });
+      const withDiagram = mode === 'edit' && !locked && noteId ? [...base, diagramTool(base)] : base;
+      const tools = locked ? withDiagram.filter(t => !WRITE_TOOLS.test(t.spec.name) || t.spec.name === 'create_note') : withDiagram;
       let streaming: number | null = null;
       const added = await runAgent({
         transport: app.aiTransport, tools, history, signal: ctl.signal,
-        system: chatSystemPrompt({ note: cur ? { id: noteId, title: cur.title, body: cur.body } : null, wholeVault: ai.wholeVault, today: new Date().toLocaleDateString('en-CA') }),
+        system: chatSystemPrompt({ note: cur && noteId ? { id: noteId, title: cur.title, body: cur.body } : null, wholeVault: ai.wholeVault, mode, today: new Date().toLocaleDateString('en-CA') }),
         onEvent: e => {
           if (e.type === 'text') {
             if (streaming === null) {
               const id = chat.nextId();
               streaming = id;
-              chat.set(s => ({ ...s, items: [...s.items, { id, kind: 'assistant', text: e.delta }] }));
+              chat.set(s => ({ ...s, notice: null, items: [...s.items, { id, kind: 'assistant', text: e.delta }] }));
             } else {
               const id = streaming;
               chat.set(s => ({ ...s, items: s.items.map(i => (i.id === id && i.kind === 'assistant' ? { ...i, text: i.text + e.delta } : i)) }));
             }
           } else if (e.type === 'tool') {
             streaming = null;
-            chat.set(s => ({ ...s, items: [...s.items, { id: chat.nextId(), kind: 'tool', name: e.call.name, label: toolLabel(e.call.name, e.call.args), error: e.error }] }));
+            chat.set(s => ({ ...s, notice: null, items: [...s.items, { id: chat.nextId(), kind: 'tool', name: e.call.name, label: toolLabel(e.call.name, e.call.args), error: e.error }] }));
+          } else if (e.type === 'notice') {
+            chat.set(s => ({ ...s, notice: e.text }));
           } else {
             chat.set(s => ({ ...s, usage: { input: s.usage.input + e.input, output: s.usage.output + e.output } }));
           }
@@ -195,7 +321,7 @@ export function AiPanel({ noteId, live, locked, applyToEditor, onClose }: AiPane
     } catch (e) {
       if (!ctl.signal.aborted) chat.set(s => ({ ...s, items: [...s.items, { id: chat.nextId(), kind: 'error', text: e instanceof Error ? e.message : String(e) }] }));
     } finally {
-      chat.set(s => ({ ...s, busy: false }));
+      chat.set(s => ({ ...s, busy: false, notice: null }));
       abort.current = null;
     }
   };
@@ -204,10 +330,10 @@ export function AiPanel({ noteId, live, locked, applyToEditor, onClose }: AiPane
     const p = chat.get().proposals[id];
     if (!p || p.state !== 'pending') return;
     if (!accept) { chat.set(s => ({ ...s, proposals: { ...s.proposals, [id]: { ...p, state: 'rejected' } } })); return; }
-    const noteId = p.noteId;
     try {
       // the person may have typed since the proposal was made: bring both together instead of overwriting
-      const now = noteId === idRef.current ? liveRef.current() : await api.getNote(noteId);
+      const open = p.noteId === idRef.current ? liveBody() : null;
+      const now = open ?? (await api.getNote(p.noteId));
       if (!now) throw new Error('This note is no longer available.');
       let body = p.body;
       if (now.body !== p.baseBody && p.body !== p.baseBody) {
@@ -215,7 +341,7 @@ export function AiPanel({ noteId, live, locked, applyToEditor, onClose }: AiPane
         if (!r.clean) { app.toast('The note changed since this suggestion, in the same place. Reject it and ask again.', 'error'); return; }
         body = r.text;
       } else if (p.body === p.baseBody) body = now.body;
-      await applyNow(noteId, { title: p.title !== p.baseTitle ? p.title : undefined, body: body !== now.body ? body : undefined });
+      await applyNow(p.noteId, { title: p.title !== p.baseTitle ? p.title : undefined, body: body !== now.body ? body : undefined });
       chat.set(s => ({ ...s, proposals: { ...s.proposals, [id]: { ...p, body, state: 'accepted' } } }));
       void app.refresh();
     } catch (e) { app.toast(e instanceof Error ? e.message : String(e), 'error'); }
@@ -223,77 +349,198 @@ export function AiPanel({ noteId, live, locked, applyToEditor, onClose }: AiPane
 
   const undo = async (id: string) => {
     const p = chat.get().proposals[id];
-    if (!p || p.state !== 'accepted') return;
+    if (!p || p.state !== 'accepted' || !p.baseBody) return;
     try {
       await applyNow(p.noteId, { title: p.title !== p.baseTitle ? p.baseTitle : undefined, body: p.baseBody });
       chat.set(s => ({ ...s, proposals: { ...s.proposals, [id]: { ...p, state: 'rejected' } } }));
     } catch (e) { app.toast(e instanceof Error ? e.message : String(e), 'error'); }
   };
 
+  // ---- @ mentions
+  const picks: Pick[] = useMemo(() => {
+    if (!picker) return [];
+    const q = picker.query.toLowerCase();
+    const have = new Set(mentions.map(m => m.id));
+    const notes = app.items
+      .filter(i => i.type === 'note' && !i.inTrash && !i.template && !i.private && !have.has(i.id) && (!q || i.title.toLowerCase().includes(q)))
+      .sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, 6)
+      .map<Pick>(i => ({ kind: 'note', id: i.id, title: i.title, hint: app.byId.get(i.parent ?? '')?.title }));
+    const fs = (files ?? []).filter(f => !have.has(f.id) && (!q || f.name.toLowerCase().includes(q))).slice(0, 4)
+      .map<Pick>(f => ({ kind: 'file', id: f.id, title: f.name, hint: 'File' }));
+    return [...notes, ...fs];
+  }, [picker, app.items, app.byId, files, mentions]);
+
+  useEffect(() => { setPickIndex(0); }, [picker?.query]);
+  useEffect(() => {
+    if (picker && files === null) void api.listFiles().then(l => setFiles(l.map(f => ({ id: f.id, name: f.name }))), () => setFiles([]));
+  }, [picker, files, api]);
+
+  const onDraft = (value: string, caret: number) => {
+    setDraft(value);
+    const m = /(^|\s)@([^\s@]*)$/.exec(value.slice(0, caret));
+    setPicker(m ? { query: m[2], at: caret - m[2].length - 1 } : null);
+  };
+  const choose = (p: Pick) => {
+    if (!picker) return;
+    const before = draft.slice(0, picker.at);
+    const after = draft.slice(picker.at + 1 + picker.query.length);
+    setDraft(before + after.replace(/^ /, ''));
+    setMentions(m => [...m, { kind: p.kind, id: p.id, title: p.title }]);
+    setPicker(null);
+    area.current?.focus();
+  };
+
+  const startMention = () => {
+    const sep = draft && !/\s$/.test(draft) ? ' ' : '';
+    setDraft(draft + sep + '@');
+    setPicker({ query: '', at: draft.length + sep.length });
+    setTimeout(() => area.current?.focus(), 0);
+  };
+  /** a file from this device is read here and goes into the message; it is not stored in the vault */
+  const attachLocal = async (list: FileList | null) => {
+    for (const f of Array.from(list ?? []).slice(0, 4)) {
+      try {
+        const text = await fileToText({ name: f.name, mime: f.type || 'application/octet-stream', data: toB64(new Uint8Array(await f.arrayBuffer())) });
+        if (text === null) { app.toast(`${f.name}: this kind of file cannot be read as text`, 'error'); continue; }
+        setMentions(m => [...m, { kind: 'file', id: `local:${f.name}:${f.size}`, title: f.name, text }]);
+      } catch (e) { app.toast(`${f.name}: ${e instanceof Error ? e.message : String(e)}`, 'error'); }
+    }
+  };
+
   const noKey = !ai.hasKey;
+  const disabled = noKey || isPrivate;
+  const empty = st.items.length === 0;
+
   return (
-    <aside className={classNames('ai-panel', app.isMobile && 'mobile')} aria-label="AI assistant">
-      {!app.isMobile && <Resizer pane="aiW" edge="left" label="Resize AI assistant" />}
-      <header className="ai-head">
-        <Sparkles size={16} />
-        <h3>Assistant</h3>
-        <span className="grow" />
-        <IconBtn label="Clear conversation" icon={<Trash2 size={16} />} disabled={st.busy || st.items.length === 0} onClick={() => chat.reset()} />
-        <IconBtn label="AI settings" icon={<SettingsIcon size={16} />} onClick={() => app.setDialog({ kind: 'settings', tab: 'ai' })} />
-        <IconBtn label="Close assistant" icon={<X size={16} />} onClick={onClose} />
-      </header>
+    <div className="ai-panel" aria-label="AI assistant">
       <div className="ai-scroll" role="log" aria-live="polite">
-        {noKey && (
-          <div className="ai-empty">
-            <p>Connect an AI provider to ask questions about your notes and have them written, edited or drawn for you.</p>
-            <button className="btn primary" onClick={() => app.setDialog({ kind: 'settings', tab: 'ai' })}>Add an API key</button>
-          </div>
-        )}
-        {!noKey && isPrivate && <div className="ai-empty"><p>This note is private, so the assistant cannot see it. Turn off “Private” in the note’s menu to use it here.</p></div>}
-        {!noKey && !isPrivate && st.items.length === 0 && (
-          <div className="ai-empty">
-            <p>{ai.wholeVault ? 'Ask about any of your notes, or have one written.' : 'Ask about this note, or have it edited, extended or illustrated.'}</p>
-            <div className="ai-quick">{QUICK.map(q => <button key={q.label} className="chip" onClick={() => void send(q.prompt)}>{q.label}</button>)}</div>
+        {empty && (
+          <div className="ai-welcome">
+            {noKey ? (
+              <>
+                <h2>Connect an AI provider</h2>
+                <p>Ask questions about your notes, and have them written, edited or drawn for you. You bring your own API key.</p>
+                <button className="btn primary" onClick={() => app.setDialog({ kind: 'settings', tab: 'ai' })}>Add an API key</button>
+              </>
+            ) : isPrivate ? (
+              <>
+                <h2>This note is private</h2>
+                <p>The assistant cannot see it. Choose “Allow AI to see this note” in the note’s menu to use it here.</p>
+              </>
+            ) : (
+              <>
+                <h2>What can I help with?</h2>
+                <ul className="ai-suggest">
+                  {SUGGESTIONS.filter(s => !s.needsNote || (noteId && !isPrivate)).map(s => (
+                    <li key={s.label}>
+                      <button onClick={() => { if (s.send) void send(s.prompt); else { setDraft(s.prompt); area.current?.focus(); } }}>{s.icon}<span>{s.label}</span></button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </div>
         )}
         {st.items.map(it => {
-          if (it.kind === 'user') return <div key={it.id} className="ai-msg user">{it.text}</div>;
-          if (it.kind === 'assistant') return <div key={it.id} className="ai-msg bot">{it.text}</div>;
-          if (it.kind === 'tool') return <div key={it.id} className={classNames('ai-tool', it.error && 'err')}><Wrench size={12} /> {it.label}{it.error ? ' (failed)' : ''}</div>;
-          if (it.kind === 'error') return <div key={it.id} className="ai-msg error" role="alert">{it.text}</div>;
+          if (it.kind === 'user') {
+            return (
+              <div key={it.id} className="ai-user">
+                {it.mentions.length > 0 && <div className="ai-chips">{it.mentions.map(m => <span key={m.id} className="ai-chip">{m.kind === 'note' ? <FileText size={12} /> : <Paperclip size={12} />}{m.title}</span>)}</div>}
+                <div className="ai-bubble">{it.text}</div>
+              </div>
+            );
+          }
+          if (it.kind === 'assistant') return <Markdown key={it.id} text={it.text} />;
+          if (it.kind === 'tool') return <div key={it.id} className={classNames('ai-tool', it.error && 'err')}><Pencil size={12} /> {it.label}{it.error ? ' (failed)' : ''}</div>;
+          if (it.kind === 'error') return <div key={it.id} className="ai-error" role="alert">{it.text}</div>;
           const p = st.proposals[it.proposalId];
           if (!p) return null;
           const title = app.byId.get(p.noteId)?.title ?? p.title;
+          const label = p.state === 'pending' ? 'Suggested changes' : p.state === 'accepted' ? 'Applied' : p.state === 'rejected' ? 'Rejected' : 'Not applied';
           return (
             <div key={it.id} className={classNames('ai-proposal', p.state)}>
-              <div className="ai-proposal-head">
-                <b>{p.state === 'pending' ? 'Suggested changes' : p.state === 'accepted' ? 'Applied' : 'Rejected'}</b>
-                <span className="muted"> · {title}</span>
-              </div>
-              <Diff p={p} />
+              <div className="ai-proposal-head"><b>{label}</b><span className="muted"> · {title}</span></div>
+              {(p.baseBody || p.body) && p.state !== 'closed' && (p.state === 'pending' || p.baseBody || p.body) && <Diff p={p} />}
               {p.state === 'pending' && (
                 <div className="ai-proposal-actions">
                   <button className="btn primary" onClick={() => void decide(p.id, true)}><Check size={14} /> Accept</button>
                   <button className="btn" onClick={() => void decide(p.id, false)}><X size={14} /> Reject</button>
                 </div>
               )}
-              {p.state === 'accepted' && <div className="ai-proposal-actions"><button className="btn" onClick={() => void undo(p.id)}><RotateCcw size={14} /> Undo</button></div>}
+              {p.state === 'accepted' && p.baseBody && <div className="ai-proposal-actions"><button className="btn" onClick={() => void undo(p.id)}><RotateCcw size={14} /> Undo</button></div>}
             </div>
           );
         })}
-        {st.busy && <div className="ai-working"><Loader2 size={14} className="spin" /> Working…</div>}
-        {!st.busy && st.usage.input + st.usage.output > 0 && <div className="ai-usage">{st.usage.input.toLocaleString()} in · {st.usage.output.toLocaleString()} out tokens this session</div>}
+        {st.busy && <div className="ai-working"><Loader2 size={14} className="spin" /> {st.notice ?? 'Working…'}</div>}
+        {!st.busy && st.usage.input + st.usage.output > 0 && <div className="ai-usage">{st.usage.input.toLocaleString()} in · {st.usage.output.toLocaleString()} out tokens</div>}
         <div ref={endRef} />
       </div>
-      <form className="ai-input" onSubmit={e => { e.preventDefault(); void send(draft); }}>
-        <textarea aria-label="Message the assistant" rows={2} value={draft} disabled={noKey || isPrivate}
-          placeholder={noKey ? 'Add an API key first' : 'Ask, or tell it what to write…'}
-          onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(draft); } }} />
-        {st.busy
-          ? <IconBtn label="Stop" icon={<Square size={16} />} variant="primary" onClick={() => abort.current?.abort()} />
-          : <IconBtn label="Send" icon={<Send size={16} />} variant="primary" disabled={noKey || isPrivate || !draft.trim()} onClick={() => void send(draft)} />}
-      </form>
-    </aside>
+
+      <div className="ai-composer-wrap">
+        <div className="ai-context" title="The assistant works on this note">
+          <FileText size={13} />
+          <span>{isPrivate ? 'Private note (hidden from AI)' : summary ? summary.title || 'Untitled' : ai.wholeVault ? 'All your notes' : 'No note open'}</span>
+        </div>
+        <form className={classNames('ai-composer', disabled && 'disabled')} onSubmit={e => { e.preventDefault(); void send(draft); }}>
+          {mentions.length > 0 && (
+            <div className="ai-chips">
+              {mentions.map(m => (
+                <span key={m.id} className="ai-chip">
+                  {m.kind === 'note' ? <FileText size={12} /> : <Paperclip size={12} />}{m.title}
+                  <button type="button" aria-label={`Remove ${m.title}`} onClick={() => setMentions(x => x.filter(y => y.id !== m.id))}><X size={12} /></button>
+                </span>
+              ))}
+            </div>
+          )}
+          {picker && (
+            <div className="ai-picker" role="listbox" aria-label="Attach a note or file">
+              {picks.length === 0 && <div className="ai-picker-empty">{files === null ? 'Searching…' : 'No matching notes or files'}</div>}
+              {picks.map((p, i) => (
+                <button key={p.id} type="button" role="option" aria-selected={i === pickIndex} className={classNames(i === pickIndex && 'on')}
+                  onMouseDown={e => { e.preventDefault(); choose(p); }}>
+                  {p.kind === 'note' ? <FileText size={15} /> : <Paperclip size={15} />}
+                  <span className="t">{p.title || 'Untitled'}</span>
+                  {p.hint && <span className="h">{p.hint}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+          <textarea ref={area} aria-label="Message the assistant" rows={2} value={draft} disabled={disabled}
+            placeholder={noKey ? 'Add an API key first' : isPrivate ? 'This note is private' : 'Ask anything'}
+            onChange={e => onDraft(e.target.value, e.target.selectionStart)}
+            onKeyDown={e => {
+              if (picker && picks.length) {
+                if (e.key === 'ArrowDown') { e.preventDefault(); setPickIndex(i => (i + 1) % picks.length); return; }
+                if (e.key === 'ArrowUp') { e.preventDefault(); setPickIndex(i => (i - 1 + picks.length) % picks.length); return; }
+                if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); choose(picks[pickIndex]); return; }
+              }
+              if (e.key === 'Escape' && picker) { e.preventDefault(); setPicker(null); return; }
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(draft); }
+            }} />
+          <div className="ai-composer-bar">
+            <IconBtn label="Attach" icon={<Plus size={18} />} disabled={disabled} haspopup
+              onClick={e => plusMenu.open(e, [
+                { label: 'A note or file from Ergonotes', icon: <AtSign size={16} />, onClick: startMention },
+                { label: 'A file from this device', icon: <Paperclip size={16} />, onClick: () => upload.current?.click() },
+              ], 'left')} />
+            <IconBtn label="Mention a note or file" icon={<AtSign size={18} />} disabled={disabled} onClick={startMention} />
+            <button type="button" className="ai-mode" aria-haspopup="menu" aria-label={`Mode: ${mode === 'edit' ? 'Edit' : 'Ask'}`}
+              onClick={e => modeMenu.open(e, [
+                { label: 'Ask: answers only', icon: <Search size={16} />, checked: mode === 'ask', onClick: () => setPrefs({ aiMode: 'ask' }) },
+                { label: 'Edit: may change notes', icon: <Pencil size={16} />, checked: mode === 'edit', onClick: () => setPrefs({ aiMode: 'edit' }) },
+              ], 'left')}>
+              {mode === 'edit' ? <Pencil size={14} /> : <Search size={14} />} {mode === 'edit' ? 'Edit' : 'Ask'} <ChevronDown size={14} />
+            </button>
+            <span className="grow" />
+            {st.busy
+              ? <IconBtn label="Stop" icon={<Square size={16} />} variant="primary" onClick={() => abort.current?.abort()} />
+              : <IconBtn label="Send" icon={<Send size={16} />} variant="primary" disabled={disabled || !draft.trim()} onClick={() => void send(draft)} />}
+          </div>
+        </form>
+        {modeMenu.node}{plusMenu.node}
+        <input ref={upload} type="file" hidden multiple accept=".txt,.md,.json,.csv,.tsv,.xlsx,.pptx,text/*" onChange={e => { void attachLocal(e.target.files); e.target.value = ''; }} />
+        <p className="ai-disclaimer">AI can make mistakes. Check important information.</p>
+      </div>
+    </div>
   );
 }

@@ -23,7 +23,7 @@ A Note the person has marked as not to be shown to AI. It is never part of an as
 _Avoid_: Hidden, locked, secret
 
 **Assistant**:
-The AI chat beside an open Note. It answers, and proposes changes to Notes that the person accepts or rejects.
+The AI chat in the right sidebar. It answers, and proposes changes to Notes that the person accepts or rejects. Past conversations are kept in its History.
 _Avoid_: Bot, copilot, agent (an agent is something outside the app that uses the MCP endpoint)
 
 **Suggestion**:

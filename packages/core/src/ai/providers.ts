@@ -197,8 +197,41 @@ async function* anthropic(cfg: AiConfig, req: AiRequest, o: StreamOptions): Asyn
   yield { type: 'done' };
 }
 
-export function streamChat(cfg: AiConfig, req: AiRequest, o: StreamOptions = {}): AsyncGenerator<AiEvent> {
+function streamOnce(cfg: AiConfig, req: AiRequest, o: StreamOptions): AsyncGenerator<AiEvent> {
   return cfg.provider === 'anthropic' ? anthropic(cfg, req, o) : openRouter(cfg, req, o);
+}
+
+/** Busy providers answer 429/5xx, or break the stream before it starts: worth another try. */
+const transient = (e: unknown): boolean =>
+  e instanceof AiError && (e.status === 429 || e.status === 408 || (e.status !== undefined && e.status >= 500) || /rate.?limit|temporarily|overloaded|injected into SSE|try again/i.test(e.message));
+
+const RETRY_WAITS_MS = [1500, 4000];
+
+const pause = (ms: number, signal?: AbortSignal) => new Promise<void>(resolve => {
+  const t = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+});
+
+/**
+ * One streamed answer. A transient failure before anything was produced is retried (twice, with a pause);
+ * after the first word or tool call the error is reported, because the text would repeat.
+ */
+export async function* streamChat(cfg: AiConfig, req: AiRequest, o: StreamOptions = {}): AsyncGenerator<AiEvent> {
+  for (let attempt = 0; ; attempt++) {
+    let produced = false;
+    try {
+      for await (const e of streamOnce(cfg, req, o)) {
+        if (e.type === 'text' || e.type === 'tool_call') produced = true;
+        yield e;
+      }
+      return;
+    } catch (e) {
+      if (produced || o.signal?.aborted || !transient(e) || attempt >= RETRY_WAITS_MS.length) throw e;
+      yield { type: 'notice', text: `The provider is busy, trying again (${attempt + 1}/${RETRY_WAITS_MS.length})…` };
+      await pause(RETRY_WAITS_MS[attempt], o.signal);
+      if (o.signal?.aborted) return;
+    }
+  }
 }
 
 /** The whole answer of a request without tools, as text. */

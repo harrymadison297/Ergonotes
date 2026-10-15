@@ -17,6 +17,7 @@ import { FilePreviewDialog } from './FilePreview';
 import { SearchPalette } from './SearchPalette';
 import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, SettingsDialog, ShortcutsDialog, TemplatesDialog } from './Dialogs';
 import { Sidebar } from './Sidebar';
+import { RightSidebar, useAsideVisible } from './RightSidebar';
 import { IconBtn, TagLink, Toasts } from './ui';
 import { useSync } from './useSync';
 import { usePrefs } from '../state/prefs';
@@ -223,14 +224,17 @@ export function Shell() {
   useGlobalShortcuts();
   useReminders();
   useShareIntent();
+  const aside = useAsideVisible();
+  const focus = prefs.focus && app.route.name === 'notes' && !!app.route.note;
   if (app.isMobile) {
-    return <><MobileShell /><DialogHost /><Toasts toasts={app.toasts} /></>;
+    return <><MobileShell /><RightSidebar /><DialogHost /><Toasts toasts={app.toasts} /></>;
   }
   return (
     <>
-      <div className={classNames('app', app.rail && 'rail', prefs.focus && app.route.name === 'notes' && !!app.route.note && 'focus')}>
+      <div className={classNames('app', app.rail && 'rail', aside && !focus && 'has-aside', focus && 'focus')}>
         <Sidebar />
         <main className="main"><RouteView /></main>
+        <RightSidebar />
       </div>
       <DialogHost />
       <Toasts toasts={app.toasts} />

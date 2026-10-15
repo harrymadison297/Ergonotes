@@ -314,12 +314,12 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
             <>
           <div className="field">
             <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontWeight: 600 }}>
-              <input type="checkbox" checked={prefs.toc} onChange={e => setPrefs({ toc: e.target.checked })} style={{ accentColor: 'var(--green-fill)', width: 18, height: 18 }} />
-              Show the table of contents beside a note</label>
-            <span className="hint">Lists the note’s headings on the right. You can also toggle it from the note’s toolbar.</span></div>
+              <input type="checkbox" checked={prefs.aside} onChange={e => setPrefs({ aside: e.target.checked })} style={{ accentColor: 'var(--green-fill)', width: 18, height: 18 }} />
+              Show the right sidebar beside a note</label>
+            <span className="hint">The note’s contents and the AI assistant. You can also open it from the note’s toolbar.</span></div>
           <div className="field"><span className="label">Layout</span>
-            <div><button className="btn" onClick={() => setPrefs({ sidebarW: null, listW: null, tocW: null })}>Reset pane widths</button></div>
-            <span className="hint">Drag the edge of the sidebar, the note list or the contents panel to resize it.</span></div>
+            <div><button className="btn" onClick={() => setPrefs({ sidebarW: null, listW: null, asideW: null })}>Reset pane widths</button></div>
+            <span className="hint">Drag the edge of the sidebar, the note list or the right sidebar to resize it.</span></div>
             </>
           )}
           <div className="field"><label htmlFor="s-cap">New captures go to</label>
