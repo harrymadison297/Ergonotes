@@ -24,6 +24,9 @@ Sizes and styling for the parts we do have are in `docs/brand-guidelines.md`.
 - AI Edit on a selection (select text, then Rewrite / Shorten / Fix grammar). The right-hand assistant panel exists (ADR 0008); sending a selection to it is the next step
 - Insert menu items that need a service of ours or an account: **Mention an entity**, **Mention a person** (there is no
   directory of people or entities in a personal vault) and **Google Drive** (an OAuth flow and a server of ours, ADR 0004)
+- Meeting recording of the computer's sound through the screen-sharing picker works where the browser allows it (Chrome,
+  Edge). A **native loopback capture** (WASAPI on Windows, PulseAudio monitor on Linux, MediaProjection on Android) would
+  make it work in the apps without a picker; not done
 - Voice: recording on **Android** needs the RECORD_AUDIO permission wired into the WebView (not done, not tested); on the
   web it works on https and localhost only
 - Reminder and "Add to…" actions in the note footer (task reminders exist inside the text)

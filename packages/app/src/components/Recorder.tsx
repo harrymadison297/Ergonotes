@@ -11,6 +11,9 @@ export interface Recording { blob: Blob; mime: string; seconds: number }
 const TITLE: Record<RecordKind, string> = { voice: 'Voice note', meeting: 'Meeting recording', dictate: 'Voice dictation' };
 const MAX_BYTES = 20 * 1024 * 1024; // a vault file may be 25 MB
 
+/** Capturing what the computer plays (the other people on a call) goes through screen sharing with audio. */
+export const canCaptureComputerAudio = (): boolean => typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
+
 export const blobToB64 = (b: Blob): Promise<string> => new Promise((resolve, reject) => {
   const r = new FileReader();
   r.onload = () => resolve(String(r.result).split(',')[1] ?? '');
@@ -46,6 +49,11 @@ export function RecorderDialog({ kind, sttReady, privateNote, onFinish, onClose 
   const [status, setStatus] = useState('');
   const canWrite = sttReady && !privateNote;
   const [transcribe, setTranscribe] = useState(kind !== 'voice' ? canWrite : false);
+  const sysOk = kind === 'meeting' && canCaptureComputerAudio();
+  const [system, setSystem] = useState(sysOk);
+  const [heard, setHeard] = useState<'mic' | 'both'>('mic');
+  const [note, setNote] = useState('');
+  const streams = useRef<MediaStream[]>([]);
   const rec = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
@@ -61,6 +69,8 @@ export function RecorderDialog({ kind, sttReady, privateNote, onFinish, onClose 
     cancelAnimationFrame(raf.current);
     stream.current?.getTracks().forEach(t => t.stop());
     stream.current = null;
+    streams.current.forEach(st => st.getTracks().forEach(t => t.stop()));
+    streams.current = [];
     void ctx.current?.close().catch(() => undefined);
     ctx.current = null;
   };
@@ -69,7 +79,44 @@ export function RecorderDialog({ kind, sttReady, privateNote, onFinish, onClose 
   const start = async () => {
     setErr(null);
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      // the sharing picker needs the click that started this, so it comes before the microphone prompt
+      // the computer's sound: the other people on a call. The browser asks which tab or window to share, with its audio.
+      let display: MediaStream | null = null;
+      if (kind === 'meeting' && system && sysOk) {
+        try {
+          display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        } catch {
+          release();
+          setErr('The computer’s sound was not shared. Pick the tab or window of the call and tick “Share audio” — or turn off “Record the computer’s sound” to record the microphone only.');
+          return;
+        }
+        streams.current.push(display);
+        if (display.getAudioTracks().length === 0) {
+          release();
+          setErr('The picture was shared but not its sound. Choose again and tick “Share tab audio” (or “Share system audio”) in the browser’s window. Sound can only be shared from a tab in some browsers.');
+          return;
+        }
+        // only the sound is wanted: the picture costs nothing but is kept alive (stopping it ends the share)
+        display.getVideoTracks().forEach(t => { void t.applyConstraints({ frameRate: 1 }).catch(() => undefined); t.enabled = false; });
+        display.getAudioTracks()[0].addEventListener('ended', () => setNote('The computer’s sound is no longer shared. Still recording the microphone.'));
+      }
+      // the microphone: what this person says (and, with speakers, what the room hears)
+      const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      streams.current.push(mic);
+      // both go through one mixer: the recording is one track, whatever was captured
+      const ac = new AudioContext();
+      void ac.resume();
+      ctx.current = ac;
+      const mix = ac.createMediaStreamDestination();
+      const an = ac.createAnalyser();
+      an.fftSize = 256;
+      for (const st of [mic, ...(display ? [new MediaStream(display.getAudioTracks())] : [])]) {
+        const src = ac.createMediaStreamSource(st);
+        src.connect(mix);
+        src.connect(an);
+      }
+      setHeard(display ? 'both' : 'mic');
+      const s = mix.stream;
       stream.current = s;
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(m => MediaRecorder.isTypeSupported(m));
       const r = new MediaRecorder(s, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : undefined);
@@ -86,23 +133,16 @@ export function RecorderDialog({ kind, sttReady, privateNote, onFinish, onClose 
         const type = r.mimeType || mime || 'audio/webm';
         void finish({ blob: new Blob(chunks.current, { type }), mime: type.split(';')[0], seconds });
       };
-      // a level meter, so the person can see the microphone hears them
-      try {
-        const ac = new AudioContext();
-        ctx.current = ac;
-        const an = ac.createAnalyser();
-        an.fftSize = 256;
-        ac.createMediaStreamSource(s).connect(an);
-        const buf = new Uint8Array(an.fftSize);
-        const tick = () => {
-          an.getByteTimeDomainData(buf);
-          let peak = 0;
-          for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
-          setLevel(Math.min(1, peak / 64));
-          raf.current = requestAnimationFrame(tick);
-        };
-        tick();
-      } catch { /* no meter */ }
+      // a level meter, so the person can see something is heard
+      const buf = new Uint8Array(an.fftSize);
+      const tick = () => {
+        an.getByteTimeDomainData(buf);
+        let peak = 0;
+        for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
+        setLevel(Math.min(1, peak / 64));
+        raf.current = requestAnimationFrame(tick);
+      };
+      tick();
       carried.current = 0;
       started.current = Date.now();
       r.start(1000);
@@ -154,8 +194,17 @@ export function RecorderDialog({ kind, sttReady, privateNote, onFinish, onClose 
         <div className="rec-meter" aria-hidden><i style={{ transform: `scaleX(${live && phase === 'recording' ? Math.max(0.03, level) : 0.03})` }} /></div>
         {phase === 'working' && <p role="status" className="hint"><Loader2 size={14} className="spin" style={{ verticalAlign: -2 }} /> {status}</p>}
         {phase === 'ready' && kind === 'dictate' && <p className="hint">Speak, then press Stop: what you said is written into the note at the cursor.</p>}
-        {phase === 'ready' && kind === 'voice' && <p className="hint">The recording is saved in the note as an audio clip you can play back.</p>}
-        {phase === 'ready' && kind === 'meeting' && <p className="hint">The recording is saved in the note{canWrite ? ', then written out as a transcript with a summary' : ''}.</p>}
+        {phase === 'ready' && kind === 'voice' && <p className="hint">Records from the microphone. It is saved in the note as an audio clip you can play back.</p>}
+        {phase === 'ready' && kind === 'meeting' && <p className="hint">Records the microphone and, below, the sound the computer plays. It is saved in the note{canWrite ? ', then written out as a transcript with a summary' : ''}.</p>}
+        {phase === 'ready' && kind === 'meeting' && (
+          <label className={classNames('rec-opt', !sysOk && 'off')}>
+            <input type="checkbox" checked={system && sysOk} disabled={!sysOk} onChange={e => setSystem(e.target.checked)} /> Record the computer’s sound too (the people on the call)
+            {!sysOk && <span className="hint"> (this device cannot capture it: put the call on the speakers and the microphone will hear it)</span>}
+          </label>
+        )}
+        {phase === 'ready' && kind === 'meeting' && system && sysOk && <p className="hint">The browser will ask which tab or window to share: choose the call and tick “Share audio”.</p>}
+        {live && <p className="hint">{heard === 'both' ? 'Recording the microphone and the computer’s sound.' : 'Recording the microphone.'}</p>}
+        {note && <p className="error-text" role="status">{note}</p>}
         {phase === 'ready' && kind !== 'dictate' && (
           <label className={classNames('rec-opt', !canWrite && 'off')}>
             <input type="checkbox" checked={transcribe && canWrite} disabled={!canWrite} onChange={e => setTranscribe(e.target.checked)} /> Also write it out as text

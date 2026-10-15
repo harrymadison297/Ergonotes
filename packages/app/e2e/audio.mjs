@@ -17,6 +17,20 @@ const until = async (fn, ms = 10000) => {
 const browser = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['microphone'] });
 await ctx.addInitScript(() => { try { localStorage.setItem('ergo.rail', '0'); } catch { /* ignore */ } });
+await ctx.addInitScript(() => {
+  window.__display = { calls: 0, audio: true, cancel: false };
+  navigator.mediaDevices.getDisplayMedia = async () => {
+    window.__display.calls++;
+    if (window.__display.cancel) throw new DOMException('cancelled', 'NotAllowedError');
+    const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64; canvas.getContext('2d').fillRect(0, 0, 64, 64);
+    const out = canvas.captureStream(5);
+    if (window.__display.audio) {
+      const ac = new AudioContext(); const o = ac.createOscillator(); const d = ac.createMediaStreamDestination(); o.frequency.value = 440; o.connect(d); o.start();
+      d.stream.getAudioTracks().forEach(t => out.addTrack(t));
+    }
+    return out;
+  };
+});
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
@@ -75,9 +89,11 @@ await page.keyboard.press('Escape');
 await toEnd();
 await page.getByRole('button', { name: 'Voice note', exact: true }).click();
 await page.getByRole('dialog', { name: 'Voice note' }).waitFor();
+check('a voice note records the microphone only: no option for the computer’s sound', (await page.getByLabel(/computer’s sound/).count()) === 0);
 check('the “write it out” option is off and explains why without speech-to-text', await page.getByLabel(/Also write it out as text/).isDisabled());
 await record();
 await page.locator('.audio-clip').first().waitFor({ timeout: 15000 });
+check('the voice note never asked to share the screen', (await page.evaluate(() => window.__display.calls)) === 0);
 check('a voice note becomes an audio clip in the note', (await page.locator('.audio-clip').count()) === 1);
 const b1 = await until(async () => { const b = await bodyOf(note.id); return b.includes('"audio")') ? b : null; }, 8000) ?? '';
 check('it is stored as a link with the audio title', /\[Voice note \d\d:\d\d · \d+:\d\d\]\(ergo-file:[0-9a-f-]{36} "audio"\)/.test(b1), b1);
@@ -126,11 +142,28 @@ await toEnd();
 await page.keyboard.press('Enter');
 await page.getByRole('button', { name: 'Meeting recording', exact: true }).click();
 await page.getByRole('dialog', { name: 'Meeting recording' }).waitFor();
-await record();
+check('a meeting offers to record the computer’s sound too, on by default', await page.getByLabel(/computer’s sound/).isChecked());
+// the share is cancelled: nothing is recorded behind the person's back
+await page.evaluate(() => { window.__display.cancel = true; });
+await page.getByRole('button', { name: /Start recording/ }).click();
+await page.getByText(/computer’s sound was not shared/).waitFor({ timeout: 5000 });
+check('a cancelled share is said, and recording does not start', (await page.locator('.recorder.recording').count()) === 0);
+// shared, but without sound
+await page.evaluate(() => { window.__display.cancel = false; window.__display.audio = false; });
+await page.getByRole('button', { name: /Start recording/ }).click();
+await page.getByText(/shared but not its sound/).waitFor({ timeout: 5000 });
+check('a share without sound is said too', (await page.locator('.recorder.recording').count()) === 0);
+await page.evaluate(() => { window.__display.audio = true; });
+await page.getByRole('button', { name: /Start recording/ }).click();
+await page.locator('.recorder.recording').waitFor({ timeout: 8000 });
+check('with the sound shared it says it records both', (await page.getByText('Recording the microphone and the computer’s sound.').count()) === 1);
+await page.waitForTimeout(1600);
+await page.getByRole('button', { name: /Stop and insert/ }).click();
 await page.getByText('Summary', { exact: true }).first().waitFor({ timeout: 20000 });
 check('a meeting gets a heading, the clip, a summary and the transcript in a toggle',
   (await page.getByRole('heading', { name: /^Meeting \d{4}-\d\d-\d\d/ }).count()) === 1 && (await page.locator('.audio-clip').count()) === 3
   && (await page.getByText('Groceries and a call to Anna').count()) === 1 && (await page.locator('.toggle-title').last().inputValue()) === 'Transcript');
+check('the share is asked for once per attempt, and only for the meeting', (await page.evaluate(() => window.__display.calls)) === 3);
 check('the summary asked the chat model, with the transcript', streamed.length === 1 && JSON.stringify(streamed[0]).includes('ship on Friday'));
 await page.screenshot({ path: `${shots}/audio-meeting.png` });
 const b2 = await until(async () => { const b = await bodyOf(note.id); return b.includes(':::toggle Transcript') ? b : null; }, 8000) ?? '';

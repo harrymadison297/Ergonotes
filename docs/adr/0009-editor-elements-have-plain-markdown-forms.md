@@ -36,6 +36,11 @@ as written (`:::toggle …`, `@date(…)`), which is still readable.
   device itself, or by the server peer in the web build, so the key stays off the browser.
 - The browser's own dictation is **not** used: it sends audio to the browser vendor, which would be a second, unannounced
   place for note content to go.
+- A **voice note** records the microphone only. A **meeting recording** records the microphone *and* the sound the
+  computer plays (the other people on a call): the browser's screen sharing is asked for with audio, and the two are
+  mixed into one track. Where that is not offered (Safari, Firefox, most webviews, Android) the option is off and the
+  microphone alone is recorded, which picks the call up if it is on the speakers. If the person cancels the share, or
+  shares without sound, nothing is recorded and they are told, rather than getting a recording of one side.
 - A meeting recording is a heading, the clip, a summary written by the chat model (if one is configured), and the
   transcript in a toggle. The recording is kept even when writing it out fails.
 - **A private note's audio is never sent for transcription**, the same rule as for text (ADR 0008).
