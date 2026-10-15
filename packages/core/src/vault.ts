@@ -14,7 +14,7 @@ import {
   extractLinkIds, firstImage, joinDoc, parseTasks, plainSnippet, setTaskDone, splitDoc, WIKILINK_RE,
   type Frontmatter, type Task,
 } from './markdown.ts';
-import { applyAiPatch, defaultAiConfig, toSettings, AI_PROVIDERS, type AiConfig, type AiSettings, type AiSettingsPatch } from './ai/types.ts';
+import { applyAiPatch, defaultAiConfig, toSettings, AI_PROVIDERS, THINKING_LEVELS, type AiConfig, type AiSettings, type AiSettingsPatch } from './ai/types.ts';
 import { baseText, unionText } from './merge.ts';
 import type { Persist } from './persist.ts';
 import { Replica, type SyncContext } from './replica.ts';
@@ -932,6 +932,8 @@ export class Vault implements VaultApi {
         customUrl: typeof j.customUrl === 'string' ? j.customUrl : '',
         chatModel: typeof j.chatModel === 'string' && j.chatModel ? j.chatModel : base.chatModel,
         suggestModel: typeof j.suggestModel === 'string' && j.suggestModel ? j.suggestModel : base.suggestModel,
+        chatThinking: j.chatThinking && THINKING_LEVELS.includes(j.chatThinking) ? j.chatThinking : base.chatThinking,
+        suggestThinking: j.suggestThinking && THINKING_LEVELS.includes(j.suggestThinking) ? j.suggestThinking : base.suggestThinking,
         wholeVault: j.wholeVault === true,
         autoApply: j.autoApply === true,
         suggest: j.suggest === true,

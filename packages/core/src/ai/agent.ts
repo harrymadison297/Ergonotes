@@ -1,10 +1,11 @@
 // The chat agent: a loop of "model answers or asks for tools -> run the tools -> model continues".
-import type { AiEvent, AiMessage, AiToolCall, AiToolSpec, AiTransport } from './types.ts';
+import type { AiEvent, AiMessage, AiThinkingBlock, AiToolCall, AiToolSpec, AiTransport } from './types.ts';
 
 export interface AgentTool { spec: AiToolSpec; run(args: Record<string, unknown>): Promise<string> }
 
 export type AgentEvent =
   | { type: 'text'; delta: string }
+  | { type: 'thinking'; delta: string }
   | { type: 'tool'; call: AiToolCall; result: string; error: boolean }
   | { type: 'usage'; input: number; output: number }
   | { type: 'notice'; text: string };
@@ -33,13 +34,16 @@ export async function runAgent(run: AgentRun): Promise<AiMessage[]> {
     if (run.signal?.aborted) break;
     let text = '';
     const calls: AiToolCall[] = [];
+    const thinking: AiThinkingBlock[] = [];
     for await (const e of run.transport({ model: 'chat', system: run.system, messages, tools: run.tools.map(t => t.spec) }, run.signal) as AsyncIterable<AiEvent>) {
       if (e.type === 'text') { text += e.delta; run.onEvent({ type: 'text', delta: e.delta }); }
+      else if (e.type === 'thinking') run.onEvent({ type: 'thinking', delta: e.delta });
+      else if (e.type === 'thinking_block') thinking.push(e.block);
       else if (e.type === 'tool_call') calls.push(e.call);
       else if (e.type === 'usage') run.onEvent({ type: 'usage', input: e.input, output: e.output });
       else if (e.type === 'notice') run.onEvent({ type: 'notice', text: e.text });
     }
-    const assistant: AiMessage = { role: 'assistant', content: text, ...(calls.length ? { toolCalls: calls } : {}) };
+    const assistant: AiMessage = { role: 'assistant', content: text, ...(calls.length ? { toolCalls: calls } : {}), ...(thinking.length ? { thinking } : {}) };
     messages.push(assistant);
     added.push(assistant);
     if (calls.length === 0) return added;

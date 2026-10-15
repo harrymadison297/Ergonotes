@@ -641,3 +641,12 @@ html.kbd .resizer:focus-visible { outline: none; }
 .ghost-toggle { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; color: var(--text-2); font-size: var(--fs-xs); border-radius: 12px; padding: 2px 8px; }
 .ghost-toggle:hover { background: var(--bg-hover); }
 .ghost-toggle.on { color: var(--green-ink); }
+
+.think-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.think-row label { color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; }
+.think-row .input { width: auto; min-width: 190px; }
+.think-row .hint { flex-basis: 100%; }
+.ai-think { border-left: 2px solid var(--border-strong); padding-left: 10px; color: var(--text-2); font-size: var(--fs-xs); }
+.ai-think summary { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; list-style: none; font-weight: 600; user-select: none; }
+.ai-think summary::-webkit-details-marker { display: none; }
+.ai-think-text { margin-top: 6px; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; font-style: italic; }

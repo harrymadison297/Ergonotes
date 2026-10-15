@@ -22,6 +22,9 @@ reversible exception with these rules, so the exception stays small and visible.
 - **Private notes.** A Note can be marked `private: true` (frontmatter, synced). Every tool, for the in-app chat and for
   the MCP endpoint alike, treats a private Note as not existing: it is not found by search, not listed, not readable and
   not writable. The editor's own suggestion and chat are also off for it. The owner still sees it everywhere in the app.
+- **Thinking is a setting of the job, not of the model.** The chat and the suggestions each have their own level
+  (Auto, Off, Low, Medium, High), also when they use the same model: suggestions default to Off. The model's thinking is
+  shown in the chat; for Anthropic the signed thoughts are kept with the answer because the API needs them back.
 - **Edits are proposals.** The assistant's changes to a Note are shown as a diff that the person accepts or rejects; an
   accepted change goes through the editor like typing and is therefore an ordinary Commit. "Apply without asking" is a
   setting. There is no delete tool.

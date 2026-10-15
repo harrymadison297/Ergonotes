@@ -27,6 +27,11 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 
 ## AI limits
 
+- Thinking levels map to what each provider accepts: OpenRouter `reasoning.effort` / `reasoning.enabled=false`,
+  OpenAI-style servers `reasoning_effort` (`none` for Off), Anthropic `thinking.budget_tokens` 1024 / 4096 / 10000 on top
+  of the answer's tokens (and no temperature). A model or server that does not think ignores it. `<think>` tags in the
+  text are split off and shown as thinking. Thoughts are stored in the saved conversation.
+
 - *Custom server* means the OpenAI chat API (`/v1/chat/completions`, `/v1/models`). A model without tool support can
   chat but cannot edit. Reasoning is not switched off for it (an OpenRouter-only option), so a thinking model may be
   slow for suggestions. Some servers refuse browser requests from another origin: the Tauri apps and the server peer are

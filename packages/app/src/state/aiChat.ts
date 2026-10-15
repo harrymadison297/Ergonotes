@@ -19,6 +19,8 @@ export interface Proposal {
 export type ChatItem =
   | { id: number; kind: 'user'; text: string; mentions: Mention[] }
   | { id: number; kind: 'assistant'; text: string }
+  /** what the model thought before answering */
+  | { id: number; kind: 'thinking'; text: string }
   /** `noteId`: the note a tool created, so the chat can link to it */
   | { id: number; kind: 'tool'; name: string; label: string; error: boolean; noteId?: string }
   | { id: number; kind: 'proposal'; proposalId: string }

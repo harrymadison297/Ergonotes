@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AtSign, Check, ChevronDown, FileText, History as HistoryIcon, Info, Lightbulb, Loader2, Paperclip, Pencil, Plus, RotateCcw, Search, Send, Shapes,
+  AtSign, Brain, Check, ChevronDown, FileText, History as HistoryIcon, Info, Lightbulb, Loader2, Paperclip, Pencil, Plus, RotateCcw, Search, Send, Shapes,
   SquarePen, Square, Trash2, WandSparkles, X,
 } from 'lucide-react';
-import { buildTools, chatSystemPrompt, lineDiff, mergeText, runAgent, type AgentTool, type ChatSummary, type NoteIO } from '@ergonotes/core';
+import { buildTools, chatSystemPrompt, lineDiff, mergeText, runAgent, type AgentTool, type ChatSummary, type NoteIO, type ThinkingLevel } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { chat, parseChat, pendingFor, serializeChat, useChat, type Mention, type Proposal } from '../state/aiChat';
 import { toB64 } from '@ergonotes/core';
@@ -65,6 +65,18 @@ function Diff({ p }: { p: Proposal }) {
       {p.title !== p.baseTitle && <div className="ai-diff-row add">Title: {p.title}</div>}
       {rows.map((r, i) => <div key={i} className={classNames('ai-diff-row', r.type)}>{r.type === 'add' ? '+ ' : r.type === 'del' ? '− ' : r.type === 'gap' ? '' : '  '}{r.text || ' '}</div>)}
     </div>
+  );
+}
+
+const THINKING_LABEL: Record<ThinkingLevel, string> = { auto: 'Auto', off: 'Off', low: 'Low', medium: 'Medium', high: 'High' };
+
+/** The model's thinking: open while it is still thinking, a collapsed line afterwards. */
+function Thinking({ text, live }: { text: string; live: boolean }) {
+  return (
+    <details className="ai-think" open={live}>
+      <summary>{live ? <><Loader2 size={12} className="spin" /> Thinking…</> : <><Brain size={12} /> Thought process</>}</summary>
+      <div className="ai-think-text">{text}</div>
+    </details>
   );
 }
 
@@ -148,6 +160,7 @@ export function AiPanel() {
   const outline = useOutline();
   const modeMenu = useMenu();
   const plusMenu = useMenu();
+  const thinkMenu = useMenu();
   const upload = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState('');
   const [mentions, setMentions] = useState<Mention[]>([]);
@@ -294,11 +307,22 @@ export function AiPanel() {
       const withDiagram = mode === 'edit' && !locked && noteId ? [...base, diagramTool(base)] : base;
       const tools = locked ? withDiagram.filter(t => !WRITE_TOOLS.test(t.spec.name) || t.spec.name === 'create_note') : withDiagram;
       let streaming: number | null = null;
+      let thinkingId: number | null = null;
       const added = await runAgent({
         transport: app.aiTransport, tools, history, signal: ctl.signal,
         system: chatSystemPrompt({ note: cur && noteId ? { id: noteId, title: cur.title, body: cur.body } : null, wholeVault: ai.wholeVault, mode, today: new Date().toLocaleDateString('en-CA') }),
         onEvent: e => {
-          if (e.type === 'text') {
+          if (e.type === 'thinking') {
+            if (thinkingId === null) {
+              const id = chat.nextId();
+              thinkingId = id;
+              chat.set(s => ({ ...s, notice: null, items: [...s.items, { id, kind: 'thinking', text: e.delta }] }));
+            } else {
+              const id = thinkingId;
+              chat.set(s => ({ ...s, items: s.items.map(i => (i.id === id && i.kind === 'thinking' ? { ...i, text: i.text + e.delta } : i)) }));
+            }
+          } else if (e.type === 'text') {
+            thinkingId = null;
             if (streaming === null) {
               const id = chat.nextId();
               streaming = id;
@@ -309,6 +333,7 @@ export function AiPanel() {
             }
           } else if (e.type === 'tool') {
             streaming = null;
+            thinkingId = null;
             let created: string | undefined;
             if (e.call.name === 'create_note' && !e.error) { try { created = (JSON.parse(e.result) as { id?: string }).id; } catch { /* not JSON */ } }
             chat.set(s => ({ ...s, notice: null, items: [...s.items, { id: chat.nextId(), kind: 'tool', name: e.call.name, label: toolLabel(e.call.name, e.call.args), error: e.error, noteId: created }] }));
@@ -454,6 +479,7 @@ export function AiPanel() {
             );
           }
           if (it.kind === 'assistant') return <Markdown key={it.id} text={it.text} />;
+          if (it.kind === 'thinking') return <Thinking key={it.id} text={it.text} live={st.busy && st.items.at(-1)?.id === it.id} />;
           if (it.kind === 'tool') {
             return (
               <div key={it.id} className={classNames('ai-tool', it.error && 'err')}>
@@ -541,13 +567,20 @@ export function AiPanel() {
               ], 'left')}>
               {mode === 'edit' ? <Pencil size={14} /> : <Search size={14} />} {mode === 'edit' ? 'Edit' : 'Ask'} <ChevronDown size={14} />
             </button>
+            <button type="button" className="ai-mode" aria-haspopup="menu" aria-label={`Thinking: ${THINKING_LABEL[ai.chatThinking]}`} title="How much the model thinks before it answers"
+              onClick={e => thinkMenu.open(e, (['auto', 'off', 'low', 'medium', 'high'] as ThinkingLevel[]).map(l => ({
+                label: l === 'auto' ? 'Auto (the model’s default)' : THINKING_LABEL[l], checked: ai.chatThinking === l,
+                onClick: async () => { await app.run(api.setAiSettings({ chatThinking: l })); await app.refresh(); },
+              })), 'left')}>
+              <Brain size={14} /> {THINKING_LABEL[ai.chatThinking]} <ChevronDown size={14} />
+            </button>
             <span className="grow" />
             {st.busy
               ? <IconBtn label="Stop" icon={<Square size={16} />} variant="primary" onClick={() => abort.current?.abort()} />
               : <IconBtn label="Send" icon={<Send size={16} />} variant="primary" disabled={disabled || !draft.trim()} onClick={() => void send(draft)} />}
           </div>
         </form>
-        {modeMenu.node}{plusMenu.node}
+        {modeMenu.node}{plusMenu.node}{thinkMenu.node}
         <input ref={upload} type="file" hidden multiple accept=".txt,.md,.json,.csv,.tsv,.xlsx,.pptx,text/*" onChange={e => { void attachLocal(e.target.files); e.target.value = ''; }} />
         <p className="ai-disclaimer">AI can make mistakes. Check important information.</p>
       </div>

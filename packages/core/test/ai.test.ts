@@ -4,7 +4,7 @@ import { MemStore } from '../src/store.ts';
 import { Vault } from '../src/vault.ts';
 import type { StoreConfig } from '../src/api.ts';
 import {
-  apiBase, applyAiPatch, buildTools, listModels, toSettings, chatSystemPrompt, cleanSuggestion, completeText, defaultAiConfig, runAgent, sectionRange, streamChat, suggestionRequest,
+  ThinkSplitter, apiBase, applyAiPatch, buildTools, listModels, toSettings, chatSystemPrompt, cleanSuggestion, completeText, defaultAiConfig, runAgent, sectionRange, streamChat, suggestionRequest,
   type AiConfig, type AiEvent, type AiMessage, type AiRequest, type AiTransport, type NoteIO,
 } from '../src/index.ts';
 
@@ -508,5 +508,99 @@ describe('custom OpenAI-style server (Ollama)', () => {
     await expect(v.setAiSettings({ customUrl: 'ftp://nope' })).rejects.toThrow(/http/);
     await expect(v.setAiSettings({ customUrl: 'localhost:11434' })).rejects.toThrow(/http/);
     expect((await v.setAiSettings({ customUrl: '' })).hasKey).toBe(false);
+  });
+});
+
+describe('thinking', () => {
+  const capture = () => {
+    const seen: Record<string, unknown>[] = [];
+    const f = (reply: () => Response) => (async (_u: string, init: RequestInit) => { seen.push(JSON.parse(init.body as string)); return reply(); }) as unknown as typeof fetch;
+    return { seen, f };
+  };
+
+  it('asks OpenRouter for the level of the job (chat and suggestions differ) and shows the thought', async () => {
+    const { seen, f } = capture();
+    const fetchImpl = f(() => sse([{ choices: [{ delta: { reasoning: 'Let me ' } }] }, { choices: [{ delta: { reasoning: 'check.' } }] }, { choices: [{ delta: { content: 'Done' } }] }, '[DONE]']));
+    const c = cfg({ chatModel: 'm/x', suggestModel: 'm/x', chatThinking: 'high', suggestThinking: 'off' });
+    const ev = await collect(streamChat(c, { model: 'chat', messages: [] }, { fetchImpl }));
+    expect(seen[0].reasoning).toEqual({ effort: 'high' });
+    expect(ev.filter(e => e.type === 'thinking').map(e => (e as { delta: string }).delta).join('')).toBe('Let me check.');
+    expect(ev.find(e => e.type === 'text')).toEqual({ type: 'text', delta: 'Done' });
+    await collect(streamChat(c, { model: 'suggest', messages: [] }, { fetchImpl }));
+    expect(seen[1].reasoning).toEqual({ enabled: false });
+    await collect(streamChat({ ...c, chatThinking: 'auto' }, { model: 'chat', messages: [] }, { fetchImpl }));
+    expect('reasoning' in seen[2]).toBe(false);
+  });
+
+  it('sends reasoning_effort to an Ollama-style server and splits <think> tags across chunks', async () => {
+    const { seen, f } = capture();
+    const fetchImpl = f(() => sse([
+      { choices: [{ delta: { content: '<thi' } }] }, { choices: [{ delta: { content: 'nk>hmm, 2+' } }] }, { choices: [{ delta: { content: '2</th' } }] },
+      { choices: [{ delta: { content: 'ink>The answer is 4' } }] }, { choices: [{ delta: { reasoning_content: ' (again)' } }] }, '[DONE]',
+    ]));
+    const c: AiConfig = { ...defaultAiConfig(), provider: 'custom', customUrl: 'http://localhost:11434', chatThinking: 'low', suggestThinking: 'off' };
+    const ev = await collect(streamChat(c, { model: 'chat', messages: [] }, { fetchImpl }));
+    expect(seen[0].reasoning_effort).toBe('low');
+    expect(ev.filter(e => e.type === 'thinking').map(e => (e as { delta: string }).delta).join('')).toBe('hmm, 2+2 (again)');
+    expect(ev.filter(e => e.type === 'text').map(e => (e as { delta: string }).delta).join('')).toBe('The answer is 4');
+    await collect(streamChat(c, { model: 'suggest', messages: [] }, { fetchImpl }));
+    expect(seen[1].reasoning_effort).toBe('none');
+  });
+
+  it('splits <think> text exactly, even byte by byte', () => {
+    const sp = new ThinkSplitter();
+    const text = 'a<think>b</think>c<think>d';
+    const out: { thinking: boolean; delta: string }[] = [];
+    for (const ch of text) out.push(...sp.push(ch));
+    out.push(...sp.flush());
+    const join = (t: boolean) => out.filter(o => o.thinking === t).map(o => o.delta).join('');
+    expect(join(false)).toBe('ac');
+    expect(join(true)).toBe('bd');
+  });
+
+  it('turns on extended thinking for Anthropic and keeps the signed thoughts for the next request', async () => {
+    const { seen, f } = capture();
+    const stream = () => sse([
+      { type: 'message_start', message: { usage: { input_tokens: 5, output_tokens: 1 } } },
+      { type: 'content_block_start', index: 0, content_block: { type: 'thinking' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'I should ' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'read it.' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'SIG' } },
+      { type: 'content_block_stop', index: 0 },
+      { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'tu', name: 'read_note' } },
+      { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{}' } },
+      { type: 'content_block_stop', index: 1 },
+      { type: 'message_stop' },
+    ]);
+    const c = cfg({ provider: 'anthropic', chatThinking: 'medium', suggestThinking: 'off' });
+    const calls: AiRequest[] = [];
+    const transport: AiTransport = (req, signal) => { calls.push(structuredClone(req)); return streamChat(c, req, { fetchImpl: f(stream), signal }); };
+    const added = await runAgent({
+      transport, system: 's', history: [{ role: 'user', content: 'go' }],
+      tools: [{ spec: { name: 'read_note', description: '', parameters: {} }, run: async () => 'body' }],
+      maxSteps: 2, onEvent: () => undefined,
+    });
+    expect(seen[0].thinking).toEqual({ type: 'enabled', budget_tokens: 4096 });
+    expect(seen[0].max_tokens).toBe(4096 + 4096);
+    expect('temperature' in seen[0]).toBe(false);
+    expect(added[0]).toMatchObject({ role: 'assistant', thinking: [{ text: 'I should read it.', signature: 'SIG' }] });
+    // the second request carries the thought first, then the tool call, then the result
+    const second = seen[1].messages as { role: string; content: { type: string; signature?: string }[] }[];
+    expect(second[1].role).toBe('assistant');
+    expect(second[1].content.map(b => b.type)).toEqual(['thinking', 'tool_use']);
+    expect(second[1].content[0].signature).toBe('SIG');
+    // suggestions do not think, and keep their temperature
+    await collect(streamChat(c, { model: 'suggest', messages: [], temperature: 0.3 }, { fetchImpl: f(stream) }));
+    expect('thinking' in seen[2]).toBe(false);
+    expect(seen[2].temperature).toBe(0.3);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('keeps the two levels in the vault and ignores nonsense', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    expect(await v.getAiSettings()).toMatchObject({ chatThinking: 'auto', suggestThinking: 'off' });
+    expect(await v.setAiSettings({ chatThinking: 'high', suggestThinking: 'low' })).toMatchObject({ chatThinking: 'high', suggestThinking: 'low' });
+    expect(await v.setAiSettings({ chatThinking: 'extreme' as never })).toMatchObject({ chatThinking: 'high' });
   });
 });

@@ -50,7 +50,7 @@ node dist/server/server.mjs            # PORT, HOST, ERGONOTES_DATA, ERGONOTES_W
 * Assistant: *Settings → AI* takes an OpenRouter or Anthropic API key, or the address of your own OpenAI-compatible
   server such as Ollama (`http://localhost:11434`; key optional). Keys are stored encrypted in the vault. On the server the
   key stays on the server and the browser streams through `/api/ai/stream`. The right sidebar holds the note's contents
-  and the assistant (history, `@` to attach notes and files, Ask/Edit mode). See ADR 0008.
+  and the assistant (history, `@` to attach notes and files, Ask/Edit mode, its thinking shown, thinking level per job). See ADR 0008.
 
 ## Building the apps
 

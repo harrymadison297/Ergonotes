@@ -1,5 +1,5 @@
 // Streaming chat against OpenRouter (OpenAI-style) and Anthropic (Messages API), normalised to AiEvent.
-import type { AiConfig, AiEvent, AiMessage, AiRequest, AiToolCall } from './types.ts';
+import type { AiConfig, AiEvent, AiMessage, AiRequest, AiThinkingBlock, AiToolCall, ThinkingLevel } from './types.ts';
 
 export interface StreamOptions { fetchImpl?: typeof fetch; signal?: AbortSignal }
 
@@ -83,6 +83,44 @@ async function post(url: string, init: RequestInit, o: StreamOptions): Promise<R
   }
 }
 
+const thinkingFor = (cfg: AiConfig, req: AiRequest): ThinkingLevel => (req.model === 'chat' ? cfg.chatThinking : cfg.suggestThinking) ?? 'auto';
+
+/** Models that think in the answer itself (`<think>…</think>`): split the thought from the text, across chunk borders. */
+export class ThinkSplitter {
+  private inside = false;
+  private buf = '';
+  private static OPEN = '<think>';
+  private static CLOSE = '</think>';
+
+  push(chunk: string): { thinking: boolean; delta: string }[] {
+    this.buf += chunk;
+    const out: { thinking: boolean; delta: string }[] = [];
+    for (;;) {
+      const tag = this.inside ? ThinkSplitter.CLOSE : ThinkSplitter.OPEN;
+      const i = this.buf.indexOf(tag);
+      if (i >= 0) {
+        if (i > 0) out.push({ thinking: this.inside, delta: this.buf.slice(0, i) });
+        this.buf = this.buf.slice(i + tag.length);
+        this.inside = !this.inside;
+        continue;
+      }
+      // keep a possible start of the tag for the next chunk
+      let keep = 0;
+      for (let k = Math.min(tag.length - 1, this.buf.length); k > 0; k--) if (tag.startsWith(this.buf.slice(-k))) { keep = k; break; }
+      const emit = this.buf.slice(0, this.buf.length - keep);
+      if (emit) out.push({ thinking: this.inside, delta: emit });
+      this.buf = this.buf.slice(this.buf.length - keep);
+      return out;
+    }
+  }
+
+  flush(): { thinking: boolean; delta: string }[] {
+    const rest = this.buf;
+    this.buf = '';
+    return rest ? [{ thinking: this.inside, delta: rest }] : [];
+  }
+}
+
 // ---------------------------------------------------------------- OpenRouter and any OpenAI-style server
 function openAiMessages(req: AiRequest): unknown[] {
   const out: unknown[] = [];
@@ -110,8 +148,12 @@ async function* openAiStyle(cfg: AiConfig, req: AiRequest, o: StreamOptions): As
     ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
     ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
   };
-  // a suggestion has to be quick and short: a model that "thinks" first would spend the whole answer on it
-  if (!custom && req.model === 'suggest') body.reasoning = { enabled: false };
+  const level = thinkingFor(cfg, req);
+  if (level !== 'auto') {
+    // OpenRouter takes a `reasoning` object; Ollama and other OpenAI-style servers take `reasoning_effort`
+    if (custom) body.reasoning_effort = level === 'off' ? 'none' : level;
+    else body.reasoning = level === 'off' ? { enabled: false } : { effort: level };
+  }
   if (req.tools?.length) body.tools = req.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
   const res = await post(url, {
     method: 'POST', signal: o.signal,
@@ -120,17 +162,22 @@ async function* openAiStyle(cfg: AiConfig, req: AiRequest, o: StreamOptions): As
   }, o);
   if (!res.ok) throw await failure(res);
   const calls = new Map<number, { id: string; name: string; args: string }>();
+  const split = new ThinkSplitter();
   for await (const data of sseData(res)) {
     if (data.trim() === '[DONE]') break;
     let j: {
       error?: { message?: string; metadata?: { raw?: unknown } };
-      choices?: { delta?: { content?: string | null; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string | Record<string, unknown> } }[] }; finish_reason?: string | null }[];
+      choices?: { delta?: { content?: string | null; reasoning?: string | null; reasoning_content?: string | null; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string | Record<string, unknown> } }[] }; finish_reason?: string | null }[];
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
     try { j = JSON.parse(data); } catch { continue; }
     if (j.error) throw new AiError(explain({ error: j.error }) ?? 'The AI provider reported an error');
     const d = j.choices?.[0]?.delta;
-    if (d?.content) yield { type: 'text', delta: d.content };
+    const thought = d?.reasoning ?? d?.reasoning_content;
+    if (thought) yield { type: 'thinking', delta: thought };
+    if (d?.content) {
+      for (const part of split.push(d.content)) yield part.thinking ? { type: 'thinking', delta: part.delta } : { type: 'text', delta: part.delta };
+    }
     for (const tc of d?.tool_calls ?? []) {
       const idx = tc.index ?? 0;
       const cur = calls.get(idx) ?? { id: '', name: '', args: '' };
@@ -142,6 +189,7 @@ async function* openAiStyle(cfg: AiConfig, req: AiRequest, o: StreamOptions): As
     }
     if (j.usage) yield { type: 'usage', input: j.usage.prompt_tokens ?? 0, output: j.usage.completion_tokens ?? 0 };
   }
+  for (const part of split.flush()) yield part.thinking ? { type: 'thinking', delta: part.delta } : { type: 'text', delta: part.delta };
   for (const [i, c] of [...calls.entries()].sort((a, b) => a[0] - b[0])) {
     if (!c.name) continue;
     yield { type: 'tool_call', call: { id: c.id || `call_${i}`, name: c.name, args: parseArgs(c.args) } };
@@ -159,6 +207,8 @@ function anthropicMessages(messages: AiMessage[]): unknown[] {
   for (const m of messages) {
     if (m.role === 'user') push('user', { type: 'text', text: m.content });
     else if (m.role === 'assistant') {
+      // thoughts come first, and exactly as received: the signature is checked when a tool result follows
+      for (const t of m.thinking ?? []) push('assistant', t.redacted !== undefined ? { type: 'redacted_thinking', data: t.redacted } : { type: 'thinking', thinking: t.text, signature: t.signature ?? '' });
       if (m.content) push('assistant', { type: 'text', text: m.content });
       for (const c of m.toolCalls ?? []) push('assistant', { type: 'tool_use', id: c.id, name: c.name, input: c.args });
     } else push('user', { type: 'tool_result', tool_use_id: m.callId, content: m.content });
@@ -170,10 +220,15 @@ async function* anthropic(cfg: AiConfig, req: AiRequest, o: StreamOptions): Asyn
   const key = cfg.keys.anthropic;
   if (!key) throw new AiError('Add an Anthropic API key in Settings → AI.');
   const model = req.model === 'chat' ? cfg.chatModel : cfg.suggestModel;
+  const level = thinkingFor(cfg, req);
+  const budget = level === 'low' ? 1024 : level === 'medium' ? 4096 : level === 'high' ? 10000 : 0;
   const body: Record<string, unknown> = {
-    model, max_tokens: req.maxTokens ?? 4096, messages: anthropicMessages(req.messages), stream: true,
+    // the thinking budget is part of max_tokens, so it is added on top of what the answer itself may use
+    model, max_tokens: (req.maxTokens ?? 4096) + budget, messages: anthropicMessages(req.messages), stream: true,
     ...(req.system ? { system: req.system } : {}),
-    ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+    // with thinking switched on the API insists on the default temperature
+    ...(req.temperature !== undefined && !budget ? { temperature: req.temperature } : {}),
+    ...(budget ? { thinking: { type: 'enabled', budget_tokens: budget } } : {}),
   };
   if (req.tools?.length) body.tools = req.tools.map(t => ({ name: t.name, description: t.description, input_schema: t.parameters }));
   const res = await post(ANTHROPIC_URL, {
@@ -187,13 +242,14 @@ async function* anthropic(cfg: AiConfig, req: AiRequest, o: StreamOptions): Asyn
   }, o);
   if (!res.ok) throw await failure(res);
   const blocks = new Map<number, { id: string; name: string; json: string }>();
+  const thoughts = new Map<number, AiThinkingBlock>();
   let input = 0, output = 0;
   for await (const data of sseData(res)) {
     let j: {
       type?: string; index?: number; error?: { message?: string };
       message?: { usage?: { input_tokens?: number; output_tokens?: number } };
-      content_block?: { type?: string; id?: string; name?: string };
-      delta?: { type?: string; text?: string; partial_json?: string };
+      content_block?: { type?: string; id?: string; name?: string; data?: string };
+      delta?: { type?: string; text?: string; partial_json?: string; thinking?: string; signature?: string };
       usage?: { output_tokens?: number };
     };
     try { j = JSON.parse(data); } catch { continue; }
@@ -202,12 +258,21 @@ async function* anthropic(cfg: AiConfig, req: AiRequest, o: StreamOptions): Asyn
       case 'message_start': input = j.message?.usage?.input_tokens ?? 0; output = j.message?.usage?.output_tokens ?? 0; break;
       case 'content_block_start':
         if (j.content_block?.type === 'tool_use') blocks.set(j.index ?? 0, { id: j.content_block.id ?? '', name: j.content_block.name ?? '', json: '' });
+        else if (j.content_block?.type === 'thinking') thoughts.set(j.index ?? 0, { text: '' });
+        else if (j.content_block?.type === 'redacted_thinking') thoughts.set(j.index ?? 0, { text: '', redacted: j.content_block.data ?? '' });
         break;
       case 'content_block_delta':
         if (j.delta?.type === 'text_delta' && j.delta.text) yield { type: 'text', delta: j.delta.text };
         else if (j.delta?.type === 'input_json_delta') { const b = blocks.get(j.index ?? 0); if (b) b.json += j.delta.partial_json ?? ''; }
+        else if (j.delta?.type === 'thinking_delta' && j.delta.thinking) {
+          const t = thoughts.get(j.index ?? 0);
+          if (t) t.text += j.delta.thinking;
+          yield { type: 'thinking', delta: j.delta.thinking };
+        } else if (j.delta?.type === 'signature_delta') { const t = thoughts.get(j.index ?? 0); if (t) t.signature = (t.signature ?? '') + (j.delta.signature ?? ''); }
         break;
       case 'content_block_stop': {
+        const t = thoughts.get(j.index ?? 0);
+        if (t) { thoughts.delete(j.index ?? 0); yield { type: 'thinking_block', block: t }; break; }
         const b = blocks.get(j.index ?? 0);
         if (b) { blocks.delete(j.index ?? 0); yield { type: 'tool_call', call: { id: b.id, name: b.name, args: parseArgs(b.json) } satisfies AiToolCall }; }
         break;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Check, Copy, FileDown, FileUp, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
-import { applyHunks, completeText, DEFAULT_MODELS, ERGONOTES_SKILL_MD, joinDoc, lineDiff, splitDoc, type AiProvider, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
+import { applyHunks, completeText, DEFAULT_MODELS, THINKING_LEVELS, ERGONOTES_SKILL_MD, joinDoc, lineDiff, splitDoc, type AiProvider, type ThinkingLevel, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, download, relTime } from '../state/util';
 import { Dialog, IconBtn } from './ui';
@@ -381,6 +381,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
 }
 
 // ---------------------------------------------------------------- AI provider, chat scope, suggestions
+const THINK_NAME: Record<ThinkingLevel, string> = { auto: 'Auto (the model’s default)', off: 'Off', low: 'Low', medium: 'Medium', high: 'High' };
 const PROVIDER_NAME: Record<AiProvider, string> = { openrouter: 'OpenRouter', anthropic: 'Anthropic', custom: 'Custom server (Ollama, LM Studio…)' };
 
 function AiSettings() {
@@ -460,13 +461,22 @@ function AiSettings() {
           <input id="ai-chat" className="input" list="ai-models" value={chatModel} onChange={e => setChatModel(e.target.value)} spellCheck={false} />
           <button className="btn" disabled={chatModel.trim() === ai.chatModel || !chatModel.trim()} onClick={() => void save({ chatModel })}>Save</button>
         </div>
-        <span className="hint">For example {DEFAULT_MODELS[ai.provider].chat}. It needs to support tools.</span></div>
+        <span className="hint">For example {DEFAULT_MODELS[ai.provider].chat}. It needs to support tools.</span>
+        <div className="think-row"><label htmlFor="ai-chat-think">Thinking</label>
+          <select id="ai-chat-think" className="input" value={ai.chatThinking} onChange={e => void save({ chatThinking: e.target.value as ThinkingLevel })}>
+            {THINKING_LEVELS.map(l => <option key={l} value={l}>{THINK_NAME[l]}</option>)}
+          </select></div></div>
       <div className="field"><label htmlFor="ai-suggest">Suggestion model</label>
         <div style={{ display: 'flex', gap: 8 }}>
           <input id="ai-suggest" className="input" list="ai-models" value={suggestModel} onChange={e => setSuggestModel(e.target.value)} spellCheck={false} />
           <button className="btn" disabled={suggestModel.trim() === ai.suggestModel || !suggestModel.trim()} onClick={() => void save({ suggestModel })}>Save</button>
         </div>
-        <span className="hint">A small, fast model is best: it is asked every time you pause typing.</span></div>
+        <span className="hint">A small, fast model is best: it is asked every time you pause typing.</span>
+        <div className="think-row"><label htmlFor="ai-suggest-think">Thinking</label>
+          <select id="ai-suggest-think" className="input" value={ai.suggestThinking} onChange={e => void save({ suggestThinking: e.target.value as ThinkingLevel })}>
+            {THINKING_LEVELS.map(l => <option key={l} value={l}>{THINK_NAME[l]}</option>)}
+          </select>
+          <span className="hint">Chat and suggestions think independently, even with the same model. Off is best for suggestions; models that cannot think ignore this.</span></div></div>
       <datalist id="ai-models">{models.map(m => <option key={m} value={m} />)}</datalist>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
         <button className="btn" disabled={!ai.hasKey} onClick={() => void loadModels()}>List available models</button>

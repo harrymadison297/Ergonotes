@@ -83,6 +83,15 @@ await page.getByRole('button', { name: 'Test connection' }).waitFor();
 script.push([{ type: 'text', delta: 'ok' }]);
 await page.getByRole('button', { name: 'Test connection' }).click();
 check('test connection reports success', !!(await until(async () => (await page.getByRole('status').filter({ hasText: 'Connected' }).count()) > 0)));
+// thinking is set per job, on the same model
+await page.locator('#ai-chat-think').selectOption('high');
+await until(async () => (await rpc('getAiSettings')).chatThinking === 'high');
+check('the chat has its own thinking level', (await rpc('getAiSettings')).chatThinking === 'high');
+check('suggestions keep theirs (off by default)', (await rpc('getAiSettings')).suggestThinking === 'off');
+await page.locator('#ai-suggest-think').selectOption('low');
+check('and it can be changed separately', !!(await until(async () => (await rpc('getAiSettings')).suggestThinking === 'low')));
+await rpc('setAiSettings', { chatThinking: 'auto', suggestThinking: 'off' });
+
 // a custom server (Ollama): address, optional key, model list
 await page.route('**/api/ai/models', async route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: ['llama3.2:3b', 'qwen2.5:7b'] }) }));
 await page.getByLabel('Provider').selectOption('custom');
@@ -114,6 +123,23 @@ const first = requests.at(-1);
 check('the request carries the open note and only the note tools', first.system.includes('book the hotel') && first.system.includes(note.id)
   && first.tools.some(t => t.name === 'replace_text') && !first.tools.some(t => t.name === 'search_notes'));
 check('token usage is shown', (await page.locator('.ai-usage').innerText()).includes('120'));
+
+// ---- the model's thinking is shown, and the level is one click away
+script.push([{ type: 'thinking', delta: 'The user wants a short list. ' }, { type: 'thinking', delta: 'Two items.' }, { type: 'text', delta: 'Two things.' }]);
+await page.getByLabel('Message the assistant').fill('think about it');
+await page.getByLabel('Message the assistant').press('Enter');
+await page.locator('.ai-md', { hasText: 'Two things.' }).waitFor({ timeout: 8000 });
+check('the thinking is shown, collapsed once the answer is there', (await page.locator('.ai-think summary', { hasText: 'Thought process' }).count()) === 1 && !(await page.locator('.ai-think').first().evaluate(d => d.open)));
+await page.locator('.ai-think summary').first().click();
+check('and can be opened', (await page.locator('.ai-think-text', { hasText: 'Two items.' }).first().isVisible()));
+await page.getByRole('button', { name: /^Thinking:/ }).click();
+await page.getByRole('menuitem', { name: 'High' }).click();
+check('the level is chosen from the composer', !!(await until(async () => (await rpc('getAiSettings')).chatThinking === 'high')));
+script.push([{ type: 'text', delta: 'noted' }]);
+await page.getByLabel('Message the assistant').fill('again');
+await page.getByLabel('Message the assistant').press('Enter');
+await page.locator('.ai-md', { hasText: 'noted' }).waitFor({ timeout: 8000 });
+await rpc('setAiSettings', { chatThinking: 'auto' });
 
 // ---- answers are rendered as Markdown
 script.push([{ type: 'text', delta: 'You need **two** things:\n\n- a passport\n- a charger\n\n<script>alert(1)</script>' }]);
