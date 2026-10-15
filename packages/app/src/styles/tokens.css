@@ -1,109 +1,182 @@
-/* Design tokens. Source of truth: docs/brand-guidelines.md — change both together. */
+/* Design tokens. Source of truth: docs/brand-guidelines.md (v1.5) — change both together.
+ * Contrast of every text/mark pair is listed in §2 of the guide; the dark values were checked with the same formula. */
 :root {
-  /* palette */
-  --green: #2dbe60;
+  /* neutrals: the warm stone scale */
   --ink: #000000;
-  --slate-900: #3b4446;
-  --slate-700: #525e61;
-  --slate-500: #7b868a;
-  --slate-300: #aeb6b8;
-  --slate-200: #d7dcdd;
-  --slate-100: #eff2f3;
+  --stone-900: #343332;
+  --stone-700: #4e4d4c;
+  --stone-600: #696564;
+  --stone-500: #9c9897;   /* disabled and decorative icons only, never text */
+  --stone-300: #dad9d8;
+  --stone-200: #e7e6e5;
   --white: #ffffff;
+
+  /* brand green and its derivatives */
+  --green: #2dbe60;       /* logo, illustration, large areas. Never text or thin marks */
+  --green-fill: #008629;  /* white label 4.73:1 */
+  --green-fill-hover: #007a25;
+  --green-ink: #00701f;   /* green text and icons, focus ring */
+  --green-mark: #009b29;  /* thin status marks, 3:1+ on white and canvas */
+  --green-tint: #e6f7ec;
+
+  /* selection / today / share: indigo */
+  --indigo: #4d64ff;
+  --sel: var(--indigo);
+  --indigo-hover: #3445d6;
+  --indigo-ink: #3d52e8;  /* indigo text and icons on canvas and on its tint */
+  --indigo-tint: #ebeeff;
+
+  /* tasks: purple */
+  --task: #7d3ebe;
+  --task-strong: #581caa;
+  --task-icon: #a158eb;
+  --task-tint: #fde9ff;
+
+  /* events: orange */
+  --event-icon: #ee6631;
+  --event-ink: #bf4a1c;
+
   --danger: #c8283a;
 
   /* roles */
-  --bg: var(--white);
-  --bg-sidebar: var(--slate-100);
-  --bg-soft: color-mix(in srgb, var(--slate-100) 55%, var(--white));
-  --bg-hover: color-mix(in srgb, var(--slate-200) 55%, transparent);
-  --bg-active: var(--slate-200);
+  --bg: var(--white);               /* paper: editor, cards */
+  --bg-sidebar: #f6f5f4;            /* canvas: app background and sidebar, one colour, no divider */
+  --bg-soft: #faf9f8;
+  --bg-hover: #eeeeee;
+  --bg-active: var(--stone-200);
   --text-strong: var(--ink);
-  --text: var(--slate-900);
-  --text-2: var(--slate-700);
-  --text-3: var(--slate-500);
-  --border: var(--slate-200);
-  --border-strong: var(--slate-300);
-  --border-field: var(--slate-500);
-  /* filled controls: the brand green darkened 30% so white text passes AA (4.7:1) */
-  --green-fill: color-mix(in srgb, var(--green) 70%, #000);
-  --green-fill-hover: color-mix(in srgb, var(--green) 62%, #000);
-  --green-ink: #196935;
-  --green-tint: #e6f7ec;
+  --text: var(--stone-900);
+  --text-2: var(--stone-700);
+  --text-3: var(--stone-600);       /* meta, timestamps, placeholders */
+  --text-faint: var(--stone-500);   /* disabled and decorative only */
+  --border: var(--stone-200);       /* hairlines */
+  --border-card: var(--stone-300);  /* card and pane edge: the only thing separating white from canvas */
+  --border-strong: var(--stone-300);
+  --border-field: #878382;          /* input and checkbox borders, 3:1+ */
+  --focus: var(--green-ink);
   --on-green: #ffffff;
   --on-danger: #ffffff;
-  --scrim: rgba(0, 0, 0, 0.4);
+  --scrim: rgba(20, 18, 17, 0.42);
   --danger-bg: #fde8eb;
-  --sticky: #f8efc8; /* the scratch pad, a sticky note */
+  --sticky: #f8efc8;                /* the scratch pad, a sticky note */
+  --toast-bg: #343332;
   --tag-alpha: 14%;
 
-  --shadow-pop: 0 10px 32px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(59, 68, 70, 0.1);
-  --radius: 6px;
-  --radius-lg: 10px;
+  --shadow-pop: 0 10px 32px rgba(20, 18, 17, 0.16), 0 0 0 1px rgba(52, 51, 50, 0.1);
+  --shadow-lift: 0 4px 14px rgba(20, 18, 17, 0.1);
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-dialog: 16px;
   --sidebar-w: 264px;
   --rail-w: 94px;
   --list-w: 370px;
   --aside-w: 360px;
-  /* type scale, measured from the reference (Evernote web, 100 %) */
-  --fs-2xs: 11px;   /* dates on Home cards, file sizes */
-  --fs-xs: 12px;    /* meta, counts, dates in lists */
-  --fs-s: 13px;     /* body and controls */
-  --fs-m: 14px;     /* menu items, inputs that need air */
+
+  /* motion: short, ease-out, transform and opacity only */
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --t-fast: 120ms;
+  --t-base: 180ms;
+  --t-slow: 280ms;
+
+  /* type scale */
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-s: 13px;
+  --fs-m: 14px;
   --fs-editor: 15px;
-  --fs-l: 16px;     /* dialog titles */
-  --fs-lg: 18px;    /* editor heading 3 */
-  --fs-h: 22px;     /* page and list headings, editor heading 2 */
-  --fs-title: 30px; /* note title, editor heading 1 */
+  --fs-l: 16px;
+  --fs-lg: 18px;
+  --fs-h: 22px;
+  --fs-title: 30px;
   --font: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* tags: top-level name picks the slot; magenta and lime replace indigo and violet, which are reserved */
+  --tag-1: #2dbe60; --tag-2: #1fa59a; --tag-3: #3d8bd9; --tag-4: #c04f9c;
+  --tag-5: #7ea320; --tag-6: #d9667f; --tag-7: #e8892f; --tag-8: #c9a21f;
+
+  /* legacy aliases from v1.4 */
+  --slate-900: var(--stone-900);
+  --slate-700: var(--stone-700);
+  --slate-500: var(--stone-600);
+  --slate-300: var(--stone-300);
+  --slate-200: var(--stone-200);
+  --slate-100: var(--bg-sidebar);
   color-scheme: light;
 }
 
 /* Dark values are written twice (explicit choice, and following the system); keep the two blocks identical. */
 :root[data-theme='dark'] {
-  --bg: #1b2022;
-  --bg-sidebar: #161a1c;
-  --bg-soft: #1f2527;
-  --bg-hover: #252c2f;
-  --bg-active: #2e3639;
+  --bg: #1f1e1d;
+  --bg-sidebar: #171615;
+  --bg-soft: #252423;
+  --bg-hover: #2c2b2a;
+  --bg-active: #353433;
   --text-strong: #ffffff;
-  --text: #eff2f3;
-  --text-2: #aeb6b8;
-  --text-3: #7b868a;
-  --border: #3b4446;
-  --border-strong: #525e61;
-  --border-field: #7b868a;
+  --text: #ece9e8;
+  --text-2: #b5b1b0;
+  --text-3: #8f8b8a;
+  --text-faint: #6e6a69;
+  --border: #302f2e;
+  --border-card: #3d3b3a;
+  --border-strong: #4e4c4b;
+  --border-field: #8a8685;
   --green-ink: #2dbe60;
+  --green-mark: #2dbe60;
   --green-tint: #17301f;
+  --indigo-ink: #9aa8ff;
+  --indigo-tint: #262b4a;
+  --sel: #7c8eff;
+  --task: #b98af0;
+  --task-icon: #b98af0;
+  --task-tint: #3a2748;
+  --event-ink: #f08a5d;
   --danger: #ff7b8a;
   --danger-bg: #3d1f25;
   --sticky: #3a3519;
-  --on-danger: #1b2022;
+  --toast-bg: #2f2e2d;
+  --on-danger: #1f1e1d;
+  --scrim: rgba(0, 0, 0, 0.6);
   --shadow-pop: 0 10px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-lift: 0 4px 14px rgba(0, 0, 0, 0.5);
   --tag-alpha: 22%;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg: #1b2022;
-    --bg-sidebar: #161a1c;
-    --bg-soft: #1f2527;
-    --bg-hover: #252c2f;
-    --bg-active: #2e3639;
+    --bg: #1f1e1d;
+    --bg-sidebar: #171615;
+    --bg-soft: #252423;
+    --bg-hover: #2c2b2a;
+    --bg-active: #353433;
     --text-strong: #ffffff;
-    --text: #eff2f3;
-    --text-2: #aeb6b8;
-    --text-3: #7b868a;
-    --border: #3b4446;
-    --border-strong: #525e61;
-    --border-field: #7b868a;
+    --text: #ece9e8;
+    --text-2: #b5b1b0;
+    --text-3: #8f8b8a;
+    --text-faint: #6e6a69;
+    --border: #302f2e;
+    --border-card: #3d3b3a;
+    --border-strong: #4e4c4b;
+    --border-field: #8a8685;
     --green-ink: #2dbe60;
+    --green-mark: #2dbe60;
     --green-tint: #17301f;
+    --indigo-ink: #9aa8ff;
+    --indigo-tint: #262b4a;
+    --sel: #7c8eff;
+    --task: #b98af0;
+    --task-icon: #b98af0;
+    --task-tint: #3a2748;
+    --event-ink: #f08a5d;
     --danger: #ff7b8a;
     --danger-bg: #3d1f25;
     --sticky: #3a3519;
-    --on-danger: #1b2022;
+    --toast-bg: #2f2e2d;
+    --on-danger: #1f1e1d;
+    --scrim: rgba(0, 0, 0, 0.6);
     --shadow-pop: 0 10px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    --shadow-lift: 0 4px 14px rgba(0, 0, 0, 0.5);
     --tag-alpha: 22%;
     color-scheme: dark;
   }
