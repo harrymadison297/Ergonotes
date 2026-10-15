@@ -410,13 +410,14 @@ export const GhostText = Extension.create<GhostOptions>({
             // only at the end of a line of prose: not in code, and not in the middle of a sentence
             if (!$p.parent.isTextblock || $p.parent.type.spec.code || $p.parentOffset !== $p.parent.content.size) return;
             const before = doc.textBetween(Math.max(0, $p.pos - 1500), $p.pos, '\n', ' ');
+            const after = doc.textBetween($p.pos, Math.min(doc.content.size, $p.pos + 400), '\n', ' ');
             if (before.trim().length < 3) return;
             const pos = $p.pos;
             timer = setTimeout(() => {
               timer = null;
               const c = new AbortController();
               ctl = c;
-              void opts.suggest({ before, after: '' }, c.signal).then(text => {
+              void opts.suggest({ before, after }, c.signal).then(text => {
                 if (c.signal.aborted || !text) return;
                 // still the same place? (the document may have moved on while the request was out)
                 if (view.state.selection.from !== pos || !view.state.selection.empty) return;

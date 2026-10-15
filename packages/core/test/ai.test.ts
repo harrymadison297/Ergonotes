@@ -296,20 +296,42 @@ describe('note tools', () => {
 });
 
 describe('next-words suggestion', () => {
-  it('builds a short request around the cursor', () => {
-    const r = suggestionRequest({ title: 'T', before: 'a'.repeat(2000), after: 'z'.repeat(2000) });
+  it('shows the model the text around a cursor marker, with worked examples', () => {
+    const r = suggestionRequest({ title: 'T', before: 'a'.repeat(3000) + ' i am a en', after: 'z'.repeat(2000) });
     expect(r.model).toBe('suggest');
     expect(r.maxTokens).toBeLessThanOrEqual(60);
-    const m = (r.messages[0] as { content: string }).content;
-    expect(m.length).toBeLessThan(1300);
+    const last = r.messages.at(-1) as { content: string };
+    expect(last.content.startsWith('Note: T')).toBe(true);
+    expect(last.content).toContain(' i am a en<CURSOR>z');
+    expect(last.content.length).toBeLessThan(1500 + 300 + 60);
+    expect(r.messages.length).toBeGreaterThanOrEqual(5);
+    expect(r.system).toContain('single JSON string');
   });
 
-  it('cleans what the model returns', () => {
+  it('keeps the spacing the model chose, and never doubles a space', () => {
+    expect(cleanSuggestion('"gineer who builds apps"', 'I am a software en')).toBe('gineer who builds apps');
+    expect(cleanSuggestion('" first version"', 'We agreed to ship the')).toBe(' first version');
+    expect(cleanSuggestion('" a cake"', 'balloons and ')).toBe('a cake');
     expect(cleanSuggestion('"the quick fox"', 'Today ')).toBe('the quick fox');
+    // an answer that ignored the format: guess a new word
+    expect(cleanSuggestion('and then', 'We went home')).toBe(' and then');
     expect(cleanSuggestion('Continuation: and then', 'We went home')).toBe(' and then');
-    expect(cleanSuggestion('first line\n\nsecond', 'x ')).toBe('first line');
+  });
+
+  it('drops text the model repeated from before the cursor', () => {
+    expect(cleanSuggestion('"abc is a test property listing"', 'abc is a')).toBe(' test property listing');
+    expect(cleanSuggestion('"went home and slept"', 'we went home and slept')).toBe('');
+    expect(cleanSuggestion('"I like cats and dogs"', 'I like')).toBe(' cats and dogs');
+    // a word that merely starts like the end of the text is not a repeat
+    expect(cleanSuggestion('"cat sat"', 'the c')).toBe('cat sat');
+  });
+
+  it('keeps one short paragraph', () => {
+    expect(cleanSuggestion('"first line\\n\\nsecond"', 'x ')).toBe('first line');
     expect(cleanSuggestion('   ', 'x')).toBe('');
-    expect(cleanSuggestion('went home and slept', 'we went home and slept')).toBe('');
+    expect(cleanSuggestion('""', 'x')).toBe('');
+    const long = JSON.stringify(Array.from({ length: 40 }, (_, i) => `w${i}`).join(' '));
+    expect(cleanSuggestion(long, 'a ').split(' ').length).toBe(14);
     expect(cleanSuggestion('x'.repeat(500), 'a ').length).toBeLessThanOrEqual(240);
   });
 

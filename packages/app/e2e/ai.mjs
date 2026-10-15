@@ -210,7 +210,7 @@ await page.getByLabel('Title').waitFor();
 await page.locator('.prose').click();
 await page.keyboard.press('Control+End');
 script.length = 0;
-script.push([{ type: 'text', delta: ' and a toothbrush' }]);
+script.push([{ type: 'text', delta: '" and a toothbrush"' }]);
 const before = requests.length;
 await page.keyboard.type(' Do not forget to pack the sunscreen, a hat');
 const ghost = page.locator('.ghost-text');
