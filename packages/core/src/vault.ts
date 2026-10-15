@@ -4,7 +4,7 @@
 import MarkdownIt from 'markdown-it';
 import MiniSearch from 'minisearch';
 import type {
-  CalendarData, ChatRecord, ChatSummary, ConflictChoice, ConflictDetail, EventEntry, ExportResult, FileBlob, FileInfo, HeadInfo, ImportFile, ItemSummary, NoteDoc, SearchHit,
+  CalendarData, ChatRecord, ChatSummary, ConflictChoice, ConflictDetail, EventEntry, ExportResult, FileBlob, FileInfo, HeadInfo, ImportFile, ItemSummary, NoteDoc, RecordInfo, SearchHit,
   Settings, StoreConfig, SyncReport, TaskEntry, VaultApi, VaultState, VaultStatus, VersionInfo,
 } from './api.ts';
 import {
@@ -22,6 +22,7 @@ import {
 } from './markdown.ts';
 import { applyAiPatch, defaultAiConfig, normalizeAiConfig, toSettings, type AiConfig, type AiSettings, type AiSettingsPatch } from './ai/types.ts';
 import { baseText, unionText } from './merge.ts';
+import { RECORD_LINK_TITLE, frameSecond, isPartName, isRecordDir, parseRecordMeta, recordDirOf, type RecordMeta } from './record.ts';
 import type { Persist } from './persist.ts';
 import { Replica, type SyncContext } from './replica.ts';
 import type { Store } from './store.ts';
@@ -97,7 +98,7 @@ const TRASH_DAYS = 30;
 const MAX_SEARCH_HITS = 40;
 const PUSH_DEBOUNCE_MS = 5 * MIN;
 const PULL_EVERY_MS = 45_000;
-const MAX_ATTACHMENT = 25 * 1024 * 1024;
+const MAX_ATTACHMENT = 100 * 1024 * 1024;
 const MAX_NOTE_BYTES = 8 * 1024 * 1024;
 const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true });
 const TRASH_DIR = '.trash';
@@ -153,7 +154,7 @@ export class Vault implements VaultApi {
   private vaultFile: VaultFile | null = null;
   /** notes and the folders derived from where they are */
   private views = new Map<string, View>();
-  private files = new Map<string, { name: string; path: string; mime: string; body: string; size: number; created: string }>();
+  private files = new Map<string, { name: string; path: string; mime: string; body: string; size: number; created: string; trashed: boolean }>();
   private fileBySha = new Map<string, string>();
   private searchIndex = new MiniSearch<{ id: string; title: string; body: string; tags: string }>({
     fields: ['title', 'body', 'tags'],
@@ -752,6 +753,7 @@ export class Vault implements VaultApi {
           name: String(fm.name ?? basename(path)), path, mime: String(fm.mime ?? 'application/octet-stream'), body: p.body,
           size: typeof fm.size === 'number' ? fm.size : b64Bytes(p.body),
           created: typeof fm.created === 'string' ? fm.created : '',
+          trashed: typeof res._ergo_trashed === 'string' && res._ergo_trashed !== '',
         });
         if (typeof fm.sha === 'string') this.fileBySha.set(fm.sha, id);
         this.views.delete(id);
@@ -805,7 +807,7 @@ export class Vault implements VaultApi {
     for (const v of this.views.values()) if (v.type === 'note' && !v.trashed) add(dirname(v.path));
     for (const [id, v] of this.views) if (v.type === 'folder' && !dirs.has(v.path)) this.views.delete(id);
     for (const d of dirs) {
-      if (d.split('/').some(s => s.startsWith('.')) || d === ATTACH_DIR) continue;
+      if (d.split('/').some(s => s.startsWith('.')) || d === ATTACH_DIR || d.startsWith(ATTACH_DIR + '/')) continue;
       const id = folderIdOf(d);
       const dir = dirname(d);
       const old = this.views.get(id);
@@ -866,7 +868,13 @@ export class Vault implements VaultApi {
     if (!this.linkIdx) {
       const paths: string[] = [];
       for (const v of this.views.values()) if (v.type === 'note' && !v.trashed) paths.push(v.path);
-      for (const f of this.files.values()) paths.push(f.path);
+      const dirs = new Set<string>();
+      for (const f of this.files.values()) {
+        paths.push(f.path);
+        const rd = recordDirOf(f.path); // a record is linked by its folder
+        if (rd) dirs.add(rd);
+      }
+      paths.push(...dirs);
       this.linkIdx = buildLinkIndex(paths);
       this.linkCache.clear();
     }
@@ -1027,8 +1035,53 @@ export class Vault implements VaultApi {
     if (Object.keys(kv).length) t = setReserved(t, kv);
     const c = await r.commit(id, t, this.now());
     if (c) this.refresh([id]);
+    if (ch.trashed !== undefined) await this.followRecords(v, ch.trashed);
     await this.flushDisk();
     return this.views.get(id)!;
+  }
+
+  // ---------- records (ADR 0011) ----------
+  /** The record folders a note links to: `[…](attachments/record_… "type_record")`. */
+  private recordDirsOf(v: View): string[] {
+    const out = new Set<string>();
+    for (const ref of v.linkRefs) {
+      if (ref.kind !== 'md' || ref.title.trim().replace(/^["']|["']$/g, '') !== RECORD_LINK_TITLE) continue;
+      let raw = ref.target;
+      try { raw = decodeURI(raw); } catch { /* as written */ }
+      const hit = [normalizePath(joinPath(dirname(v.path), raw)), normalizePath(raw)].find(p => !!p && isRecordDir(p));
+      if (hit) out.add(hit);
+    }
+    return [...out];
+  }
+
+  private recordFileIds(dir: string): string[] {
+    const pre = dir + '/';
+    return [...this.files].filter(([, f]) => f.path.startsWith(pre)).map(([id]) => id);
+  }
+
+  /** True when a note other than `except` still links the record. */
+  private recordUsed(dir: string, except: Set<string>, liveOnly: boolean): boolean {
+    for (const v of this.views.values()) {
+      if (v.type !== 'note' || except.has(v.id) || (liveOnly && v.trashed)) continue;
+      if (this.recordDirsOf(v).includes(dir)) return true;
+    }
+    return false;
+  }
+
+  /** A note went to the Trash or came back: its records go and come with it, unless another note still shows them. */
+  private async followRecords(v: View, trashed: string | null) {
+    const r = this.ready();
+    const ids: string[] = [];
+    for (const dir of this.recordDirsOf(v)) {
+      if (trashed && this.recordUsed(dir, new Set([v.id]), true)) continue;
+      for (const id of this.recordFileIds(dir)) {
+        const t = r.text(id);
+        if (t === null || (typeof reservedOf(t)._ergo_trashed === 'string') === !!trashed) continue;
+        await r.commit(id, setReserved(t, { _ergo_trashed: trashed ?? undefined }), this.now());
+        ids.push(id);
+      }
+    }
+    if (ids.length) this.refresh(ids);
   }
 
   async saveNote(id: string, patch: { title?: string; body?: string }): Promise<ItemSummary> {
@@ -1243,7 +1296,11 @@ export class Vault implements VaultApi {
     this.ready();
     if (this.hasOpenConflict(id)) throw new Error('This note was also changed on another device. Resolve that first, then delete it.');
     const notes = this.subtree(id).filter(x => this.views.get(x)?.type === 'note' || x === id).reverse();
+    const gone = new Set(notes);
+    const dirs = new Set<string>();
+    for (const x of notes) { const nv = this.views.get(x); if (nv?.type === 'note') for (const d of this.recordDirsOf(nv)) dirs.add(d); }
     for (const x of notes) if (this.replica!.text(x) !== null) await this.ready().purge(x, this.now());
+    for (const d of dirs) if (!this.recordUsed(d, gone, false)) await this.purgeFiles(this.recordFileIds(d));
     for (const x of this.subtree(id)) if (this.views.get(x)?.type === 'note') this.views.delete(x);
     this.refresh([id]);
     await this.flushDisk();
@@ -1816,22 +1873,98 @@ export class Vault implements VaultApi {
 
   // ---------- attachments ----------
   /** Written to `attachments/` as a real file and kept as an item so it syncs and is encrypted in the Store. */
-  async addFile(input: FileBlob): Promise<{ id: string; path: string }> {
+  async addFile(input: FileBlob & { dir?: string }): Promise<{ id: string; path: string }> {
     const r = this.ready();
-    if (input.data.length > 34_000_000) throw new Error('That file is larger than 25 MB.');
+    if (input.data.length > Math.ceil((MAX_ATTACHMENT * 4) / 3) + 1024) throw new Error('That file is larger than 100 MB.');
     const sha = sha256hex(input.data);
-    const existing = this.fileBySha.get(sha);
-    if (existing && this.files.has(existing)) return { id: existing, path: this.files.get(existing)!.path }; // stored once per distinct content
-    const id = newId();
-    const name = safeName(stripExt(input.name) === input.name ? input.name : input.name, 100);
-    const ext = extOf(name);
-    const path = await this.freePath(ATTACH_DIR, ext ? name.slice(0, -ext.length) : name, ext);
+    let id: string;
+    let path: string;
+    if (input.dir !== undefined) {
+      // a file of a record folder: exactly this name, in this folder, replaced when it is written again
+      const dir = normalizePath(input.dir);
+      if (!dir || !isRecordDir(dir.split('/').slice(0, 2).join('/')) || dir.split('/').some(sg => sg.startsWith('.'))) throw new Error('A record file belongs in attachments/record_….');
+      const name = safeName(input.name, 100);
+      if (!ATTACH_EXT.has(extOf(name))) throw new Error('That kind of file cannot be kept in a record.');
+      path = joinPath(dir, name);
+      const at = this.byLower.get(path.toLowerCase());
+      const known = at ? this.index.get(at) : undefined;
+      id = known && known.kind === 'file' ? known.id : newId();
+      if (known && known.kind === 'file' && at) path = at;
+      else if (known || (await this.fs.stat(path))) path = await this.freePath(dir, stripExt(name), extOf(name));
+    } else {
+      const existing = this.fileBySha.get(sha);
+      // stored once per distinct content, but never pointing into a record: removing that frame would break the other use
+      if (existing && this.files.has(existing) && !recordDirOf(this.files.get(existing)!.path)) return { id: existing, path: this.files.get(existing)!.path };
+      id = newId();
+      const name = safeName(stripExt(input.name) === input.name ? input.name : input.name, 100);
+      const ext = extOf(name);
+      path = await this.freePath(ATTACH_DIR, ext ? name.slice(0, -ext.length) : name, ext);
+    }
     const fm: Frontmatter = { id, _ergo_kind: 'file', _ergo_path: path, name: basename(path), mime: input.mime, sha, size: b64Bytes(input.data), created: this.iso() };
     const body = input.data.replace(/(.{76})/g, '$1\n');
     await r.commit(id, joinDoc(fm, body), this.now());
     this.refresh([id]);
     await this.flushDisk();
     return { id, path };
+  }
+
+  /** Delete attachments by path: the file items go (and the files with them). Only `attachments/` can be reached. */
+  async removeFiles(paths: string[]): Promise<number> {
+    this.ready();
+    const want = new Set(paths.map(p => normalizePath(p) ?? '').filter(p => p.startsWith(ATTACH_DIR + '/')));
+    const ids = [...this.files].filter(([, f]) => want.has(f.path)).map(([id]) => id);
+    await this.purgeFiles(ids);
+    return ids.length;
+  }
+
+  private async purgeFiles(ids: string[]) {
+    const r = this.ready();
+    for (const id of ids) if (r.text(id) !== null) await r.purge(id, this.now());
+    this.refresh(ids);
+    await this.flushDisk();
+  }
+
+  private recordInfo(dir: string): RecordInfo | null {
+    const pre = dir + '/';
+    const mine = [...this.files].filter(([, f]) => f.path.startsWith(pre) && !f.trashed);
+    if (!mine.length) return null;
+    let meta: RecordMeta | null = null;
+    let transcript: string | null = null;
+    const audio: { path: string; n: string }[] = [];
+    const frames: { second: number; path: string }[] = [];
+    let size = 0;
+    for (const [, f] of mine) {
+      const rel = f.path.slice(pre.length);
+      size += f.size;
+      const text = () => dec(fromB64(f.body.replace(/\s+/g, '')));
+      if (rel === 'record.json') meta = parseRecordMeta(text());
+      else if (rel === 'transcript.txt') transcript = text();
+      else if (rel.startsWith('frames/')) { const sec = frameSecond(rel); if (sec !== null) frames.push({ second: sec, path: f.path }); }
+      else if (!rel.includes('/') && /^audio(-\d+)?\.[a-z0-9]+$/i.test(rel)) audio.push({ path: f.path, n: rel });
+    }
+    // the joined file wins over its pieces (the pieces are removed once it exists)
+    const joined = audio.filter(a => !isPartName(a.n));
+    const parts = joined.length ? joined : audio.sort((a, b) => a.n.localeCompare(b.n));
+    let user: View | undefined;
+    for (const v of this.views.values()) if (v.type === 'note' && !this.inTrash(v) && this.recordDirsOf(v).includes(dir)) { user = v; break; }
+    return {
+      path: dir, meta, audio: parts.map(a => a.path), frames: frames.sort((a, b) => a.second - b.second), transcript, size,
+      noteId: user?.id ?? null, noteTitle: user?.title ?? null,
+    };
+  }
+
+  async getRecord(path: string): Promise<RecordInfo | null> {
+    this.ready();
+    const dir = normalizePath(path);
+    return dir && isRecordDir(dir) ? this.recordInfo(dir) : null;
+  }
+
+  async listRecords(): Promise<RecordInfo[]> {
+    this.ready();
+    const dirs = new Set<string>();
+    for (const f of this.files.values()) { const d = recordDirOf(f.path); if (d && !f.trashed) dirs.add(d); }
+    return [...dirs].map(d => this.recordInfo(d)).filter((x): x is RecordInfo => !!x)
+      .sort((a, b) => (b.meta?.startedAt ?? b.path).localeCompare(a.meta?.startedAt ?? a.path));
   }
 
   async listFiles(): Promise<FileInfo[]> {
@@ -1847,6 +1980,7 @@ export class Vault implements VaultApi {
     }
     const out: FileInfo[] = [];
     for (const [id, f] of this.files) {
+      if (f.trashed || recordDirOf(f.path)) continue; // a record's files are listed as the record (listRecords)
       const user = users.get(f.path);
       out.push({ id, name: f.name, path: f.path, mime: f.mime, size: f.size, created: f.created, noteId: user?.id ?? null, noteTitle: user?.title ?? null });
     }

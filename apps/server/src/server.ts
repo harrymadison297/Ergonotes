@@ -122,7 +122,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers });
     res.end(s);
   };
-  const readBody = (req: IncomingMessage, limit = 64 * 1024 * 1024) => new Promise<string>((resolve, reject) => {
+  const readBody = (req: IncomingMessage, limit = 160 * 1024 * 1024) => new Promise<string>((resolve, reject) => {
     const chunks: Buffer[] = [];
     let n = 0;
     let over = false;
@@ -180,7 +180,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     const preAuth = method === 'status' || method === 'unlock' || method === 'createVault' || method === 'joinVault';
     if (!preAuth && !authed(req)) return json(res, 401, { error: 'Sign in first' });
     let args: unknown[];
-    try { args = JSON.parse((await readBody(req, preAuth ? 64 * 1024 : 64 * 1024 * 1024)) || '[]'); if (!Array.isArray(args)) throw new Error('args must be an array'); } catch (e) {
+    try { args = JSON.parse((await readBody(req, preAuth ? 64 * 1024 : 160 * 1024 * 1024)) || '[]'); if (!Array.isArray(args)) throw new Error('args must be an array'); } catch (e) {
       const msg = String(e instanceof Error ? e.message : e);
       return json(res, /too large/i.test(msg) ? 413 : 400, { error: msg }, { connection: 'close' });
     }

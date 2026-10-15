@@ -4,6 +4,7 @@ import type { S3Config } from './store-s3.ts';
 import type { WebDavConfig } from './store-webdav.ts';
 import type { NoteEvent, Task } from './markdown.ts';
 import type { AiSettings, AiSettingsPatch } from './ai/types.ts';
+import type { RecordMeta } from './record.ts';
 
 export interface FolderStoreConfig { type: 'folder'; path: string }
 export type StoreConfig = S3Config | WebDavConfig | FolderStoreConfig;
@@ -127,6 +128,22 @@ export interface CalendarData {
 
 export interface FileBlob { name: string; mime: string; data: string }
 export interface ImportFile { path: string; content: string }
+/** One record folder (ADR 0011) as the player needs it. Paths are vault-relative. */
+export interface RecordInfo {
+  /** `attachments/record_…` */
+  path: string;
+  meta: RecordMeta | null;
+  /** the audio, in order: the joined file, or the pieces of a recording that has not been joined */
+  audio: string[];
+  frames: { second: number; path: string }[];
+  /** the text of transcript.txt */
+  transcript: string | null;
+  /** bytes of everything in the folder */
+  size: number;
+  /** a note that shows it, if any */
+  noteId: string | null;
+  noteTitle: string | null;
+}
 /** One attachment: what it is, how big, and the note that uses it. */
 export interface FileInfo { id: string; name: string; path: string; mime: string; size: number; created: string; noteId: string | null; noteTitle: string | null }
 /** One row of the search popup: where it lives and the passage that matched. */
@@ -212,9 +229,17 @@ export interface VaultApi {
   sync(opts?: { full?: boolean }): Promise<SyncReport>;
   flush(): Promise<void>;
 
-  /** Writes the file into `attachments/`; `path` is what a note embeds. */
-  addFile(input: FileBlob): Promise<{ id: string; path: string }>;
+  /**
+   * Writes the file into `attachments/`; `path` is what a note embeds. With `dir` (a record folder, ADR 0011) it is
+   * written there under exactly `name`, and written again it is replaced.
+   */
+  addFile(input: FileBlob & { dir?: string }): Promise<{ id: string; path: string }>;
+  /** Delete attachments (by vault path) for good. */
+  removeFiles(paths: string[]): Promise<number>;
   listFiles(): Promise<FileInfo[]>;
+  /** Record folders, newest first. */
+  listRecords(): Promise<RecordInfo[]>;
+  getRecord(path: string): Promise<RecordInfo | null>;
   getFile(id: string): Promise<FileBlob | null>;
   /** An attachment by its vault-relative path (what `![](attachments/x.png)` resolves to). */
   getFileByPath(path: string): Promise<FileBlob | null>;
@@ -229,5 +254,5 @@ export const VAULT_METHODS = [
   'renameTag', 'setPinned', 'setPrivate', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'searchHits', 'linkTargets', 'tags', 'tasks', 'toggleTask',
   'calendar', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
   'resolveConflict', 'history', 'versionText', 'restoreVersion', 'listChats', 'getChat', 'saveChat', 'deleteChat', 'getSettings', 'setSettings', 'getAiSettings', 'setAiSettings', 'setStore',
-  'sync', 'flush', 'addFile', 'listFiles', 'getFile', 'getFileByPath', 'importMarkdown', 'exportNote',
+  'sync', 'flush', 'addFile', 'removeFiles', 'listFiles', 'listRecords', 'getRecord', 'getFile', 'getFileByPath', 'importMarkdown', 'exportNote',
 ] as const satisfies readonly (keyof VaultApi)[];
