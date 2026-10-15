@@ -69,7 +69,12 @@ attachments/record_20260319_123410/
   25 MB per request, which one 10-minute window is far below.
 - If the share or the microphone ends, the record stops there and what was captured is kept, with a message. A meeting is
   never continued with half of it.
-- Leaving the note while recording stops it and keeps what was recorded.
+- **A recording is a process of the app, not of the note.** It goes on when another note is opened. While it runs, a
+  panel takes the place of the note list (clock, level, the pictures kept so far, Capture, Pause, Stop, throw away; "Show
+  notes" brings the list back with a thin bar); where no list is on screen (home, a phone, a very narrow window) a small
+  floating bar does the same. Closing the window asks first.
+- A meeting needs the shared screen, not a microphone: with none (or a refused one) it goes on with the shared sound and
+  says so once. A recording without a microphone does not start, and says so once.
 
 ### Lifecycle
 

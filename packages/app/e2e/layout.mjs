@@ -102,7 +102,7 @@ for (const theme of (process.env.THEMES ?? "light,dark").split(",")) {
     await page.keyboard.press('Escape');
 
     // Recording and meeting: the dialogs fit; a recording runs as a bar that fits too, and leaves a record in the note
-    for (const [btn, title] of [['Recording', 'Recording'], ['Meeting', 'Meeting']]) {
+    for (const [btn, title] of [['Recording', 'Record audio'], ['Meeting', 'Record a meeting']]) {
       await page.getByRole('button', { name: btn, exact: true }).click();
       await page.getByRole('dialog', { name: title }).waitFor();
       await page.waitForTimeout(350);
@@ -110,12 +110,12 @@ for (const theme of (process.env.THEMES ?? "light,dark").split(",")) {
       bad = await overflows(page);
       check(`${tag}: the ${title} dialog fits`, bad.length === 0, bad.join('; '));
       if (btn === 'Recording') {
-        await page.getByRole('button', { name: /^Start recording/ }).click();
-        await page.locator('.rec-bar .rec-dot.on').waitFor({ timeout: 8000 });
+        await page.getByRole('button', { name: /^Start$/ }).click();
+        await page.locator('.rec-dot.on:visible').first().waitFor({ timeout: 8000 });
         await page.waitForTimeout(900);
         await page.screenshot({ path: `${OUT}/${tag}-recorder-recording.png` });
         bad = await overflows(page);
-        check(`${tag}: the recording bar fits`, bad.length === 0, bad.join('; '));
+        check(`${tag}: the recorder (panel in place of the list, bar on a phone) fits`, bad.length === 0, bad.join('; '));
         await page.getByRole('region', { name: 'Recording' }).getByRole('button', { name: /Stop/ }).click();
         await page.locator('.record-card').first().waitFor({ timeout: 10000 }).catch(() => {});
         await page.waitForTimeout(500);

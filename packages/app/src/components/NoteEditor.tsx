@@ -478,15 +478,6 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     const label = `${kind === 'meeting' ? 'Meeting' : 'Recording'} ${isoDay(now)} ${hm}`;
     insertMarkdown(`[${label}](${linkTo(dir)} "type_record")\n`);
   };
-  const onRecordDiscarded = (dir: string) => {
-    let at = -1;
-    let size = 0;
-    editor.state.doc.descendants((n, pos) => {
-      if (at < 0 && n.type.name === 'recordBlock' && decodeURI(String(n.attrs.path)).endsWith(dir.slice(dir.indexOf('attachments/')))) { at = pos; size = n.nodeSize; }
-      return at < 0;
-    });
-    if (at >= 0) editor.chain().deleteRange({ from: at, to: at + size }).run();
-  };
   const onMediaFile = async (f: File, setStatus: (s: string) => void) => {
     setStatus('Saving…');
     const data = toB64(new Uint8Array(await f.arrayBuffer()));
@@ -651,8 +642,8 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       )}
       {recorder === 'dictate' && <RecorderDialog kind="dictate" sttReady={app.ai.speechReady} privateNote={!!doc.private} onClose={() => setRecorder(null)}
         onFinish={(r, _o, setStatus) => onDictated(r, setStatus)} />}
-      {(recorder === 'recording' || recorder === 'meeting') && <RecordDialog kind={recorder} privateNote={!!doc.private} onClose={() => setRecorder(null)}
-        onStarted={onRecordStarted(recorder)} onDiscarded={onRecordDiscarded} onFinished={() => undefined} />}
+      {(recorder === 'recording' || recorder === 'meeting') && <RecordDialog kind={recorder} noteId={id} noteTitle={doc.title} privateNote={!!doc.private}
+        onClose={() => setRecorder(null)} onStarted={onRecordStarted(recorder)} />}
       {transcribing && <TranscribeDialog privateNote={!!doc.private} onClose={() => setTranscribing(false)} onPick={onMediaFile} />}
       {insertDialog === 'date' && <DateDialog onClose={() => setInsertDialog(null)} onInsert={day => { setInsertDialog(null); editor.chain().focus().insertContent([{ type: 'dateMention', attrs: { date: day } }, { type: 'text', text: ' ' }]).run(); }} />}
       {insertDialog === 'event' && <EventDialog initialTitle={editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ')} onClose={() => setInsertDialog(null)}

@@ -6,6 +6,7 @@ import { href } from '../state/router';
 import { classNames, dueLabel } from '../state/util';
 import { Resizer } from '../components/Resizer';
 import { NoteEditor } from '../components/NoteEditor';
+import { PaneList } from '../components/RecorderPanel';
 
 export function TaskRow({ t, compact, active }: { t: TaskEntry; compact?: boolean; active?: boolean }) {
   const app = useApp();
@@ -39,7 +40,7 @@ export function TasksView({ noteId }: { noteId?: string }) {
   const openCount = app.tasks.filter(t => !t.done).length;
 
   const listPane = (
-    <div className="pane-list">
+    <PaneList>
       <Resizer pane="listW" edge="right" label="Resize list" />
       <div className="list-head">
         <h2>Tasks</h2>
@@ -57,7 +58,7 @@ export function TasksView({ noteId }: { noteId?: string }) {
         {list.length === 0 && <div className="empty"><h3>{tab === 'done' ? 'Nothing completed yet' : 'No tasks'}</h3><p>Add a checklist in any note and it appears here.</p></div>}
         {list.map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} active={t.noteId === noteId} />)}
       </div>
-    </div>
+    </PaneList>
   );
   if (app.isMobile) return <div className="m-content" style={{ display: 'flex', flexDirection: 'column' }}>{listPane}</div>;
   return (

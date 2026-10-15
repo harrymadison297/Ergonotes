@@ -10,6 +10,7 @@ import { folderChain } from '../state/tree';
 import { setPrefs, usePrefs } from '../state/prefs';
 import { classNames } from '../state/util';
 import { Resizer } from '../components/Resizer';
+import { PaneList } from '../components/RecorderPanel';
 
 
 type Sort = 'updated' | 'created' | 'title';
@@ -81,7 +82,7 @@ export function NotesView({ noteId }: { noteId?: string }) {
   })();
 
   const listPane = (
-    <div className="pane-list">
+    <PaneList>
       <Resizer pane="listW" edge="right" label="Resize list" />
       <div className="list-head">
         <h2><span className="ttl">{heading}</span><span className="count" aria-label={`${list.length} note${list.length === 1 ? '' : 's'}`}>{list.length}</span></h2>
@@ -108,7 +109,7 @@ export function NotesView({ noteId }: { noteId?: string }) {
         )}
         {shown.map(n => <NoteRow key={n.id} n={n} cards={prefs.listView === 'cards'} active={n.id === noteId} href={href({ name: 'notes', ...base, note: n.id })} />)}
       </div>
-    </div>
+    </PaneList>
   );
 
   if (app.isMobile) {
@@ -150,7 +151,7 @@ export function TrashView({ noteId }: { noteId?: string }) {
     await app.refresh();
   };
   const listPane = (
-    <div className="pane-list">
+    <PaneList>
       <Resizer pane="listW" edge="right" label="Resize list" />
       <div className="list-head">
         <h2>Trash</h2>
@@ -166,7 +167,7 @@ export function TrashView({ noteId }: { noteId?: string }) {
           </div>
         ) : <NoteRow key={n.id} n={n} active={n.id === noteId} href={href({ name: 'trash', note: n.id })} />)}
       </div>
-    </div>
+    </PaneList>
   );
   if (app.isMobile) return <div className="m-content">{listPane}{noteId && <div className="m-note"><NoteEditor key={noteId} id={noteId} readOnly onBack={() => app.go({ name: 'trash' })} /></div>}</div>;
   return (

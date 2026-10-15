@@ -172,6 +172,7 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
     speechReady: ai.speechReady, visionReady: ai.visionReady, chatReady: ai.chatReady,
     visionName: ai.visionModel.connection ? ai.visionModel.model : ai.chatModel.model,
     transcribe: backend.aiTranscribeTimed, transport: backend.aiTransport, toast,
+    openNote: id => go({ name: 'notes', note: id }),
   });
   const value: AppCtx = { api, mode: backend.mode, folder: backend.folder, status, items, byId, tasks, tags, conflicts, settings, ai, aiTransport: backend.aiTransport, aiModels: backend.aiModels, aiTranscribe: backend.aiTranscribe, aiTranscribeTimed: backend.aiTranscribeTimed, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

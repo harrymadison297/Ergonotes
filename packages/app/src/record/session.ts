@@ -17,6 +17,8 @@ export interface SessionOptions {
   every: number;
   /** called when the folder exists and the note should get its link */
   onStarted: (dir: string) => void;
+  /** a picture was kept (the panel shows the latest ones) */
+  onFrame?: (second: number, picture: Blob, byPerson: boolean) => void;
   onChange: (s: SessionState) => void;
   /** part length, seconds (tests use a short one) */
   partSeconds?: number;
@@ -27,7 +29,7 @@ export interface SessionState {
   seconds: number;
   level: number;
   frames: number;
-  heard: 'mic' | 'both';
+  heard: 'mic' | 'both' | 'shared';
   /** what happened that the person should know (the share ended, a write failed) */
   notice: string;
 }
@@ -121,8 +123,21 @@ export class RecordSession {
           throw new Error('The picture was shared but not its sound. Choose again: a browser tab with “Share tab audio” ticked, or “Entire Screen” with “Share with system audio” turned on (a single window has no sound).');
         }
       }
-      const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-      this.streams.push(mic);
+      // the microphone. A meeting does not need one (the call's sound is the point), so a missing or refused one is
+      // said once and the shared sound is recorded alone; a recording is only its microphone.
+      let mic: MediaStream | null = null;
+      try {
+        const inputs = (await navigator.mediaDevices.enumerateDevices().catch(() => [])).filter(d => d.kind === 'audioinput');
+        if (inputs.length === 0 && typeof navigator.mediaDevices.enumerateDevices === 'function') throw new DOMException('no microphone', 'NotFoundError');
+        mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+        this.streams.push(mic);
+      } catch (e) {
+        if (!display) throw e;
+        const name = e instanceof DOMException ? e.name : '';
+        this.state.notice = name === 'NotAllowedError' || name === 'SecurityError'
+          ? 'The microphone is blocked, so only the shared sound is recorded.'
+          : 'No microphone was found, so only the shared sound is recorded.';
+      }
       const ac = new AudioContext();
       void ac.resume();
       this.ctx = ac;
@@ -130,12 +145,12 @@ export class RecordSession {
       const an = ac.createAnalyser();
       an.fftSize = 256;
       this.analyser = an;
-      for (const st of [mic, ...(display ? [new MediaStream(display.getAudioTracks())] : [])]) {
+      for (const st of [...(mic ? [mic] : []), ...(display ? [new MediaStream(display.getAudioTracks())] : [])]) {
         const src = ac.createMediaStreamSource(st);
         src.connect(mix);
         src.connect(an);
       }
-      this.state.heard = display ? 'both' : 'mic';
+      this.state.heard = mic && display ? 'both' : display ? 'shared' : 'mic';
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(m => MediaRecorder.isTypeSupported(m));
       const r = new MediaRecorder(mix.stream, mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : undefined);
       this.rec = r;
@@ -161,7 +176,7 @@ export class RecordSession {
         }
         display.getAudioTracks()[0]?.addEventListener('ended', () => this.interrupted('The shared sound ended. The recording was stopped and what was captured is kept.'));
       }
-      mic.getAudioTracks()[0]?.addEventListener('ended', () => this.interrupted('The microphone stopped. The recording was stopped and what was captured is kept.'));
+      mic?.getAudioTracks()[0]?.addEventListener('ended', () => this.interrupted('The microphone stopped. The recording was stopped and what was captured is kept.'));
 
       r.ondataavailable = e => {
         if (e.data.size) this.chunks.push(e.data);
@@ -257,6 +272,7 @@ export class RecordSession {
       if (!blob) return false;
       this.lastGray = gray;
       this.meta.frames[String(sec)] = byPerson ? 'user' : (this.meta.frames[String(sec)] ?? 'auto');
+      this.o.onFrame?.(sec, blob, byPerson);
       this.state.frames = Object.keys(this.meta.frames).length;
       void this.write(frameFileName(sec), 'image/jpeg', new Uint8Array(await blob.arrayBuffer()), 'frames');
       this.emit();

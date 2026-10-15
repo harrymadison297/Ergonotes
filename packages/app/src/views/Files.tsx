@@ -7,6 +7,7 @@ import { classNames } from '../state/util';
 import { FileImg } from '../components/FileImg';
 import { FilePreviewBody, useFilePreview } from '../components/FilePreview';
 import { Resizer } from '../components/Resizer';
+import { PaneList } from '../components/RecorderPanel';
 
 type Tab = 'all' | 'media' | 'docs' | 'records';
 const isMedia = (f: FileInfo) => /^(image|video|audio)\//.test(f.mime);
@@ -73,7 +74,7 @@ export function FilesView({ fileId }: { fileId?: string }) {
   const current = (files ?? []).find(f => f.id === fileId);
 
   const list = (
-    <div className="pane-list">
+    <PaneList>
       <Resizer pane="listW" edge="right" label="Resize list" />
       <div className="list-head files-head">
         <h2><span className="ttl">Files</span><span className="count">{tab === 'records' ? records.length : files?.length ?? 0}</span><span className="grow" /><span className="total">Total size: {fileSize(tab === 'records' ? records.reduce((a, r) => a + r.size, 0) : total)}</span></h2>
@@ -114,7 +115,7 @@ export function FilesView({ fileId }: { fileId?: string }) {
           </a>
         ))}
       </div>
-    </div>
+    </PaneList>
   );
 
   if (app.isMobile) {

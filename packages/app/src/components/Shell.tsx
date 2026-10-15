@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, Cloud, FilePlus2, FileText, Folder as FolderIcon, Home as HomeIcon, Keyboard, LayoutTemplate,
   MoreHorizontal, Paperclip, Search, Settings as SettingsIcon, Tag as TagIcon, Trash2,
@@ -20,6 +20,8 @@ import { Sidebar } from './Sidebar';
 import { RightSidebar, useAsideVisible } from './RightSidebar';
 import { IconBtn, TagLink, Toasts } from './ui';
 import { useSync } from './useSync';
+import { RecorderMini } from './RecorderPanel';
+import { useRecorder } from '../record/recorder';
 import { usePrefs } from '../state/prefs';
 
 function RouteView() {
@@ -218,6 +220,33 @@ function MobileShell() {
   );
 }
 
+/**
+ * Where a recording is controlled when nothing else on the screen shows it: a view without a note list (home, folders), a
+ * phone, or a layout squeezed so far that the list is hidden to leave the note its room.
+ */
+function RecordingDock() {
+  const r = useRecorder();
+  const idle = r.phase === 'idle';
+  const [covered, setCovered] = useState(true);
+  useEffect(() => {
+    if (idle) return;
+    // closing the window would lose the part being recorded: say so first
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    // is the panel (or the thin bar of the list) on screen? the layout may hide the list, so it is looked at, not assumed
+    const look = () => {
+      const el = document.querySelector<HTMLElement>('.rec-pane, .pane-list .rec-mini');
+      setCovered(!el || el.offsetParent === null);
+    };
+    look();
+    const t = setInterval(look, 600);
+    window.addEventListener('resize', look);
+    return () => { window.removeEventListener('beforeunload', warn); clearInterval(t); window.removeEventListener('resize', look); };
+  }, [idle]);
+  if (idle || !covered) return null;
+  return <RecorderMini floating />;
+}
+
 export function Shell() {
   const app = useApp();
   const prefs = usePrefs();
@@ -227,7 +256,7 @@ export function Shell() {
   const aside = useAsideVisible();
   const focus = prefs.focus && app.route.name === 'notes' && !!app.route.note;
   if (app.isMobile) {
-    return <><MobileShell /><RightSidebar /><DialogHost /><Toasts toasts={app.toasts} /></>;
+    return <><MobileShell /><RightSidebar /><RecordingDock /><DialogHost /><Toasts toasts={app.toasts} /></>;
   }
   return (
     <>
@@ -236,6 +265,7 @@ export function Shell() {
         <main className="main"><RouteView /></main>
         <RightSidebar />
       </div>
+      <RecordingDock />
       <DialogHost />
       <Toasts toasts={app.toasts} />
     </>

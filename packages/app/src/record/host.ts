@@ -9,7 +9,9 @@ export interface RecordHost {
   visionName: string;
   transcribe: (file: AudioFile, signal?: AbortSignal) => Promise<TimedTranscript>;
   transport: AiTransport;
-  toast: (msg: string, kind?: 'info' | 'error') => void;
+  toast: (msg: string, kind?: 'info' | 'error', action?: { label: string; run: () => void }) => void;
+  /** show a note (the one a record was made in) */
+  openNote: (id: string) => void;
 }
 
 let host: RecordHost | null = null;

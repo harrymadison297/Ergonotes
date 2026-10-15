@@ -139,4 +139,8 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
   moving a note rewrites its `type_record` links. The Trash follows `followRecords`.
 - The player is an editor node view, outside the React providers: it reaches the api through `state/appRef` and the models
   through `record/host.ts` (set by `AppProvider`). Players look again when `notifyRecord` fires.
+- The running recording is `record/recorder.ts`, a store outside React (`useRecorder`), so it survives navigation. Its
+  panel is `RecorderPanel`; every view's list pane is a `PaneList`, which shows the panel in the list's place. `Shell`'s
+  `RecordingDock` looks at whether the panel or the list's bar is really visible (the layout may hide the list) and
+  shows a floating bar when not.
 - Test: `packages/app/e2e/audio.mjs` (fake microphone, a canvas as the shared screen whose slide changes every 2.5 s).

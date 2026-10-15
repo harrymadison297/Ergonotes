@@ -7,6 +7,7 @@ import { classNames, isoDay } from '../state/util';
 import { Resizer } from '../components/Resizer';
 import { IconBtn } from '../components/ui';
 import { NoteEditor } from '../components/NoteEditor';
+import { PaneList } from '../components/RecorderPanel';
 
 export function CalendarView({ noteId }: { noteId?: string }) {
   const app = useApp();
@@ -94,7 +95,7 @@ export function CalendarView({ noteId }: { noteId?: string }) {
   if (noteId) {
     return (
       <div className="split">
-        <div className="pane-list"><Resizer pane="listW" edge="right" label="Resize list" /><div className="list-scroll">{head}{side}</div></div>
+        <PaneList><Resizer pane="listW" edge="right" label="Resize list" /><div className="list-scroll">{head}{side}</div></PaneList>
         <div className="pane-body"><NoteEditor key={noteId} id={noteId} /></div>
       </div>
     );

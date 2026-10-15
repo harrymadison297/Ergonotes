@@ -21,6 +21,8 @@ await ctx.addInitScript(() => { try { localStorage.setItem('ergo.rail', '0'); } 
 // a shared screen: a "slide" that changes every 2.5 seconds, with a sound
 await ctx.addInitScript(() => {
   window.__display = { calls: 0, audio: true, cancel: false, ended: null };
+  const enumerate = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
+  navigator.mediaDevices.enumerateDevices = async () => (window.__noMic ? [] : enumerate());
   navigator.mediaDevices.getDisplayMedia = async () => {
     window.__display.calls++;
     if (window.__display.cancel) throw new DOMException('cancelled', 'NotAllowedError');
@@ -90,7 +92,7 @@ const openInsert = async () => { await page.getByRole('button', { name: /^Insert
 const toEnd = async () => { await page.locator('.prose > p:last-child').click(); await page.waitForTimeout(120); await page.keyboard.press('Control+End'); };
 const stopAndWait = async n => {
   await page.getByRole('region', { name: 'Recording' }).getByRole('button', { name: /Stop/ }).click();
-  await until(async () => (await page.locator('.rec-bar').count()) === 0, 30000);
+  await until(async () => (await page.locator('.rec-panel, .rec-mini').count()) === 0, 30000);
   await until(async () => (await rpc('listRecords')).length >= n, 10000);
 };
 const lastRecord = async () => (await rpc('listRecords'))[0];
@@ -104,11 +106,11 @@ await page.keyboard.press('Escape');
 
 await toEnd();
 await page.getByRole('button', { name: 'Recording', exact: true }).click();
-await page.getByRole('dialog', { name: 'Recording' }).waitFor();
+await page.getByRole('dialog', { name: 'Record audio' }).waitFor();
 check('a recording asks for nothing about the screen', (await page.getByLabel(/pictures of the shared screen/).count()) === 0);
 check('“write it out” is off and says why without speech-to-text', await page.getByLabel(/Write it out as text/).isDisabled());
-await page.getByRole('button', { name: /^Start recording/ }).click();
-await page.locator('.rec-bar .rec-dot.on').waitFor({ timeout: 8000 });
+await page.getByRole('button', { name: /^Start$/ }).click();
+await page.locator('.rec-panel .rec-dot.on').waitFor({ timeout: 8000 });
 const linked = await until(async () => { const b = await bodyOf(note.id); return /\]\((?:\.\.\/)?attachments\/record_\d{8}_\d{6} "type_record"\)/.test(b) ? b : null; }, 8000);
 check('the link is in the note from the first second', !!linked, linked);
 await page.waitForTimeout(2200);
@@ -149,8 +151,8 @@ await page.keyboard.press('Enter');
 await page.getByRole('button', { name: 'Recording', exact: true }).click();
 const opt = page.getByLabel(/Write it out as text/);
 check('with speech-to-text the option is on', await opt.isEnabled() && await opt.isChecked());
-await page.getByRole('button', { name: /^Start recording/ }).click();
-await page.locator('.rec-bar .rec-dot.on').waitFor({ timeout: 8000 });
+await page.getByRole('button', { name: /^Start$/ }).click();
+await page.locator('.rec-panel .rec-dot.on').waitFor({ timeout: 8000 });
 await page.waitForTimeout(2200);
 await stopAndWait(2);
 const r2 = await until(async () => { const r = await lastRecord(); return r.transcript ? r : null; }, 20000);
@@ -189,31 +191,51 @@ transcriptText = 'We agreed to ship on Friday. Anna owns the release notes. The 
 await toEnd();
 await page.keyboard.press('Enter');
 await page.getByRole('button', { name: 'Meeting', exact: true }).click();
-await page.getByRole('dialog', { name: 'Meeting' }).waitFor();
+await page.getByRole('dialog', { name: 'Record a meeting' }).waitFor();
 check('a meeting takes pictures of the shared screen by default', await page.getByLabel(/pictures of the shared screen/).isChecked());
-await page.getByLabel('Seconds between pictures').selectOption('1');
+await page.screenshot({ path: `${shots}/record-setup.png` });
+await page.getByRole('button', { name: '1 s', exact: true }).click();
 await page.evaluate(() => { window.__display.cancel = true; });
-await page.getByRole('button', { name: /^Start the meeting record/ }).click();
+await page.getByRole('button', { name: /^Start$/ }).click();
 await page.getByText(/Nothing was shared, so nothing is recorded/).waitFor({ timeout: 5000 });
-check('without the share nothing is recorded', (await page.locator('.rec-bar').count()) === 0 && (await rpc('listRecords')).length === 2);
+check('without the share nothing is recorded', (await page.locator('.rec-panel').count()) === 0 && (await rpc('listRecords')).length === 2);
 await page.evaluate(() => { window.__display.cancel = false; window.__display.audio = false; });
-await page.getByRole('button', { name: /^Start the meeting record/ }).click();
+await page.getByRole('button', { name: /^Start$/ }).click();
 await page.getByText(/shared but not its sound/).waitFor({ timeout: 5000 });
-check('a share without sound is refused too', (await page.locator('.rec-bar').count()) === 0);
+check('a share without sound is refused too', (await page.locator('.rec-panel').count()) === 0);
 await page.evaluate(() => { window.__display.audio = true; });
-await page.getByRole('button', { name: /^Start the meeting record/ }).click();
-await page.locator('.rec-bar .rec-dot.on').waitFor({ timeout: 10000 });
+await page.getByRole('button', { name: /^Start$/ }).click();
+await page.locator('.rec-panel .rec-dot.on').waitFor({ timeout: 10000 });
 await page.waitForTimeout(1200);
+check('the panel takes the place of the note list while recording', (await page.locator('.rec-pane').count()) === 1 && (await page.locator('.rec-panel .rec-clock').count()) === 1);
 await page.getByRole('button', { name: 'Capture' }).click(); // the person takes one
-await page.waitForTimeout(6500);
+await page.waitForTimeout(1500);
+check('the panel shows the pictures as they are kept', (await page.locator('.rec-thumbs img').count()) >= 1);
+await page.screenshot({ path: `${shots}/record-panel.png` });
+// another note is opened: the record goes on
+const other = await rpc('createNote', { title: 'Another note', body: 'Other' });
+await page.evaluate(id => { location.hash = '#/notes/' + id; }, other.id);
+await page.getByLabel('Title').waitFor();
+await page.waitForFunction(() => document.querySelector('.rec-clock') !== null);
+const t1 = await page.locator('.rec-clock').innerText();
+await page.waitForTimeout(2500);
+const t2 = await page.locator('.rec-clock').innerText();
+const secs = t => t.split(':').reduce((a, v) => a * 60 + Number(v), 0);
+check('opening another note does not stop it', secs(t2) > secs(t1) && (await page.locator('.rec-panel .rec-dot.on').count()) === 1, `${t1} -> ${t2}`);
+await page.getByRole('button', { name: 'Show notes' }).click();
+check('the note list can be brought back, with a thin bar to control the record', (await page.locator('.rec-mini').count()) === 1 && (await page.locator('.rec-pane').count()) === 0);
+await page.locator('.rec-mini').getByRole('button', { name: 'Recorder' }).click();
+check('and the panel again', (await page.locator('.rec-pane').count()) === 1);
+await page.waitForTimeout(6000); // long enough for the slide to change several times
 await stopAndWait(3);
 const m = await until(async () => { const r = await lastRecord(); return r.meta?.kind === 'meeting' && r.transcript ? r : null; }, 30000);
 check('the meeting keeps pictures: changes only, and the one the person took', !!m && m.frames.length >= 2 && m.frames.length <= 6 && Object.values(m.meta.frames).includes('user'), JSON.stringify(m?.meta?.frames));
 check('and a transcript, in one folder with the audio', !!m && m.transcript.startsWith('[0:00]') && m.audio.length === 1, JSON.stringify(m?.audio));
 check('the screen was asked for once per attempt', (await page.evaluate(() => window.__display.calls)) === 3, await page.evaluate(() => window.__display.calls));
-await page.locator('.record-card').nth(2).waitFor({ timeout: 10000 });
+await page.evaluate(id => { location.hash = '#/notes/' + id; }, note.id); // back to the note it was recorded in
+await page.locator('.record-card').nth(2).waitFor({ timeout: 15000 });
 const card = page.locator('.record-card').nth(2);
-check('the player marks the frames on the timeline', (await card.locator('.record-mark').count()) === m.frames.length);
+check('the player marks the frames on the timeline', !!(await until(async () => (await card.locator('.record-mark').count()) === m.frames.length, 10000)), `${await card.locator('.record-mark').count()} vs ${m.frames.length}`);
 await card.locator('.record-mark').first().scrollIntoViewIfNeeded();
 await card.locator('.record-mark').last().click();
 await page.waitForTimeout(500);
@@ -258,12 +280,33 @@ sttFails = true;
 await toEnd();
 await page.keyboard.press('Enter');
 await page.getByRole('button', { name: 'Recording', exact: true }).click();
-await page.getByRole('button', { name: /^Start recording/ }).click();
-await page.locator('.rec-bar .rec-dot.on').waitFor({ timeout: 8000 });
+await page.getByRole('button', { name: /^Start$/ }).click();
+await page.locator('.rec-panel .rec-dot.on').waitFor({ timeout: 8000 });
 await page.waitForTimeout(1500);
 await stopAndWait(4);
 check('when transcription fails the record is still saved, and the error is shown', (await rpc('listRecords')).length === 4 && (await page.getByText(/could not be written out: Model not found/).count()) >= 1);
 sttFails = false;
+
+// ---- no microphone: a recording says so once; a meeting goes on with the shared sound
+await page.evaluate(() => { window.__noMic = true; });
+await page.evaluate(id => { location.hash = '#/notes/' + id; }, note.id);
+await page.locator('.prose').waitFor();
+await toEnd();
+await page.keyboard.press('Enter');
+await page.getByRole('button', { name: 'Recording', exact: true }).click();
+await page.getByRole('button', { name: /^Start$/ }).click();
+await page.getByText('No microphone was found.').first().waitFor({ timeout: 8000 });
+check('a recording without a microphone says so, once, and does not start', (await page.getByText('No microphone was found.').count()) === 1 && (await page.locator('.rec-panel').count()) === 0);
+await page.keyboard.press('Escape');
+await page.getByRole('button', { name: 'Meeting', exact: true }).click();
+await page.getByRole('button', { name: /^Start$/ }).click();
+await page.locator('.rec-panel .rec-dot.on').waitFor({ timeout: 10000 });
+check('a meeting without a microphone goes on with the shared sound, and says so', (await page.getByText(/No microphone was found, so only the shared sound is recorded/).count()) === 1 && (await page.getByText('Recording the shared sound only').count()) === 1);
+await page.waitForTimeout(2500);
+await stopAndWait(5);
+const nm = await lastRecord();
+check('and the record has its audio', nm.audio.length === 1 && nm.meta.seconds >= 1, JSON.stringify(nm.meta));
+await page.evaluate(() => { window.__noMic = false; });
 
 // ---- a private note is never sent
 await rpc('setPrivate', note.id, true);

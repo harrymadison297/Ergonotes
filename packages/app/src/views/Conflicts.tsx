@@ -3,11 +3,12 @@ import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { Resizer } from '../components/Resizer';
 import { NoteEditor } from '../components/NoteEditor';
+import { PaneList } from '../components/RecorderPanel';
 
 export function ConflictsView({ noteId }: { noteId?: string }) {
   const app = useApp();
   const list = (
-    <div className="pane-list">
+    <PaneList>
       <Resizer pane="listW" edge="right" label="Resize list" />
       <div className="list-head"><h2>Conflicts</h2><div className="meta"><span>{app.conflicts.length} note{app.conflicts.length === 1 ? '' : 's'} changed on more than one device</span></div></div>
       <div className="list-scroll">
@@ -19,7 +20,7 @@ export function ConflictsView({ noteId }: { noteId?: string }) {
           </a>
         ))}
       </div>
-    </div>
+    </PaneList>
   );
   if (app.isMobile) return <div className="m-content">{list}{noteId && <div className="m-note"><NoteEditor key={noteId} id={noteId} onBack={() => app.go({ name: 'conflicts' })} /></div>}</div>;
   return (

@@ -1019,3 +1019,45 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .record-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .record-row-main { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
 .record-row-main strong { color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* the recording as a process of the app: the panel in the place of the note list, a thin bar elsewhere */
+.pane-list.rec-pane { padding: 0; }
+.rec-panel { display: flex; flex-direction: column; gap: 14px; padding: 16px; height: 100%; overflow-y: auto; position: relative; }
+.rec-panel-head { display: flex; align-items: center; gap: 8px; }
+.rec-panel-head h2 { margin: 0; font-size: var(--fs-l, 18px); color: var(--text-strong); }
+.grow { flex: 1 1 auto; }
+.rec-clock { font-size: 44px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; color: var(--text-strong); letter-spacing: -.01em; }
+.rec-state { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--text-2); font-size: var(--fs-s); }
+.rec-panel .rec-meter { width: 100%; height: 8px; }
+.rec-notice { margin: 0; padding: 8px 10px; border-radius: var(--radius); background: var(--bg-active); color: var(--text-2); font-size: var(--fs-s); }
+.rec-notice.small { padding: 2px 8px; }
+.rec-note { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 1px solid var(--border-card); border-radius: var(--radius-lg); background: var(--bg-soft); color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.rec-note span { color: var(--text-3); font-size: var(--fs-xs); flex: none; }
+.rec-note strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-strong); }
+.rec-frames-head { display: flex; justify-content: space-between; font-size: var(--fs-s); font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+.rec-thumbs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.rec-thumbs figure { margin: 0; border: 2px solid transparent; border-radius: var(--radius); overflow: hidden; background: var(--bg-soft); }
+.rec-thumbs figure.user { border-color: var(--green-mark); }
+.rec-thumbs img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+.rec-thumbs figcaption { padding: 2px 6px; font-size: var(--fs-xs); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.rec-controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.rec-panel .rec-controls .btn.primary { flex: 1 1 100px; justify-content: center; }
+.rec-controls.compact { margin: 0; padding: 0; flex-wrap: nowrap; }
+.rec-mini { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-soft); flex-wrap: wrap; }
+.rec-mini .rec-meter { width: 56px; height: 6px; flex: none; }
+.rec-mini.floating { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 60; max-width: calc(100vw - 24px); border: 1px solid var(--border-card); border-radius: var(--radius-dialog); background: var(--bg); box-shadow: var(--shadow-pop, 0 8px 28px rgba(0,0,0,.2)); }
+@media (max-width: 767px) { .rec-mini.floating { bottom: calc(72px + env(safe-area-inset-bottom)); } }
+
+/* the questions before a record */
+.rec-setup { display: flex; flex-direction: column; gap: 14px; }
+.rec-lead { margin: 0; color: var(--text-2); }
+.rec-list { border: 1px solid var(--border-card); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-soft); }
+.rec-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--border); cursor: pointer; text-align: left; }
+.rec-row:first-child { border-top: 0; }
+.rec-row.static { cursor: default; }
+.rec-row.sub { padding-top: 6px; padding-bottom: 12px; padding-left: 56px; align-items: center; justify-content: space-between; cursor: default; border-top: 0; }
+.rec-row.off { opacity: .6; cursor: default; }
+.rec-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.rec-row-text strong { color: var(--text-strong); }
+.rec-ico { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--bg-active); color: var(--text-2); flex: none; }
+.rec-row input[type=checkbox] { width: 18px; height: 18px; margin-top: 6px; flex: none; }
