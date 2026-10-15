@@ -60,8 +60,8 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const titleRef = useRef('');
   titleRef.current = title;
   const ghostRef = useRef({ on: false, delay: 400, transport: app.aiTransport });
-  ghostRef.current = { on: prefs.ghost && app.ai.hasKey && !app.byId.get(id)?.private, delay: prefs.ghostDelay, transport: app.aiTransport };
-  const [ghostState, setGhostState] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  ghostRef.current = { on: app.ai.suggest && app.ai.hasKey && !app.byId.get(id)?.private, delay: app.ai.suggestDelay, transport: app.aiTransport };
+  const [ghostState, setGhostState] = useState<{ busy: boolean; error: string | null; empty: boolean }>({ busy: false, error: null, empty: false });
   const outlineRef = useRef<{ headings: { text: string; level: number }[]; active: number; goto(i: number): void } | null>(null);
   const saveBody = useMemo(() => debounce((nid: string, body: string, seq: number) => {
     setSaveState('saving');
@@ -95,14 +95,15 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         enabled: () => ghostRef.current.on,
         delay: () => ghostRef.current.delay,
         suggest: async (ctx, signal) => {
-          setGhostState({ busy: true, error: null });
+          setGhostState({ busy: true, error: null, empty: false });
           try {
             const raw = await completeText(ghostRef.current.transport, suggestionRequest({ title: titleRef.current, before: ctx.before, after: ctx.after }), signal);
-            setGhostState({ busy: false, error: null });
-            return cleanSuggestion(raw, ctx.before);
+            const text = cleanSuggestion(raw, ctx.before);
+            if (!signal.aborted) setGhostState({ busy: false, error: null, empty: text === '' });
+            return text;
           } catch (e) {
             // an abort is the person typing on: not an error
-            setGhostState({ busy: false, error: signal.aborted ? null : e instanceof Error ? e.message : String(e) });
+            setGhostState({ busy: false, error: signal.aborted ? null : e instanceof Error ? e.message : String(e), empty: false });
             throw e;
           }
         },
@@ -481,8 +482,16 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
             onBlur={() => void addTag(tagDraft)} />
         )}
         <span className="grow" />
-        {ghostState.busy && <span className="ghost-status" role="status"><Sparkles size={12} /> Thinking of a suggestion…</span>}
-        {!ghostState.busy && ghostState.error && <span className="ghost-status err" role="status" title={ghostState.error}>Suggestion unavailable: {ghostState.error.length > 60 ? ghostState.error.slice(0, 59) + '…' : ghostState.error}</span>}
+        {app.ai.suggest && ghostState.busy && <span className="ghost-status" role="status"><Sparkles size={12} /> Thinking of a suggestion…</span>}
+        {app.ai.suggest && !ghostState.busy && ghostState.error && <span className="ghost-status err" role="status" title={ghostState.error}>Suggestion unavailable: {ghostState.error.length > 60 ? ghostState.error.slice(0, 59) + '…' : ghostState.error}</span>}
+        {app.ai.suggest && !ghostState.busy && !ghostState.error && ghostState.empty && <span className="ghost-status" role="status">No suggestion for this text</span>}
+        {app.ai.hasKey && !locked && (
+          <button type="button" className={classNames('ghost-toggle', app.ai.suggest && 'on')} aria-pressed={app.ai.suggest}
+            title={app.ai.suggest ? 'Turn off next-words suggestions' : 'Suggest the next words while you type (sends the text around the cursor to your AI provider)'}
+            onClick={async () => { await app.run(api.setAiSettings({ suggest: !app.ai.suggest })); await app.refresh(); }}>
+            <Sparkles size={13} /> Suggestions {app.ai.suggest ? 'on' : 'off'}
+          </button>
+        )}
         <span>{words} word{words === 1 ? '' : 's'}</span>
         <span role="status" aria-live="polite">{saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Could not save' : 'All changes saved'}</span>
       </div>

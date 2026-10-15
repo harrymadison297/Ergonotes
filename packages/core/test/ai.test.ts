@@ -70,6 +70,15 @@ describe('AI settings in the vault', () => {
     expect(['from-laptop', 'from-phone']).toContain(a);
   });
 
+  it('keeps the suggestion switch and its pause in the vault, within bounds', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    expect(await v.getAiSettings()).toMatchObject({ suggest: false, suggestDelay: 400 });
+    expect(await v.setAiSettings({ suggest: true, suggestDelay: 50 })).toMatchObject({ suggest: true, suggestDelay: 150 });
+    expect((await v.setAiSettings({ suggestDelay: 99_999 })).suggestDelay).toBe(3000);
+    expect((await v.getAiSettings()).suggest).toBe(true);
+  });
+
   it('switching provider swaps default models only, and null forgets a key', () => {
     let c = applyAiPatch(defaultAiConfig(), { provider: 'anthropic' });
     expect(c.chatModel).toBe('claude-sonnet-5-5');

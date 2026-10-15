@@ -455,11 +455,10 @@ function AiSettings() {
       {check('ai-auto', ai.autoApply, v => void save({ autoApply: v }), 'Apply the assistant’s edits without asking',
         'Off: every change is shown as a suggestion you accept or reject. Applied changes can be undone from the chat or the note’s version history.')}
       <hr style={{ margin: '4px 0 16px', border: 0, borderTop: '1px solid var(--border)' }} />
-      <p className="muted" style={{ marginTop: 0 }}>On this device</p>
-      {check('ai-ghost', prefs.ghost, v => setPrefs({ ghost: v }), 'Suggest the next words while I type',
-        'A grey suggestion appears after you pause. Tab (or a tap) accepts it, Esc dismisses it. Each suggestion is a request to the provider.')}
+      {check('ai-ghost', ai.suggest, v => void save({ suggest: v }), 'Suggest the next words while I type',
+        'A grey suggestion appears after you pause. Tab (or a tap) accepts it, Esc dismisses it. Each suggestion is a request to the provider. Also available from the switch at the bottom of a note.')}
       <div className="field"><label htmlFor="ai-delay">Wait after I stop typing</label>
-        <select id="ai-delay" className="input" style={{ maxWidth: 200 }} value={prefs.ghostDelay} onChange={e => setPrefs({ ghostDelay: Number(e.target.value) })}>
+        <select id="ai-delay" className="input" style={{ maxWidth: 200 }} value={ai.suggestDelay} onChange={e => void save({ suggestDelay: Number(e.target.value) })}>
           {[200, 400, 600, 1000, 1500].map(ms => <option key={ms} value={ms}>{ms} ms</option>)}
         </select></div>
     </div>

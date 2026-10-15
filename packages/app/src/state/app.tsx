@@ -75,7 +75,7 @@ function useMedia(q: string): boolean {
 }
 
 const EMPTY_SETTINGS: Settings = { captureFolder: null, dailyFolder: null, theme: 'system' };
-const EMPTY_AI: AiSettings = { provider: 'openrouter', hasKey: false, keyHint: null, chatModel: '', suggestModel: '', wholeVault: false, autoApply: false };
+const EMPTY_AI: AiSettings = { provider: 'openrouter', hasKey: false, keyHint: null, chatModel: '', suggestModel: '', wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400 };
 
 export function AppProvider({ backend, status: initial, children }: { backend: Backend; status: VaultStatus; children: ReactNode }) {
   const api = backend.api;

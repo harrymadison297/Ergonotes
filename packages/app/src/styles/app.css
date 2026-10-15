@@ -37,7 +37,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 /* round icon buttons: the main way to issue a command */
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 34px; height: 34px; border-radius: 50%; color: var(--text-2); transition: background .12s, color .12s; position: relative; }
 .icon-btn:hover { background: var(--bg-hover); color: var(--text-strong); }
-.icon-btn.active { background: var(--bg-active); color: var(--text-strong); }
+.icon-btn.active { background: transparent; color: var(--green-ink); }
+.icon-btn.active:hover { background: var(--bg-hover); color: var(--green-ink); }
 .icon-btn.soft { background: var(--bg-active); color: var(--text-strong); }
 .icon-btn.soft:hover { background: var(--border-strong); }
 .icon-btn.primary { background: var(--green-fill); color: var(--on-green); }
@@ -325,7 +326,7 @@ a.tag-pill:hover { background: color-mix(in srgb, var(--c, var(--slate-500)) 26%
 .toolbar::-webkit-scrollbar { display: none; }
 .tb-btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 34px; height: 34px; padding: 0 7px; border-radius: 17px; color: var(--text-2); white-space: nowrap; flex: none; }
 .tb-btn:hover { background: var(--bg-hover); color: var(--text-strong); }
-.tb-btn.on { background: var(--bg-active); color: var(--text-strong); }
+.tb-btn.on { background: transparent; color: var(--green-ink); }
 .tb-btn.accent { color: var(--green-ink); font-weight: 600; }
 .tb-btn:disabled { opacity: .4; cursor: default; }
 .tb-sep { width: 1px; height: 22px; background: var(--border); margin: 0 6px; flex: none; }
@@ -558,10 +559,10 @@ html.kbd .resizer:focus-visible { outline: none; }
 .aside-tabs { display: flex; gap: 2px; }
 .aside-tab { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 17px; color: var(--text-2); font-size: var(--fs-s); font-weight: 600; }
 .aside-tab:hover { background: var(--bg-hover); color: var(--text-strong); }
-.aside-tab.on { background: var(--bg-active); color: var(--text-strong); }
+.aside-tab.on { background: transparent; color: var(--green-ink); box-shadow: inset 0 -2px 0 var(--green); border-radius: 0; }
 .aside-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .ai-actions { position: static; display: flex; gap: 2px; }
-.ai-history { position: absolute; top: 100%; right: 8px; left: 8px; z-index: 5; max-height: 60%; overflow: auto; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 6px; }
+.ai-history { position: absolute; top: 100%; right: 8px; left: 8px; z-index: 5; max-height: min(70vh, 520px); min-height: 160px; overflow: auto; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 6px; }
 .ai-history h4 { margin: 6px 8px; font-size: var(--fs-xs); color: var(--text-2); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .ai-history ul { list-style: none; margin: 0; padding: 0; }
 .ai-history li { display: flex; align-items: center; gap: 2px; border-radius: var(--radius); }
@@ -635,3 +636,8 @@ html.kbd .resizer:focus-visible { outline: none; }
 .ai-disclaimer { margin: 0; text-align: center; color: var(--text-3); font-size: var(--fs-2xs); }
 .ghost-status { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); margin-right: 12px; }
 .ghost-status.err { color: var(--danger); }
+
+.ai-tool-link { margin-left: 6px; color: var(--green-ink); font-weight: 600; }
+.ghost-toggle { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; color: var(--text-2); font-size: var(--fs-xs); border-radius: 12px; padding: 2px 8px; }
+.ghost-toggle:hover { background: var(--bg-hover); }
+.ghost-toggle.on { color: var(--green-ink); }

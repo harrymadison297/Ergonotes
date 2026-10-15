@@ -107,7 +107,7 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
     },
     {
       write: true,
-      spec: { name: 'create_note', description: 'Create a note (in the Inbox unless a folder id is given). Use it to write a new document for the user.', parameters: obj({ title: str, body: { ...str, description: 'Markdown' }, folder: str, tags: { type: 'array', items: str } }, ['title']) },
+      spec: { name: 'create_note', description: 'Create a NEW note (in the Inbox unless a folder id is given). Use it only when the user asks for a new or separate note, or when no note is open. To write into an existing note use append_to_note, insert_after_heading or replace_text.', parameters: obj({ title: str, body: { ...str, description: 'Markdown' }, folder: str, tags: { type: 'array', items: str } }, ['title']) },
       run: async a => {
         const n = await vault.createNote({ title: String(a.title), body: String(a.body ?? ''), parent: whole && a.folder ? String(a.folder) : undefined, tags: Array.isArray(a.tags) ? a.tags.map(String) : undefined });
         return json({ id: n.id, title: n.title });

@@ -933,6 +933,8 @@ export class Vault implements VaultApi {
         suggestModel: typeof j.suggestModel === 'string' && j.suggestModel ? j.suggestModel : base.suggestModel,
         wholeVault: j.wholeVault === true,
         autoApply: j.autoApply === true,
+        suggest: j.suggest === true,
+        suggestDelay: typeof j.suggestDelay === 'number' && j.suggestDelay >= 150 && j.suggestDelay <= 3000 ? Math.round(j.suggestDelay) : base.suggestDelay,
       };
     } catch { return base; } // two devices saved at once and the text is unreadable: enter the key again
   }

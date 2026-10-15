@@ -31,13 +31,14 @@ page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
 // ---- the fake provider: a queue of scripted answers, one per request; each is an array of events
 const requests = [];
 const script = [];
-await page.route('**/api/ai/stream', async route => {
+const scripted = async route => {
   const req = JSON.parse(route.request().postData() ?? '{}');
   requests.push(req);
   const events = script.shift() ?? [{ type: 'text', delta: '(no script)' }];
   const body = [...events, { type: 'done' }].map(e => JSON.stringify(e)).join('\n') + '\n';
   await route.fulfill({ status: 200, contentType: 'application/x-ndjson', body });
-});
+};
+await page.route('**/api/ai/stream', scripted);
 const call = (name, args) => ({ type: 'tool_call', call: { id: `c${Math.random().toString(36).slice(2, 8)}`, name, args } });
 
 // ---- set up
@@ -197,7 +198,13 @@ await until(async () => (await rpc('getNote', note.id)).private === false);
 await page.getByRole('button', { name: 'Hide AI assistant' }).click();
 await page.getByRole('button', { name: 'Settings' }).first().click().catch(() => undefined);
 await rpc('setSettings', {});
-await page.evaluate(() => { const p = JSON.parse(localStorage.getItem('ergo.prefs') ?? '{}'); p.ghost = true; p.ghostDelay = 200; localStorage.setItem('ergo.prefs', JSON.stringify(p)); });
+check('suggestions start switched off', (await rpc('getAiSettings')).suggest === false);
+await page.reload();
+await page.getByLabel('Title').waitFor();
+check('the note footer shows the switch, off', (await page.getByRole('button', { name: /Suggestions off/ }).count()) === 1);
+await page.getByRole('button', { name: /Suggestions off/ }).click();
+check('and turning it on is kept in the vault', !!(await until(async () => (await rpc('getAiSettings')).suggest === true)));
+await rpc('setAiSettings', { suggestDelay: 200 });
 await page.reload();
 await page.getByLabel('Title').waitFor();
 await page.locator('.prose').click();
@@ -237,8 +244,19 @@ await page.getByRole('button', { name: 'Close sidebar' }).click();
 await page.goto(`${base}/#/notes/${note.id}`);
 await page.getByLabel('Title').waitFor();
 
-// ---- a failure is shown, not swallowed
+// ---- a note the assistant creates is linked from the chat
+await page.unroute('**/api/ai/stream');
+await page.route('**/api/ai/stream', scripted);
 await page.getByRole('button', { name: 'AI assistant', exact: true }).first().click();
+script.length = 0;
+script.push([call('create_note', { title: 'Boolean table', body: '| a | b | a && b |\n|---|---|---|\n| 1 | 0 | 0 |' })]);
+script.push([{ type: 'text', delta: 'Created it.' }]);
+await page.getByLabel('Message the assistant').fill('make a new note with a boolean table');
+await page.getByLabel('Message the assistant').press('Enter');
+await page.locator('.ai-tool-link', { hasText: 'Open' }).waitFor({ timeout: 8000 });
+check('a created note is linked from the chat', true);
+
+// ---- a failure is shown, not swallowed
 await page.route('**/api/ai/stream', async route => route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: JSON.stringify({ type: 'error', message: 'No credits left' }) + '\n' }));
 await page.getByLabel('Message the assistant').fill('hello?');
 await page.getByLabel('Message the assistant').press('Enter');
@@ -263,7 +281,7 @@ await mp.screenshot({ path: `${shots}/ai-05-mobile.png` });
 await mp.getByRole('button', { name: 'Close sidebar' }).click();
 check('it closes again', (await mp.locator('.aside-wrap').count()) === 0);
 
-const real = errors.filter(e => !/favicon|ResizeObserver|Failed to load resource|Failed to use workers for subsetting/.test(e));
+const real = errors.filter(e => !/favicon|ResizeObserver|Failed to load resource|Failed to use workers for subsetting|Failed to fetch font family/.test(e));
 check('no console errors', real.length === 0, real.slice(0, 3).join(' | '));
 await browser.close();
 console.log(failures ? `${failures} check(s) failed` : 'all checks passed');

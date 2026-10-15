@@ -84,6 +84,9 @@ export function chatSystemPrompt(p: PromptInput): string {
     'You can read and change notes only through your tools. Never claim you changed a note unless a tool confirmed it.',
     'Edits to a note are shown to the user as a proposal they accept or reject; say what you changed in one or two sentences.',
     'Prefer replace_text, insert_after_heading and append_to_note over update_note, which replaces the whole body. Read a note before you edit it.',
+    p.note
+      ? 'When the user asks you to write, add, draw or change something and a note is open, do it IN THE OPEN NOTE with the edit tools (append_to_note, insert_after_heading, replace_text). Use create_note only when the user explicitly asks for a new or separate note.'
+      : 'When no note is open, write requested documents with create_note.',
     'Tasks are Markdown checklists: `- [ ] text @due(2026-10-15T17:00) @remind(2026-10-15T16:30) @flag`. Link notes with `[[<note-id>|Title]]`.',
     'To draw a diagram, call insert_diagram with Mermaid source (flowchart, sequenceDiagram, mindmap, classDiagram). Do not hand-write drawing data.',
     p.wholeVault

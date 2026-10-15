@@ -13,10 +13,6 @@ export interface Prefs {
   listHidden: boolean;
   /** hide the sidebar and the list: the note on its own */
   focus: boolean;
-  /** grey next-words suggestion while typing (off until asked for: each one is a request to the provider) */
-  ghost: boolean;
-  /** pause in typing before a suggestion is requested, ms */
-  ghostDelay: number;
   /** pane widths in CSS px; null = built-in default */
   sidebarW: number | null;
   listW: number | null;
@@ -31,7 +27,7 @@ export const WIDTHS: Record<Width, { min: number; max: number; cssVar: string }>
 };
 
 const KEY = 'ergo.prefs';
-const DEFAULTS: Prefs = { aside: true, asideTab: 'toc', aiMode: 'edit', listView: 'cards', listHidden: false, focus: false, ghost: false, ghostDelay: 400, sidebarW: null, listW: null, asideW: null };
+const DEFAULTS: Prefs = { aside: true, asideTab: 'toc', aiMode: 'edit', listView: 'cards', listHidden: false, focus: false, sidebarW: null, listW: null, asideW: null };
 const clampWidth = (k: Width, v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) ? Math.min(WIDTHS[k].max, Math.max(WIDTHS[k].min, Math.round(v))) : null;
 
@@ -45,8 +41,6 @@ function load(): Prefs {
       listView: raw.listView === 'list' ? 'list' : 'cards',
       listHidden: raw.listHidden === true,
       focus: raw.focus === true,
-      ghost: raw.ghost === true,
-      ghostDelay: typeof raw.ghostDelay === 'number' && raw.ghostDelay >= 150 && raw.ghostDelay <= 3000 ? Math.round(raw.ghostDelay) : 400,
       sidebarW: clampWidth('sidebarW', raw.sidebarW),
       listW: clampWidth('listW', raw.listW),
       asideW: clampWidth('asideW', raw.asideW),

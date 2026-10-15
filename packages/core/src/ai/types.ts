@@ -12,6 +12,10 @@ export interface AiConfig {
   wholeVault: boolean;
   /** apply the agent's edits at once instead of asking first */
   autoApply: boolean;
+  /** the grey next-words suggestion while typing (each one is a request to the provider) */
+  suggest: boolean;
+  /** pause in typing before one is requested, ms */
+  suggestDelay: number;
 }
 
 /** What a client may see: the same without the key. */
@@ -25,6 +29,8 @@ export interface AiSettings {
   suggestModel: string;
   wholeVault: boolean;
   autoApply: boolean;
+  suggest: boolean;
+  suggestDelay: number;
 }
 
 export interface AiSettingsPatch {
@@ -35,6 +41,8 @@ export interface AiSettingsPatch {
   suggestModel?: string;
   wholeVault?: boolean;
   autoApply?: boolean;
+  suggest?: boolean;
+  suggestDelay?: number;
 }
 
 export const DEFAULT_MODELS: Record<AiProvider, { chat: string; suggest: string }> = {
@@ -43,7 +51,7 @@ export const DEFAULT_MODELS: Record<AiProvider, { chat: string; suggest: string 
 };
 
 export function defaultAiConfig(): AiConfig {
-  return { provider: 'openrouter', keys: {}, chatModel: DEFAULT_MODELS.openrouter.chat, suggestModel: DEFAULT_MODELS.openrouter.suggest, wholeVault: false, autoApply: false };
+  return { provider: 'openrouter', keys: {}, chatModel: DEFAULT_MODELS.openrouter.chat, suggestModel: DEFAULT_MODELS.openrouter.suggest, wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400 };
 }
 
 export interface AiToolCall { id: string; name: string; args: Record<string, unknown> }
@@ -86,6 +94,7 @@ export function toSettings(c: AiConfig): AiSettings {
   return {
     provider: c.provider, hasKey: !!key, keyHint: key ? key.slice(-4) : null,
     chatModel: c.chatModel, suggestModel: c.suggestModel, wholeVault: c.wholeVault, autoApply: c.autoApply,
+    suggest: c.suggest, suggestDelay: c.suggestDelay,
   };
 }
 
@@ -106,5 +115,7 @@ export function applyAiPatch(c: AiConfig, p: AiSettingsPatch): AiConfig {
   if (typeof p.suggestModel === 'string' && p.suggestModel.trim()) next.suggestModel = p.suggestModel.trim();
   if (typeof p.wholeVault === 'boolean') next.wholeVault = p.wholeVault;
   if (typeof p.autoApply === 'boolean') next.autoApply = p.autoApply;
+  if (typeof p.suggest === 'boolean') next.suggest = p.suggest;
+  if (typeof p.suggestDelay === 'number' && Number.isFinite(p.suggestDelay)) next.suggestDelay = Math.min(3000, Math.max(150, Math.round(p.suggestDelay)));
   return next;
 }

@@ -343,6 +343,8 @@ export interface GhostOptions {
 }
 type Ghost = { text: string; pos: number } | null;
 const ghostKey = new PluginKey<Ghost>('ergoGhost');
+/** schedules a suggestion for the editor's current state (also used when an IME composition ends) */
+const ghostPoke = new WeakMap<object, () => void>();
 
 export const GhostText = Extension.create<GhostOptions>({
   name: 'ghostText',
@@ -383,6 +385,8 @@ export const GhostText = Extension.create<GhostOptions>({
           return false;
         },
         handleDOMEvents: {
+          // typing with an input method: the text is only settled when the composition ends
+          compositionend(view) { setTimeout(() => ghostPoke.get(view)?.(), 0); return false; },
           // touch screens have no Tab key: tapping the grey text accepts it
           mousedown(view, e) {
             const g = ghostKey.getState(view.state);
@@ -397,9 +401,7 @@ export const GhostText = Extension.create<GhostOptions>({
         let timer: ReturnType<typeof setTimeout> | null = null;
         let ctl: AbortController | null = null;
         const cancel = () => { if (timer) clearTimeout(timer); timer = null; ctl?.abort(); ctl = null; };
-        return {
-          update(view, prev) {
-            if (view.state.doc === prev.doc && view.state.selection.eq(prev.selection)) return;
+        const run = (view: import('@tiptap/pm/view').EditorView) => {
             cancel();
             if (!opts.enabled() || !view.editable || !view.hasFocus() || view.composing) return;
             const { selection, doc } = view.state;
@@ -419,8 +421,14 @@ export const GhostText = Extension.create<GhostOptions>({
                 // still the same place? (the document may have moved on while the request was out)
                 if (view.state.selection.from !== pos || !view.state.selection.empty) return;
                 view.dispatch(view.state.tr.setMeta(ghostKey, { text, pos }));
-              }, () => { /* a failed suggestion is silent: the chat panel is where errors are shown */ });
+              }, () => { /* the editor's footer shows why a suggestion failed */ });
             }, opts.delay());
+        };
+        return {
+          update(view, prev) {
+            ghostPoke.set(view, () => run(view));
+            if (view.state.doc === prev.doc && view.state.selection.eq(prev.selection)) return;
+            run(view);
           },
           destroy: cancel,
         };

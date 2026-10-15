@@ -11,6 +11,7 @@ import { editorBridge, useOutline } from '../state/editorBridge';
 import { renderMarkdown } from '../state/markdown';
 import { setPrefs, usePrefs } from '../state/prefs';
 import { classNames, relTime } from '../state/util';
+import { href } from '../state/router';
 import { drawingBlock, mermaidToScene } from '../editor/diagram';
 import { fileToText } from './FilePreview';
 import { IconBtn, useMenu } from './ui';
@@ -308,7 +309,9 @@ export function AiPanel() {
             }
           } else if (e.type === 'tool') {
             streaming = null;
-            chat.set(s => ({ ...s, notice: null, items: [...s.items, { id: chat.nextId(), kind: 'tool', name: e.call.name, label: toolLabel(e.call.name, e.call.args), error: e.error }] }));
+            let created: string | undefined;
+            if (e.call.name === 'create_note' && !e.error) { try { created = (JSON.parse(e.result) as { id?: string }).id; } catch { /* not JSON */ } }
+            chat.set(s => ({ ...s, notice: null, items: [...s.items, { id: chat.nextId(), kind: 'tool', name: e.call.name, label: toolLabel(e.call.name, e.call.args), error: e.error, noteId: created }] }));
           } else if (e.type === 'notice') {
             chat.set(s => ({ ...s, notice: e.text }));
           } else {
@@ -451,7 +454,14 @@ export function AiPanel() {
             );
           }
           if (it.kind === 'assistant') return <Markdown key={it.id} text={it.text} />;
-          if (it.kind === 'tool') return <div key={it.id} className={classNames('ai-tool', it.error && 'err')}><Pencil size={12} /> {it.label}{it.error ? ' (failed)' : ''}</div>;
+          if (it.kind === 'tool') {
+            return (
+              <div key={it.id} className={classNames('ai-tool', it.error && 'err')}>
+                <Pencil size={12} /> {it.label}{it.error ? ' (failed)' : ''}
+                {it.noteId && <a className="ai-tool-link" href={href({ name: 'notes', note: it.noteId })}>Open</a>}
+              </div>
+            );
+          }
           if (it.kind === 'error') return <div key={it.id} className="ai-error" role="alert">{it.text}</div>;
           const p = st.proposals[it.proposalId];
           if (!p) return null;
