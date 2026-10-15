@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Check, Copy, FileDown, FileUp, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
-import { applyHunks, completeText, DEFAULT_MODELS, THINKING_LEVELS, ERGONOTES_SKILL_MD, joinDoc, lineDiff, splitDoc, type AiProvider, type ModelInfo, type ThinkingLevel, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
+import { Bot, Check, Copy, FileDown, FileUp, Plus, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { applyHunks, completeText, PROVIDER_LABEL, THINKING_LEVELS, ERGONOTES_SKILL_MD, joinDoc, lineDiff, splitDoc, type AiConnectionInfo, type AiProvider, type ThinkingLevel, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, download, relTime } from '../state/util';
 import { Dialog, IconBtn } from './ui';
@@ -381,22 +381,24 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
   );
 }
 
-// ---------------------------------------------------------------- AI provider, chat scope, suggestions
+// ---------------------------------------------------------------- AI connections, models, chat scope, suggestions
 const THINK_NAME: Record<ThinkingLevel, string> = { auto: 'Auto (the model’s default)', off: 'Off', low: 'Low', medium: 'Medium', high: 'High' };
-const PROVIDER_NAME: Record<AiProvider, string> = { openrouter: 'OpenRouter', anthropic: 'Anthropic', custom: 'Custom server (Ollama, LM Studio…)' };
+const TYPE_HELP: Record<AiProvider, string> = {
+  openrouter: 'One key, hundreds of models, some free.',
+  anthropic: 'Claude models with your own Anthropic key.',
+  custom: 'Ollama, LM Studio, vLLM or any server that speaks the OpenAI chat API.',
+};
+
+interface ConnForm { id: string; isNew: boolean; type: AiProvider; name: string; key: string; url: string }
 
 function AiSettings() {
   const app = useApp();
-  const prefs = usePrefs();
   const ai = app.ai;
-  const [key, setKey] = useState('');
+  const [form, setForm] = useState<ConnForm | null>(null);
+  const [formErr, setFormErr] = useState<string | null>(null);
+  const [checks, setChecks] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [url, setUrl] = useState(ai.customUrl);
-  const [models, setModels] = useState<ModelInfo[] | null>(null);
-  const [modelsErr, setModelsErr] = useState<string | null>(null);
-  const [modelsLoading, setModelsLoading] = useState(false);
-  useEffect(() => { setUrl(ai.customUrl); }, [ai.customUrl]);
 
   const save = async (patch: Parameters<typeof app.api.setAiSettings>[0]) => {
     const r = await app.run(app.api.setAiSettings(patch));
@@ -411,19 +413,25 @@ function AiSettings() {
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) }); }
     setBusy(false);
   };
-  /** the list of models is fetched when it can be (a key or an address is there) and again when the provider changes */
-  const listKey = `${ai.provider}|${ai.customUrl}|${ai.keyHint ?? ''}`;
-  const loadModels = async () => {
-    setModelsLoading(true); setModelsErr(null);
-    try { setModels(await app.aiModels()); } catch (e) { setModels(null); setModelsErr(e instanceof Error ? e.message : String(e)); }
-    setModelsLoading(false);
+  const checkConn = async (id: string) => {
+    setChecks(c => ({ ...c, [id]: 'Checking…' }));
+    try {
+      const list = await app.aiModels(id);
+      setChecks(c => ({ ...c, [id]: `Works: ${list.length} model${list.length === 1 ? '' : 's'} available.` }));
+    } catch (e) { setChecks(c => ({ ...c, [id]: e instanceof Error ? e.message : String(e) })); }
   };
-  useEffect(() => {
-    setModels(null); setModelsErr(null);
-    // OpenRouter's list is public; the others need a key or an address first
-    if (ai.provider === 'openrouter' || ai.hasKey) void loadModels();
-  }, [listKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const custom = ai.provider === 'custom';
+  const startAdd = () => { setFormErr(null); setForm({ id: crypto.randomUUID(), isNew: true, type: 'openrouter', name: '', key: '', url: '' }); };
+  const startEdit = (c: AiConnectionInfo) => { setFormErr(null); setForm({ id: c.id, isNew: false, type: c.type, name: c.name, key: '', url: c.url }); };
+  const submit = async () => {
+    if (!form) return;
+    setFormErr(null);
+    try {
+      await app.api.setAiSettings({ connection: { id: form.id, ...(form.isNew ? { type: form.type } : {}), name: form.name || undefined, ...(form.key.trim() ? { key: form.key } : {}), url: form.type === 'custom' ? form.url : undefined } });
+      await app.refresh();
+      setForm(null);
+      app.toast(form.isNew ? 'Connection added' : 'Connection saved');
+    } catch (e) { setFormErr(e instanceof Error ? e.message : String(e)); }
+  };
   const check = (id: string, checked: boolean, on: (v: boolean) => void, label: string, hint?: string) => (
     <div className="field">
       <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontWeight: 600 }}>
@@ -432,51 +440,91 @@ function AiSettings() {
       {hint && <span className="hint">{hint}</span>}
     </div>
   );
+  const connName = (id: string) => ai.connections.find(c => c.id === id)?.name ?? '';
 
   return (
-    <div style={{ maxWidth: 560 }}>
+    <div style={{ maxWidth: 600 }}>
       <p className="muted" style={{ marginTop: 0 }}>
-        The assistant and the next-words suggestion send text from your notes to the AI provider you choose here. Nothing is sent until you add a key and use them. Notes marked private are never sent.
+        The assistant and the next-words suggestion send text from your notes to the AI provider you choose here. Nothing is sent until you add a connection and use them. Notes marked private are never sent.
       </p>
-      <div className="field"><label htmlFor="ai-provider">Provider</label>
-        <select id="ai-provider" className="input" value={ai.provider} onChange={e => void save({ provider: e.target.value as AiProvider })}>
-          {(Object.keys(PROVIDER_NAME) as AiProvider[]).map(p => <option key={p} value={p}>{PROVIDER_NAME[p]}</option>)}
-        </select></div>
-      {custom && (
-        <div className="field"><label htmlFor="ai-url">Server address</label>
+
+      <h3 className="ai-h">Connections</h3>
+      <p className="hint" style={{ marginTop: 0 }}>Add as many as you like: several keys, several kinds, servers of your own. Keys are stored encrypted in your vault, so your other devices can use them. {app.mode === 'remote' ? 'The server calls the provider; keys never reach this browser.' : 'This device calls the provider directly.'}</p>
+      <ul className="conn-list">
+        {ai.connections.length === 0 && <li className="conn-empty">No connections yet.</li>}
+        {ai.connections.map(c => (
+          <li key={c.id} className="conn">
+            <div className="conn-main">
+              <div className="conn-name">{c.name} <span className="conn-type">{PROVIDER_LABEL[c.type]}</span>{!c.ready && <span className="model-tag warn">needs {c.type === 'custom' ? 'an address' : 'a key'}</span>}</div>
+              <div className="conn-sub">{c.type === 'custom' ? c.url || 'No address yet' : c.keyHint ? `Key ending in ${c.keyHint}` : 'No key yet'}{c.type === 'custom' && c.keyHint ? ` · key ending in ${c.keyHint}` : ''}</div>
+              {checks[c.id] && <div className="conn-sub" role="status">{checks[c.id]}</div>}
+            </div>
+            <div className="conn-actions">
+              <button className="btn" disabled={!c.ready} onClick={() => void checkConn(c.id)}>Check</button>
+              <button className="btn" onClick={() => startEdit(c)}>Edit</button>
+              <IconBtn label={`Remove ${c.name}`} icon={<Trash2 size={16} />} onClick={async () => {
+                const used = ai.chatModel.connection === c.id || ai.suggestModel.connection === c.id;
+                if (!confirm(`Remove “${c.name}”?${used ? ' It is used by the chat or the suggestions; they will move to another connection.' : ''}`)) return;
+                if (await save({ removeConnection: c.id })) app.toast('Connection removed');
+              }} />
+            </div>
+          </li>
+        ))}
+      </ul>
+      {form ? (
+        <div className="conn-form" role="group" aria-label={form.isNew ? 'Add a connection' : 'Edit the connection'}>
+          {form.isNew && (
+            <div className="field"><label htmlFor="conn-type">Kind</label>
+              <select id="conn-type" className="input" value={form.type} onChange={e => setForm({ ...form, type: e.target.value as AiProvider })}>
+                {(Object.keys(PROVIDER_LABEL) as AiProvider[]).map(p => <option key={p} value={p}>{PROVIDER_LABEL[p]}</option>)}
+              </select>
+              <span className="hint">{TYPE_HELP[form.type]}</span></div>
+          )}
+          <div className="field"><label htmlFor="conn-name">Name</label>
+            <input id="conn-name" className="input" value={form.name} placeholder={PROVIDER_LABEL[form.type]} onChange={e => setForm({ ...form, name: e.target.value })} />
+            <span className="hint">So you can tell connections apart, for example “Work OpenRouter” or “Home Ollama”.</span></div>
+          {form.type === 'custom' && (
+            <div className="field"><label htmlFor="conn-url">Server address</label>
+              <input id="conn-url" className="input" value={form.url} spellCheck={false} placeholder="http://localhost:11434" onChange={e => setForm({ ...form, url: e.target.value })} />
+              <span className="hint">Ollama listens on http://localhost:11434 by default. The address is reached from {app.mode === 'remote' ? 'the Ergonotes server, so “localhost” means that machine' : 'this device'}.</span></div>
+          )}
+          <div className="field"><label htmlFor="conn-key">{form.type === 'custom' ? 'API key (optional)' : 'API key'}</label>
+            <input id="conn-key" className="input" type="password" autoComplete="off" spellCheck={false} value={form.key} onChange={e => setForm({ ...form, key: e.target.value })}
+              placeholder={!form.isNew && ai.connections.find(c => c.id === form.id)?.keyHint ? 'Saved. Paste a new key to replace it.' : form.type === 'custom' ? 'Leave empty for Ollama' : form.type === 'openrouter' ? 'sk-or-…' : 'sk-ant-…'} />
+            {!form.isNew && ai.connections.find(c => c.id === form.id)?.keyHint && (
+              <button type="button" className="btn" style={{ marginTop: 6 }} onClick={async () => { if (await save({ connection: { id: form.id, key: null } })) app.toast('Key removed'); }}>Remove the saved key</button>
+            )}</div>
+          {formErr && <p role="alert" className="error-text">{formErr}</p>}
           <div style={{ display: 'flex', gap: 8 }}>
-            <input id="ai-url" className="input" value={url} onChange={e => setUrl(e.target.value)} spellCheck={false} placeholder="http://localhost:11434" />
-            <button className="btn primary" disabled={url.trim() === ai.customUrl} onClick={async () => { if (await save({ customUrl: url })) app.toast('Address saved'); }}>Save</button>
+            <button className="btn primary" onClick={() => void submit()}><Save size={16} /> {form.isNew ? 'Add connection' : 'Save'}</button>
+            <button className="btn" onClick={() => setForm(null)}>Cancel</button>
           </div>
-          <span className="hint">Any server that speaks the OpenAI chat API. Ollama listens on http://localhost:11434 by default. The address is reached from {app.mode === 'remote' ? 'the Ergonotes server, so “localhost” means that machine' : 'this device'}.</span></div>
-      )}
-      <div className="field"><label htmlFor="ai-key">{custom ? 'API key (optional)' : `${PROVIDER_NAME[ai.provider]} API key`}</label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input id="ai-key" className="input" type="password" autoComplete="off" spellCheck={false} value={key} onChange={e => setKey(e.target.value)}
-            placeholder={ai.keyHint ? `Saved (ends in ${ai.keyHint}). Paste a new key to replace it.` : custom ? 'Leave empty for Ollama' : ai.provider === 'openrouter' ? 'sk-or-…' : 'sk-ant-…'} />
-          <button className="btn primary" disabled={!key.trim()} onClick={async () => { if (await save({ keys: { [ai.provider]: key } })) { setKey(''); app.toast('Key saved'); } }}>Save</button>
-          {ai.keyHint && <button className="btn" onClick={async () => { if (await save({ keys: { [ai.provider]: null } })) app.toast('Key removed'); }}>Remove</button>}
         </div>
-        <span className="hint">Stored encrypted in your vault, so your other devices can use it too. {app.mode === 'remote' ? 'The server calls the provider; the key never reaches this browser.' : 'This device calls the provider directly.'}</span></div>
+      ) : (
+        <button className="btn" onClick={startAdd}><Plus size={16} /> Add a connection</button>
+      )}
+
+      <hr style={{ margin: '20px 0 16px', border: 0, borderTop: '1px solid var(--border)' }} />
+      <h3 className="ai-h">Models</h3>
       <div className="field"><label htmlFor="ai-chat">Chat model</label>
-        <ModelPicker id="ai-chat" label="Chat model" value={ai.chatModel} models={models} error={modelsErr} loading={modelsLoading} needsTools
-          onPick={m => void save({ chatModel: m })} onRefresh={() => void loadModels()} />
-        <span className="hint">It needs to support tools for the assistant to edit notes.</span>
+        <ModelPicker id="ai-chat" label="Chat model" value={ai.chatModel} connections={ai.connections} needsTools
+          onPick={ref => void save({ chatModel: ref })} />
+        <span className="hint">Used by the assistant. It can also be changed from the chat itself. It needs tool support to edit notes.</span>
         <div className="think-row"><label htmlFor="ai-chat-think">Thinking</label>
           <select id="ai-chat-think" className="input" value={ai.chatThinking} onChange={e => void save({ chatThinking: e.target.value as ThinkingLevel })}>
             {THINKING_LEVELS.map(l => <option key={l} value={l}>{THINK_NAME[l]}</option>)}
           </select></div></div>
       <div className="field"><label htmlFor="ai-suggest">Suggestion model</label>
-        <ModelPicker id="ai-suggest" label="Suggestion model" value={ai.suggestModel} models={models} error={modelsErr} loading={modelsLoading}
-          onPick={m => void save({ suggestModel: m })} onRefresh={() => void loadModels()} />
-        <span className="hint">A small, fast model is best: it is asked every time you pause typing. It can be the same model as the chat.</span>
+        <ModelPicker id="ai-suggest" label="Suggestion model" value={ai.suggestModel} connections={ai.connections}
+          onPick={ref => void save({ suggestModel: ref })} />
+        <span className="hint">Asked every time you pause typing, so a small, fast model is best. It can be on another connection than the chat{ai.suggestModel.connection && ai.suggestModel.connection !== ai.chatModel.connection ? ` (now: ${connName(ai.suggestModel.connection)})` : ''}.</span>
         <div className="think-row"><label htmlFor="ai-suggest-think">Thinking</label>
           <select id="ai-suggest-think" className="input" value={ai.suggestThinking} onChange={e => void save({ suggestThinking: e.target.value as ThinkingLevel })}>
             {THINKING_LEVELS.map(l => <option key={l} value={l}>{THINK_NAME[l]}</option>)}
           </select>
           <span className="hint">Chat and suggestions think independently, even with the same model. Off is best for suggestions; models that cannot think ignore this.</span></div></div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
-        <button className="btn" disabled={!ai.hasKey || busy} onClick={() => void test()}>{busy ? <Loader2 size={16} className="spin" /> : <Check size={16} />} Test connection</button>
+        <button className="btn" disabled={!ai.chatReady || busy} onClick={() => void test()}>{busy ? <Loader2 size={16} className="spin" /> : <Check size={16} />} Test the chat model</button>
         {msg && <span role="status" className={msg.ok ? undefined : 'error-text'}>{msg.text}</span>}
       </div>
       <hr style={{ margin: '4px 0 16px', border: 0, borderTop: '1px solid var(--border)' }} />

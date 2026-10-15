@@ -8,9 +8,11 @@ reversible exception with these rules, so the exception stays small and visible.
 
 - **Off until configured.** No request is made until the person saves a provider API key in *Settings → AI*. The
   next-words suggestion is a separate switch, off by default on every device, because each suggestion is a request.
-- **The person's own key.** There is no Ergonotes account or proxy of ours. The key lives in the Vault as an encrypted
-  item (`type: config`, a fixed id) that syncs to the person's other Devices; it is never returned by the API, so a
-  browser only learns that a key exists and its last four characters.
+- **The person's own keys, as many as they like.** There is no Ergonotes account or proxy of ours. The settings hold a
+  list of *connections* (an OpenRouter or Anthropic key, or a server of the person's own), and two model choices, each
+  naming a connection and a model: one for the chat, one for suggestions, so they may use different connections. They
+  live in the Vault as an encrypted item (`type: config`, a fixed id) that syncs to the person's other Devices; keys are
+  never returned by the API, so a browser only learns that a key exists and its last four characters.
 - **A model of your own.** A third provider, *Custom server*, is any server that speaks the OpenAI chat API (Ollama,
   LM Studio, vLLM, LiteLLM): the person gives its address and, optionally, a key. Text then goes only where the person
   pointed it. The address is reached from the machine that makes the call: with the web build that is the Ergonotes

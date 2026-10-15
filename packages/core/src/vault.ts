@@ -14,7 +14,7 @@ import {
   extractLinkIds, firstImage, joinDoc, parseTasks, plainSnippet, setTaskDone, splitDoc, WIKILINK_RE,
   type Frontmatter, type Task,
 } from './markdown.ts';
-import { applyAiPatch, defaultAiConfig, toSettings, AI_PROVIDERS, THINKING_LEVELS, type AiConfig, type AiSettings, type AiSettingsPatch } from './ai/types.ts';
+import { applyAiPatch, defaultAiConfig, normalizeAiConfig, toSettings, type AiConfig, type AiSettings, type AiSettingsPatch } from './ai/types.ts';
 import { baseText, unionText } from './merge.ts';
 import type { Persist } from './persist.ts';
 import { Replica, type SyncContext } from './replica.ts';
@@ -920,26 +920,8 @@ export class Vault implements VaultApi {
   // ---------- AI ----------
   /** The full configuration including API keys. Not part of VaultApi: only code that runs where the vault runs may call it. */
   aiConfig(): AiConfig {
-    const base = defaultAiConfig();
-    if (!this.aiBody) return base;
-    try {
-      const j = JSON.parse(this.aiBody) as Partial<AiConfig>;
-      const keys: AiConfig['keys'] = {};
-      for (const p of AI_PROVIDERS) if (typeof j.keys?.[p] === 'string' && j.keys[p]) keys[p] = j.keys[p];
-      return {
-        provider: j.provider && AI_PROVIDERS.includes(j.provider) ? j.provider : base.provider,
-        keys,
-        customUrl: typeof j.customUrl === 'string' ? j.customUrl : '',
-        chatModel: typeof j.chatModel === 'string' && j.chatModel ? j.chatModel : base.chatModel,
-        suggestModel: typeof j.suggestModel === 'string' && j.suggestModel ? j.suggestModel : base.suggestModel,
-        chatThinking: j.chatThinking && THINKING_LEVELS.includes(j.chatThinking) ? j.chatThinking : base.chatThinking,
-        suggestThinking: j.suggestThinking && THINKING_LEVELS.includes(j.suggestThinking) ? j.suggestThinking : base.suggestThinking,
-        wholeVault: j.wholeVault === true,
-        autoApply: j.autoApply === true,
-        suggest: j.suggest === true,
-        suggestDelay: typeof j.suggestDelay === 'number' && j.suggestDelay >= 150 && j.suggestDelay <= 3000 ? Math.round(j.suggestDelay) : base.suggestDelay,
-      };
-    } catch { return base; } // two devices saved at once and the text is unreadable: enter the key again
+    if (!this.aiBody) return defaultAiConfig();
+    try { return normalizeAiConfig(JSON.parse(this.aiBody)); } catch { return defaultAiConfig(); } // unreadable: enter the key again
   }
 
   async getAiSettings(): Promise<AiSettings> {

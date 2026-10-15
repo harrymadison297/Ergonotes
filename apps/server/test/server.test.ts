@@ -183,8 +183,9 @@ describe('AI proxy', () => {
       expect((await ask()).status).toBe(401);
       const created = await postJson(u, '/api/rpc/createVault', JSON.stringify([PASSWORD]));
       const cookie = created.headers.get('set-cookie')!.split(';')[0];
-      const saved = await (await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ keys: { openrouter: 'sk-or-server-side' } }]), { cookie })).json();
-      expect(saved).toMatchObject({ hasKey: true, keyHint: 'side' });
+      const saved = await (await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ connection: { id: 'or', type: 'openrouter', key: 'sk-or-server-side' } }]), { cookie })).json();
+      expect(saved).toMatchObject({ chatReady: true });
+      expect(saved.connections[0].keyHint).toBe('side');
       expect(JSON.stringify(saved)).not.toContain('server-side');
       expect(JSON.stringify(await (await postJson(u, '/api/rpc/getAiSettings', '[]', { cookie })).json())).not.toContain('sk-or');
       const r = await ask({ cookie });
@@ -220,10 +221,11 @@ describe('AI proxy', () => {
       await withServer({}, async (_s, u) => {
         const created = await postJson(u, '/api/rpc/createVault', JSON.stringify([PASSWORD]));
         const cookie = created.headers.get('set-cookie')!.split(';')[0];
-        const saved = await (await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ provider: 'custom', customUrl: `http://127.0.0.1:${port}` }]), { cookie })).json();
-        expect(saved).toMatchObject({ provider: 'custom', hasKey: true, chatModel: 'llama3.2' });
-        expect((await postJson(u, '/api/ai/models', '{}')).status).toBe(401);
-        const models = await (await postJson(u, '/api/ai/models', '{}', { cookie })).json();
+        const saved = await (await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ connection: { id: 'ollama', type: 'custom', url: `http://127.0.0.1:${port}` } }]), { cookie })).json();
+        expect(saved).toMatchObject({ chatReady: true, chatModel: { connection: 'ollama', model: 'llama3.2' } });
+        expect((await postJson(u, '/api/ai/models', '{"connection":"ollama"}')).status).toBe(401);
+        expect((await postJson(u, '/api/ai/models', '{"connection":"nope"}', { cookie })).status).toBe(400);
+        const models = await (await postJson(u, '/api/ai/models', '{"connection":"ollama"}', { cookie })).json();
         expect(models).toEqual({ models: [{ id: 'llama3.2:3b' }] });
         const r = await postJson(u, '/api/ai/stream', JSON.stringify({ model: 'chat', messages: [{ role: 'user', content: 'hi' }] }), { cookie });
         const text = (await r.text()).trim().split('\n').map(l => JSON.parse(l) as { type: string; delta?: string }).filter(e => e.type === 'text').map(e => e.delta).join('');
@@ -232,7 +234,7 @@ describe('AI proxy', () => {
         expect(calls.at(-1)!.auth).toBeUndefined();
         expect(JSON.parse(calls.at(-1)!.body).model).toBe('llama3.2');
         // an address nobody listens on is explained, not a hang
-        await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ customUrl: 'http://127.0.0.1:9' }]), { cookie });
+        await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ connection: { id: 'ollama', url: 'http://127.0.0.1:9' } }]), { cookie });
         const down = await (await postJson(u, '/api/ai/stream', JSON.stringify({ model: 'chat', messages: [] }), { cookie })).text();
         expect(JSON.parse(down.trim().split('\n').at(-1)!).message).toMatch(/Could not reach 127\.0\.0\.1:9/);
       });
@@ -244,7 +246,7 @@ describe('AI proxy', () => {
     await withServer({ aiFetch }, async (_s, u) => {
       const created = await postJson(u, '/api/rpc/createVault', JSON.stringify([PASSWORD]));
       const cookie = created.headers.get('set-cookie')!.split(';')[0];
-      await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ keys: { openrouter: 'k' } }]), { cookie });
+      await postJson(u, '/api/rpc/setAiSettings', JSON.stringify([{ connection: { id: 'or', type: 'openrouter', key: 'k' } }]), { cookie });
       const r = await postJson(u, '/api/ai/stream', JSON.stringify({ model: 'chat', messages: [] }), { cookie });
       const last = JSON.parse((await r.text()).trim().split('\n').at(-1)!) as { type: string; message: string };
       expect(last).toEqual({ type: 'error', message: 'No credits' });

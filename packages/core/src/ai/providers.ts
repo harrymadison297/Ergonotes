@@ -1,5 +1,5 @@
 // Streaming chat against OpenRouter (OpenAI-style) and Anthropic (Messages API), normalised to AiEvent.
-import type { AiConfig, AiEvent, AiMessage, AiRequest, AiThinkingBlock, AiToolCall, ModelInfo, ThinkingLevel } from './types.ts';
+import { resolveTarget, type AiConfig, type AiConnection, type AiEvent, type AiMessage, type AiRequest, type AiThinkingBlock, type AiToolCall, type ModelInfo, type ThinkingLevel } from './types.ts';
 
 export interface StreamOptions { fetchImpl?: typeof fetch; signal?: AbortSignal }
 
@@ -137,12 +137,14 @@ function openAiMessages(req: AiRequest): unknown[] {
 }
 
 async function* openAiStyle(cfg: AiConfig, req: AiRequest, o: StreamOptions): AsyncGenerator<AiEvent> {
-  const custom = cfg.provider === 'custom';
-  const key = custom ? cfg.keys.custom : cfg.keys.openrouter;
-  if (custom && !cfg.customUrl) throw new AiError('Add the address of your server in Settings → AI.');
-  if (!custom && !key) throw new AiError('Add an OpenRouter API key in Settings → AI.');
-  const url = `${custom ? apiBase(cfg.customUrl) : OPENROUTER_BASE}/chat/completions`;
-  const model = req.model === 'chat' ? cfg.chatModel : cfg.suggestModel;
+  const target = resolveTarget(cfg, req.model);
+  if (!target) throw new AiError('Add a connection and choose a model in Settings → AI.');
+  const { conn, model } = target;
+  const custom = conn.type === 'custom';
+  const key = conn.key;
+  if (custom && !conn.url) throw new AiError(`Add the address of “${conn.name}” in Settings → AI.`);
+  if (!custom && !key) throw new AiError(`Add an API key to “${conn.name}” in Settings → AI.`);
+  const url = `${custom ? apiBase(conn.url) : OPENROUTER_BASE}/chat/completions`;
   const body: Record<string, unknown> = {
     model, messages: openAiMessages(req), stream: true, stream_options: { include_usage: true },
     ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
@@ -217,9 +219,11 @@ function anthropicMessages(messages: AiMessage[]): unknown[] {
 }
 
 async function* anthropic(cfg: AiConfig, req: AiRequest, o: StreamOptions): AsyncGenerator<AiEvent> {
-  const key = cfg.keys.anthropic;
-  if (!key) throw new AiError('Add an Anthropic API key in Settings → AI.');
-  const model = req.model === 'chat' ? cfg.chatModel : cfg.suggestModel;
+  const target = resolveTarget(cfg, req.model);
+  if (!target) throw new AiError('Add a connection and choose a model in Settings → AI.');
+  const { conn, model } = target;
+  const key = conn.key;
+  if (!key) throw new AiError(`Add an API key to “${conn.name}” in Settings → AI.`);
   const level = thinkingFor(cfg, req);
   const budget = level === 'low' ? 1024 : level === 'medium' ? 4096 : level === 'high' ? 10000 : 0;
   const body: Record<string, unknown> = {
@@ -285,7 +289,7 @@ async function* anthropic(cfg: AiConfig, req: AiRequest, o: StreamOptions): Asyn
 }
 
 function streamOnce(cfg: AiConfig, req: AiRequest, o: StreamOptions): AsyncGenerator<AiEvent> {
-  return cfg.provider === 'anthropic' ? anthropic(cfg, req, o) : openAiStyle(cfg, req, o);
+  return resolveTarget(cfg, req.model)?.conn.type === 'anthropic' ? anthropic(cfg, req, o) : openAiStyle(cfg, req, o);
 }
 
 /** Busy providers answer 429/5xx, or break the stream before it starts: worth another try. */
@@ -329,16 +333,16 @@ export async function completeText(transport: (r: AiRequest, s?: AbortSignal) =>
 }
 
 /** The models the provider offers, for the settings page. */
-export async function listModels(cfg: AiConfig, o: Pick<StreamOptions, 'fetchImpl' | 'signal'> = {}): Promise<ModelInfo[]> {
-  const key = cfg.keys[cfg.provider];
+export async function listModels(conn: AiConnection, o: Pick<StreamOptions, 'fetchImpl' | 'signal'> = {}): Promise<ModelInfo[]> {
+  const key = conn.key;
   let url: string;
   const headers: Record<string, string> = {};
-  if (cfg.provider === 'custom') {
-    if (!cfg.customUrl) throw new AiError('Add the address of your server first.');
-    url = `${apiBase(cfg.customUrl)}/models`;
+  if (conn.type === 'custom') {
+    if (!conn.url) throw new AiError(`Add the address of “${conn.name}” first.`);
+    url = `${apiBase(conn.url)}/models`;
     if (key) headers.authorization = `Bearer ${key}`;
-  } else if (cfg.provider === 'anthropic') {
-    if (!key) throw new AiError('Add an Anthropic API key first.');
+  } else if (conn.type === 'anthropic') {
+    if (!key) throw new AiError(`Add an API key to “${conn.name}” first.`);
     url = 'https://api.anthropic.com/v1/models?limit=100';
     headers['x-api-key'] = key;
     headers['anthropic-version'] = '2023-06-01';

@@ -20,7 +20,7 @@ export interface AppCtx {
   /** AI provider settings (the key itself never reaches the UI) */
   ai: AiSettings;
   aiTransport: AiTransport;
-  aiModels: () => Promise<ModelInfo[]>;
+  aiModels: (connection: string) => Promise<ModelInfo[]>;
   route: Route;
   go: (r: Route, replace?: boolean) => void;
   refresh: () => Promise<void>;
@@ -76,7 +76,7 @@ function useMedia(q: string): boolean {
 }
 
 const EMPTY_SETTINGS: Settings = { captureFolder: null, dailyFolder: null, theme: 'system' };
-const EMPTY_AI: AiSettings = { provider: 'openrouter', hasKey: false, keyHint: null, customUrl: '', chatModel: '', suggestModel: '', chatThinking: 'auto', suggestThinking: 'off', wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400 };
+const EMPTY_AI: AiSettings = { connections: [], chatModel: { connection: '', model: '' }, suggestModel: { connection: '', model: '' }, chatReady: false, suggestReady: false, chatThinking: 'auto', suggestThinking: 'off', wholeVault: false, autoApply: false, suggest: false, suggestDelay: 400 };
 
 export function AppProvider({ backend, status: initial, children }: { backend: Backend; status: VaultStatus; children: ReactNode }) {
   const api = backend.api;

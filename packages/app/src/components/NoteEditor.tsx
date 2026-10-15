@@ -60,7 +60,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
   const titleRef = useRef('');
   titleRef.current = title;
   const ghostRef = useRef({ on: false, delay: 400, transport: app.aiTransport });
-  ghostRef.current = { on: app.ai.suggest && app.ai.hasKey && !app.byId.get(id)?.private, delay: app.ai.suggestDelay, transport: app.aiTransport };
+  ghostRef.current = { on: app.ai.suggest && app.ai.suggestReady && !app.byId.get(id)?.private, delay: app.ai.suggestDelay, transport: app.aiTransport };
   const [ghostState, setGhostState] = useState<{ busy: boolean; error: string | null; empty: boolean }>({ busy: false, error: null, empty: false });
   const outlineRef = useRef<{ headings: { text: string; level: number }[]; active: number; goto(i: number): void } | null>(null);
   const saveBody = useMemo(() => debounce((nid: string, body: string, seq: number) => {
@@ -485,7 +485,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
         {app.ai.suggest && ghostState.busy && <span className="ghost-status" role="status"><Sparkles size={12} /> Thinking of a suggestion…</span>}
         {app.ai.suggest && !ghostState.busy && ghostState.error && <span className="ghost-status err" role="status" title={ghostState.error}>Suggestion unavailable: {ghostState.error.length > 60 ? ghostState.error.slice(0, 59) + '…' : ghostState.error}</span>}
         {app.ai.suggest && !ghostState.busy && !ghostState.error && ghostState.empty && <span className="ghost-status" role="status">No suggestion for this text</span>}
-        {app.ai.hasKey && !locked && (
+        {app.ai.suggestReady && !locked && (
           <button type="button" className={classNames('ghost-toggle', app.ai.suggest && 'on')} aria-pressed={app.ai.suggest}
             title={app.ai.suggest ? 'Turn off next-words suggestions' : 'Suggest the next words while you type (sends the text around the cursor to your AI provider)'}
             onClick={async () => { await app.run(api.setAiSettings({ suggest: !app.ai.suggest })); await app.refresh(); }}>

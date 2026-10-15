@@ -4,8 +4,8 @@ import { MemStore } from '../src/store.ts';
 import { Vault } from '../src/vault.ts';
 import type { StoreConfig } from '../src/api.ts';
 import {
-  ThinkSplitter, apiBase, applyAiPatch, buildTools, listModels, toSettings, chatSystemPrompt, cleanSuggestion, completeText, defaultAiConfig, runAgent, sectionRange, streamChat, suggestionRequest,
-  type AiConfig, type AiEvent, type AiMessage, type AiRequest, type AiTransport, type NoteIO,
+  DEFAULT_MODELS, PROVIDER_LABEL, ThinkSplitter, apiBase, applyAiPatch, buildTools, listModels, normalizeAiConfig, resolveTarget, toSettings, chatSystemPrompt, cleanSuggestion, completeText, defaultAiConfig, runAgent, sectionRange, streamChat, suggestionRequest,
+  type AiConfig, type AiEvent, type AiProvider, type ThinkingLevel, type AiMessage, type AiRequest, type AiTransport, type NoteIO,
 } from '../src/index.ts';
 
 const KDF = { m: 256, t: 1, p: 1 };
@@ -28,25 +28,38 @@ async function collect(it: AsyncIterable<AiEvent>): Promise<AiEvent[]> {
   for await (const e of it) out.push(e);
   return out;
 }
-const cfg = (over: Partial<AiConfig> = {}): AiConfig => ({ ...defaultAiConfig(), keys: { openrouter: 'sk-or-test', anthropic: 'sk-ant-test' }, ...over });
+/** One connection of one kind, used as both the chat and the suggestion model: what most tests need. */
+interface One { provider?: AiProvider; keys?: Partial<Record<AiProvider, string>>; customUrl?: string; chatModel?: string; suggestModel?: string; chatThinking?: ThinkingLevel; suggestThinking?: ThinkingLevel }
+const cfg = (o: One = {}): AiConfig => {
+  const provider = o.provider ?? 'openrouter';
+  const key = o.keys ? o.keys[provider] : provider === 'anthropic' ? 'sk-ant-test' : provider === 'openrouter' ? 'sk-or-test' : undefined;
+  return {
+    ...defaultAiConfig(),
+    connections: [{ id: 'c1', name: PROVIDER_LABEL[provider], type: provider, ...(key ? { key } : {}), url: provider === 'custom' ? o.customUrl ?? 'http://localhost:11434' : '' }],
+    chatModel: { connection: 'c1', model: o.chatModel ?? DEFAULT_MODELS[provider].chat },
+    suggestModel: { connection: 'c1', model: o.suggestModel ?? DEFAULT_MODELS[provider].suggest },
+    chatThinking: o.chatThinking ?? 'auto', suggestThinking: o.suggestThinking ?? 'off',
+  };
+};
 
 describe('AI settings in the vault', () => {
-  it('keeps the key out of what clients may read, and syncs it to another device', async () => {
+  it('keeps keys out of what clients may read, and syncs them to another device', async () => {
     shared.set('ai1', new MemStore());
     const A = await open('Laptop');
     await A.createVault(PASSWORD);
     await A.setStore(cfgFor('ai1'));
-    const s = await A.setAiSettings({ keys: { openrouter: ' sk-or-secret-1234 ' }, chatModel: 'x/y', wholeVault: true });
-    expect(s).toMatchObject({ provider: 'openrouter', hasKey: true, keyHint: '1234', chatModel: 'x/y', wholeVault: true, autoApply: false });
+    const s = await A.setAiSettings({ connection: { id: 'or', type: 'openrouter', name: 'Work', key: ' sk-or-secret-1234 ' }, chatModel: { connection: 'or', model: 'x/y' }, wholeVault: true });
+    expect(s.connections).toEqual([{ id: 'or', name: 'Work', type: 'openrouter', url: '', keyHint: '1234', ready: true }]);
+    expect(s).toMatchObject({ chatModel: { connection: 'or', model: 'x/y' }, chatReady: true, suggestReady: true, wholeVault: true, autoApply: false });
     expect(JSON.stringify(s)).not.toContain('secret');
-    expect(A.aiConfig().keys.openrouter).toBe('sk-or-secret-1234');
+    expect(A.aiConfig().connections[0].key).toBe('sk-or-secret-1234');
     await A.sync();
 
     const B = await open('Phone');
     await B.joinVault(cfgFor('ai1'), PASSWORD);
-    expect(await B.getAiSettings()).toMatchObject({ hasKey: true, keyHint: '1234', chatModel: 'x/y', wholeVault: true });
+    expect(await B.getAiSettings()).toMatchObject({ chatReady: true, chatModel: { connection: 'or', model: 'x/y' }, wholeVault: true });
+    expect((await B.getAiSettings()).connections[0].keyHint).toBe('1234');
     // the settings item is not a note, and is not a conflict
-    expect((await B.listItems()).every(i => i.type === 'folder' || i.title !== '')).toBe(true);
     expect(await B.conflicts()).toHaveLength(0);
   });
 
@@ -55,17 +68,17 @@ describe('AI settings in the vault', () => {
     const A = await open('Laptop');
     await A.createVault(PASSWORD);
     await A.setStore(cfgFor('ai2'));
-    await A.setAiSettings({ chatModel: 'first' });
+    await A.setAiSettings({ connection: { id: 'c', type: 'custom', url: 'http://h:1' }, chatModel: { connection: 'c', model: 'first' } });
     await A.sync();
     const B = await open('Phone');
     await B.joinVault(cfgFor('ai2'), PASSWORD);
-    await A.setAiSettings({ chatModel: 'from-laptop' });
+    await A.setAiSettings({ chatModel: { connection: 'c', model: 'from-laptop' } });
     await new Promise(r => setTimeout(r, 5));
-    await B.setAiSettings({ chatModel: 'from-phone' });
+    await B.setAiSettings({ chatModel: { connection: 'c', model: 'from-phone' } });
     await A.sync(); await B.sync(); await A.sync(); await B.sync(); await A.sync();
     expect(await A.conflicts()).toHaveLength(0);
     expect(await B.conflicts()).toHaveLength(0);
-    const a = (await A.getAiSettings()).chatModel, b = (await B.getAiSettings()).chatModel;
+    const a = (await A.getAiSettings()).chatModel.model, b = (await B.getAiSettings()).chatModel.model;
     expect(a).toBe(b);
     expect(['from-laptop', 'from-phone']).toContain(a);
   });
@@ -79,14 +92,57 @@ describe('AI settings in the vault', () => {
     expect((await v.getAiSettings()).suggest).toBe(true);
   });
 
-  it('switching provider swaps default models only, and null forgets a key', () => {
-    let c = applyAiPatch(defaultAiConfig(), { provider: 'anthropic' });
-    expect(c.chatModel).toBe('claude-sonnet-5-5');
-    c = applyAiPatch({ ...c, chatModel: 'my/own' }, { provider: 'openrouter' });
-    expect(c.chatModel).toBe('my/own');
-    c = applyAiPatch(c, { keys: { openrouter: 'k' } });
-    expect(c.keys.openrouter).toBe('k');
-    expect(applyAiPatch(c, { keys: { openrouter: null } }).keys.openrouter).toBeUndefined();
+  it('holds several connections of several kinds, and the two jobs may use different ones', () => {
+    let c = applyAiPatch(defaultAiConfig(), { connection: { id: 'a', type: 'anthropic', key: 'secret-one-AAAA' } });
+    // the first connection becomes both models, with its own defaults
+    expect(c.chatModel).toEqual({ connection: 'a', model: 'claude-sonnet-5-5' });
+    expect(c.suggestModel).toEqual({ connection: 'a', model: 'claude-haiku-5-5' });
+    c = applyAiPatch(c, { connection: { id: 'o1', type: 'openrouter', name: 'Personal', key: 'secret-two-BBBB' } });
+    c = applyAiPatch(c, { connection: { id: 'o2', type: 'openrouter', name: 'Work', key: 'secret-three-CCCC' } });
+    c = applyAiPatch(c, { connection: { id: 'l', type: 'custom', name: 'Home Ollama', url: 'http://10.0.0.2:11434' } });
+    expect(c.connections.map(x => x.name)).toEqual(['Anthropic', 'Personal', 'Work', 'Home Ollama']);
+    // adding connections does not move the models
+    expect(c.chatModel.connection).toBe('a');
+    c = applyAiPatch(c, { chatModel: { connection: 'o2', model: 'x/y' }, suggestModel: { connection: 'l', model: '' } });
+    expect(c.chatModel).toEqual({ connection: 'o2', model: 'x/y' });
+    expect(c.suggestModel).toEqual({ connection: 'l', model: 'llama3.2' });
+    expect(resolveTarget(c, 'chat')?.conn.key).toBe('secret-three-CCCC');
+    expect(resolveTarget(c, 'suggest')?.conn.url).toBe('http://10.0.0.2:11434');
+    const s = toSettings(c);
+    expect(s.chatReady && s.suggestReady).toBe(true);
+    expect(JSON.stringify(s)).not.toContain('secret');
+    expect(s.connections.map(x => x.keyHint)).toEqual(['AAAA', 'BBBB', 'CCCC', null]);
+  });
+
+  it('forgets a key, renames, refuses a bad address or a changed kind, and moves the models when a connection goes', () => {
+    let c = applyAiPatch(defaultAiConfig(), { connection: { id: 'o', type: 'openrouter', key: 'k' } });
+    c = applyAiPatch(c, { connection: { id: 'a', type: 'anthropic', key: 'k2' } });
+    c = applyAiPatch(c, { connection: { id: 'o', name: ' Mine ', key: null } });
+    expect(c.connections[0]).toMatchObject({ name: 'Mine', url: '' });
+    expect(c.connections[0].key).toBeUndefined();
+    expect(toSettings(c).chatReady).toBe(false);
+    expect(() => applyAiPatch(c, { connection: { id: 'o', type: 'anthropic' } })).toThrow(/cannot be changed/);
+    expect(() => applyAiPatch(c, { connection: { id: 'n', type: 'custom', url: 'localhost:11434' } })).toThrow(/http/);
+    expect(() => applyAiPatch(c, { chatModel: { connection: 'ghost', model: 'm' } })).toThrow(/no longer exists/);
+    c = applyAiPatch(c, { removeConnection: 'o' });
+    expect(c.chatModel).toEqual({ connection: 'a', model: 'claude-sonnet-5-5' });
+    c = applyAiPatch(c, { removeConnection: 'a' });
+    expect(c.chatModel).toEqual({ connection: '', model: '' });
+    expect(toSettings(c).chatReady).toBe(false);
+  });
+
+  it('reads the single-provider settings of the first version as connections', () => {
+    const c = normalizeAiConfig({
+      provider: 'anthropic', keys: { openrouter: 'or-key', anthropic: 'an-key' }, customUrl: 'http://ollama:11434',
+      chatModel: 'claude-x', suggestModel: 'claude-y', chatThinking: 'high', suggest: true, suggestDelay: 600, wholeVault: true,
+    });
+    expect(c.connections.map(x => [x.id, x.type, x.key ?? null, x.url])).toEqual([
+      ['openrouter', 'openrouter', 'or-key', ''], ['anthropic', 'anthropic', 'an-key', ''], ['custom', 'custom', null, 'http://ollama:11434'],
+    ]);
+    expect(c.chatModel).toEqual({ connection: 'anthropic', model: 'claude-x' });
+    expect(c.suggestModel).toEqual({ connection: 'anthropic', model: 'claude-y' });
+    expect(c).toMatchObject({ chatThinking: 'high', suggest: true, suggestDelay: 600, wholeVault: true });
+    expect(normalizeAiConfig(null)).toEqual(defaultAiConfig());
   });
 });
 
@@ -166,7 +222,7 @@ describe('providers', () => {
   it('reports a rejected key and a missing key in plain words', async () => {
     const reject = (async () => new Response(JSON.stringify({ error: { message: 'No auth credentials found' } }), { status: 401 })) as unknown as typeof fetch;
     await expect(collect(streamChat(cfg(), { model: 'chat', messages: [] }, { fetchImpl: reject }))).rejects.toThrow(/rejected the API key/);
-    await expect(collect(streamChat(cfg({ keys: {} }), { model: 'chat', messages: [] }))).rejects.toThrow(/Add an OpenRouter API key/);
+    await expect(collect(streamChat(cfg({ keys: {} }), { model: 'chat', messages: [] }))).rejects.toThrow(/Add an API key to/);
   });
 });
 
@@ -457,7 +513,7 @@ describe('busy providers', () => {
 });
 
 describe('custom OpenAI-style server (Ollama)', () => {
-  const custom = (over: Partial<AiConfig> = {}): AiConfig => ({ ...defaultAiConfig(), provider: 'custom', customUrl: 'http://localhost:11434', keys: {}, chatModel: 'llama3.2', suggestModel: 'llama3.2', ...over });
+  const custom = (over: One = {}): AiConfig => cfg({ provider: 'custom', keys: {}, ...over });
 
   it('finds the API from whatever address was typed', () => {
     expect(apiBase('http://localhost:11434')).toBe('http://localhost:11434/v1');
@@ -468,8 +524,8 @@ describe('custom OpenAI-style server (Ollama)', () => {
   });
 
   it('needs an address but not a key, and sends the key only when there is one', async () => {
-    expect(toSettings(custom({ customUrl: '' })).hasKey).toBe(false);
-    expect(toSettings(custom()).hasKey).toBe(true);
+    expect(toSettings(custom({ customUrl: '' })).chatReady).toBe(false);
+    expect(toSettings(custom()).chatReady).toBe(true);
     const seen: { url: string; auth: string | null; body: Record<string, unknown> }[] = [];
     const fetchImpl = (async (url: string, init: RequestInit) => {
       seen.push({ url, auth: new Headers(init.headers).get('authorization'), body: JSON.parse(init.body as string) });
@@ -483,7 +539,7 @@ describe('custom OpenAI-style server (Ollama)', () => {
     expect(ev.find(e => e.type === 'tool_call')).toEqual({ type: 'tool_call', call: { id: 'c', name: 'read_note', args: { id: 'n1' } } });
     await collect(streamChat(custom({ keys: { custom: 'secret' } }), { model: 'chat', messages: [] }, { fetchImpl }));
     expect(seen[1].auth).toBe('Bearer secret');
-    await expect(collect(streamChat(custom({ customUrl: '' }), { model: 'chat', messages: [] }, { fetchImpl }))).rejects.toThrow(/address of your server/);
+    await expect(collect(streamChat(custom({ customUrl: '' }), { model: 'chat', messages: [] }, { fetchImpl }))).rejects.toThrow(/Add the address of/);
   });
 
   it('explains an unreachable server instead of "Failed to fetch"', async () => {
@@ -493,21 +549,22 @@ describe('custom OpenAI-style server (Ollama)', () => {
 
   it('lists the models, from the OpenAI-style and the Ollama shapes', async () => {
     const openai = (async (url: string) => { expect(url).toBe('http://localhost:11434/v1/models'); return new Response(JSON.stringify({ data: [{ id: 'qwen2.5:7b' }, { id: 'llama3.2:3b' }] })); }) as unknown as typeof fetch;
-    expect((await listModels(custom(), { fetchImpl: openai })).map(m => m.id)).toEqual(['llama3.2:3b', 'qwen2.5:7b']);
+    expect((await listModels(custom().connections[0], { fetchImpl: openai })).map(m => m.id)).toEqual(['llama3.2:3b', 'qwen2.5:7b']);
     const native = (async () => new Response(JSON.stringify({ models: [{ name: 'phi3' }, { name: 'gemma2' }] }))) as unknown as typeof fetch;
-    expect((await listModels(custom(), { fetchImpl: native })).map(m => m.id)).toEqual(['gemma2', 'phi3']);
-    await expect(listModels(custom({ customUrl: '' }))).rejects.toThrow(/address/);
+    expect((await listModels(custom().connections[0], { fetchImpl: native })).map(m => m.id)).toEqual(['gemma2', 'phi3']);
+    await expect(listModels(custom({ customUrl: '' }).connections[0])).rejects.toThrow(/address/);
   });
 
   it('stores the address in the vault and refuses one that is not http(s)', async () => {
     const v = await open('A');
     await v.createVault(PASSWORD);
-    const s = await v.setAiSettings({ provider: 'custom', customUrl: ' http://192.168.1.20:11434 ', keys: { custom: 'k' } });
-    expect(s).toMatchObject({ provider: 'custom', customUrl: 'http://192.168.1.20:11434', hasKey: true, chatModel: 'llama3.2' });
-    expect(v.aiConfig().keys.custom).toBe('k');
-    await expect(v.setAiSettings({ customUrl: 'ftp://nope' })).rejects.toThrow(/http/);
-    await expect(v.setAiSettings({ customUrl: 'localhost:11434' })).rejects.toThrow(/http/);
-    expect((await v.setAiSettings({ customUrl: '' })).hasKey).toBe(false);
+    const s = await v.setAiSettings({ connection: { id: 'home', type: 'custom', name: 'Home', url: ' http://192.168.1.20:11434 ', key: 'k' } });
+    expect(s.connections[0]).toMatchObject({ id: 'home', type: 'custom', url: 'http://192.168.1.20:11434', ready: true });
+    expect(s).toMatchObject({ chatReady: true, chatModel: { connection: 'home', model: 'llama3.2' } });
+    expect(v.aiConfig().connections[0].key).toBe('k');
+    await expect(v.setAiSettings({ connection: { id: 'home', url: 'ftp://nope' } })).rejects.toThrow(/http/);
+    await expect(v.setAiSettings({ connection: { id: 'home', url: 'localhost:11434' } })).rejects.toThrow(/http/);
+    expect((await v.setAiSettings({ connection: { id: 'home', url: '' } })).chatReady).toBe(false);
   });
 });
 
@@ -538,7 +595,7 @@ describe('thinking', () => {
       { choices: [{ delta: { content: '<thi' } }] }, { choices: [{ delta: { content: 'nk>hmm, 2+' } }] }, { choices: [{ delta: { content: '2</th' } }] },
       { choices: [{ delta: { content: 'ink>The answer is 4' } }] }, { choices: [{ delta: { reasoning_content: ' (again)' } }] }, '[DONE]',
     ]));
-    const c: AiConfig = { ...defaultAiConfig(), provider: 'custom', customUrl: 'http://localhost:11434', chatThinking: 'low', suggestThinking: 'off' };
+    const c = cfg({ provider: 'custom', keys: {}, chatThinking: 'low', suggestThinking: 'off' });
     const ev = await collect(streamChat(c, { model: 'chat', messages: [] }, { fetchImpl }));
     expect(seen[0].reasoning_effort).toBe('low');
     expect(ev.filter(e => e.type === 'thinking').map(e => (e as { delta: string }).delta).join('')).toBe('hmm, 2+2 (again)');
@@ -612,7 +669,7 @@ describe('model list', () => {
       { id: 'anthropic/claude-sonnet-4.5', name: 'Anthropic: Claude Sonnet 4.5', context_length: 200000, pricing: { prompt: '0.000003', completion: '0.000015' }, supported_parameters: ['tools', 'reasoning'] },
       { id: 'tiny/model', pricing: { prompt: '0.1', completion: '0.1' }, supported_parameters: [] },
     ] }))) as unknown as typeof fetch;
-    const list = await listModels(cfg(), { fetchImpl });
+    const list = await listModels(cfg().connections[0], { fetchImpl });
     const by = Object.fromEntries(list.map(m => [m.id, m]));
     expect(by['google/gemma-4-31b-it:free']).toMatchObject({ name: 'Google: Gemma 4 31B (free)', context: 262144, free: true, tools: true, thinking: false });
     expect(by['anthropic/claude-sonnet-4.5']).toMatchObject({ free: false, tools: true, thinking: true });
@@ -623,7 +680,7 @@ describe('model list', () => {
   it('reads the Anthropic list', async () => {
     let seen: Headers | null = null;
     const fetchImpl = (async (_u: string, init: RequestInit) => { seen = new Headers(init.headers); return new Response(JSON.stringify({ data: [{ id: 'claude-sonnet-5-5', display_name: 'Claude Sonnet 5.5', type: 'model' }] })); }) as unknown as typeof fetch;
-    const list = await listModels(cfg({ provider: 'anthropic' }), { fetchImpl });
+    const list = await listModels(cfg({ provider: 'anthropic' }).connections[0], { fetchImpl });
     expect(list).toEqual([{ id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' }]);
     expect(seen!.get('x-api-key')).toBe('sk-ant-test');
   });

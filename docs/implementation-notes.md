@@ -27,6 +27,10 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 
 ## AI limits
 
+- Settings are a list of connections plus a model per job. The first version stored one provider with a key per
+  provider; `normalizeAiConfig` turns that into connections (ids `openrouter`, `anthropic`, `custom`) when it is read, so
+  nothing is lost. The chat model chosen in the chat is the same setting as in Settings → AI (not per conversation).
+
 - The model picker lists what the provider's `/models` returns (OpenRouter: name, context, free, tools and reasoning
   flags; Anthropic: names; Ollama and OpenAI-style servers: ids). It is fetched when the AI tab opens and can be reloaded;
   a name that is not in the list can still be typed. The list goes through the server peer in the web build.

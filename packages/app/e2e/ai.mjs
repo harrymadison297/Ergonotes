@@ -80,31 +80,78 @@ await page.getByRole('tab', { name: 'Contents' }).click();
 check('the contents tab lists the headings', (await page.locator('.toc .toc-item', { hasText: 'Packing' }).count()) === 1);
 await page.getByRole('tab', { name: 'Assistant' }).click();
 await page.getByRole('button', { name: 'Set up AI' }).click();
-await page.getByLabel('OpenRouter API key').fill('sk-or-test-0000');
-await page.getByRole('button', { name: 'Save', exact: true }).first().click();
-await until(async () => (await rpc('getAiSettings')).hasKey);
+check('no connection yet', (await page.getByText('No connections yet.').count()) === 1);
+await page.getByRole('button', { name: 'Add a connection' }).click();
+await page.getByLabel('Name', { exact: true }).fill('Personal OpenRouter');
+await page.getByLabel('API key', { exact: true }).fill('sk-or-test-0000');
+await page.getByRole('button', { name: 'Add connection' }).click();
+await until(async () => (await rpc('getAiSettings')).chatReady);
 const settings = await rpc('getAiSettings');
-check('the key is saved and never returned', settings.hasKey === true && settings.keyHint === '0000' && !JSON.stringify(settings).includes('sk-or-test'));
-await page.getByRole('button', { name: 'Test connection' }).waitFor();
+check('a connection is saved and its key never returned', settings.chatReady === true && settings.connections[0].keyHint === '0000' && settings.connections[0].name === 'Personal OpenRouter' && !JSON.stringify(settings).includes('sk-or-test'));
+check('the first connection serves both the chat and the suggestions', settings.chatModel.connection === settings.connections[0].id && settings.suggestModel.connection === settings.connections[0].id);
+const firstId = settings.connections[0].id;
+await page.getByRole('button', { name: 'Test the chat model' }).waitFor();
 script.push([{ type: 'text', delta: 'ok' }]);
-await page.getByRole('button', { name: 'Test connection' }).click();
-check('test connection reports success', !!(await until(async () => (await page.getByRole('status').filter({ hasText: 'Connected' }).count()) > 0)));
-// the model is chosen from the list the provider offers
+await page.getByRole('button', { name: 'Test the chat model' }).click();
+check('test reports success', !!(await until(async () => (await page.getByRole('status').filter({ hasText: 'Connected' }).count()) > 0)));
+await page.getByRole('button', { name: 'Check', exact: true }).click();
+check('a connection can be checked on its own', !!(await until(async () => (await page.getByText('Works: 3 models available.').count()) === 1)));
+
+// a second key of the same kind, and a server of your own (Ollama)
+await page.getByRole('button', { name: 'Add a connection' }).click();
+await page.getByLabel('Name', { exact: true }).fill('Work OpenRouter');
+await page.getByLabel('API key', { exact: true }).fill('sk-or-work-1111');
+await page.getByRole('button', { name: 'Add connection' }).click();
+await until(async () => (await rpc('getAiSettings')).connections.length === 2);
+await page.getByRole('button', { name: 'Add a connection' }).click();
+await page.getByLabel('Kind').selectOption('custom');
+await page.getByLabel('Name', { exact: true }).fill('Home Ollama');
+await page.getByLabel('Server address').fill('localhost:11434');
+await page.getByRole('button', { name: 'Add connection' }).click();
+await page.getByText(/must start with http/).waitFor({ timeout: 8000 });
+check('an address without http:// is refused with a reason', true);
+await page.getByLabel('Server address').fill('http://localhost:11434');
+await page.getByRole('button', { name: 'Add connection' }).click();
+const three = await until(async () => { const a = await rpc('getAiSettings'); return a.connections.length === 3 ? a : null; });
+check('several connections of several kinds are kept', !!three && three.connections.map(c => c.name).join() === 'Personal OpenRouter,Work OpenRouter,Home Ollama');
+check('adding connections does not move the models', three.chatModel.connection === firstId);
+const ollamaId = three.connections[2].id;
+const workId = three.connections[1].id;
+check('a server without a key is ready once it has an address', three.connections[2].ready === true && three.connections[2].keyHint === null);
+
+// the lists differ per connection
+await page.unroute('**/api/ai/models');
+await page.route('**/api/ai/models', async route => {
+  const want = JSON.parse(route.request().postData() ?? '{}').connection;
+  const models = want === ollamaId ? [{ id: 'llama3.2:3b' }, { id: 'qwen2.5:7b' }] : OPENROUTER_LIST;
+  await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models }) });
+});
+
+// the model is chosen from the list of a connection
 await page.locator('#ai-chat').click();
 await page.getByRole('option', { name: /Claude Sonnet 4.5/ }).waitFor({ timeout: 8000 });
-check('the models of the provider are listed, with their name', (await page.locator('.model-panel [role=option]').count()) >= 3);
+check('the models of the connection are listed, with their name', (await page.locator('.model-panel [role=option]').count()) >= 3);
 check('a model without tools is flagged for the assistant', (await page.locator('.model-panel [role=option]', { hasText: 'no tools' }).count()) === 1);
 await page.getByLabel('Search models').fill('claude');
 check('the list can be searched', (await page.locator('.model-panel [role=option]', { hasText: 'Sonnet' }).count()) === 1 && (await page.locator('.model-panel [role=option]', { hasText: 'Gemma' }).count()) === 0);
 await page.getByRole('option', { name: /Claude Sonnet 4.5/ }).click();
-check('choosing one saves it', !!(await until(async () => (await rpc('getAiSettings')).chatModel === 'anthropic/claude-sonnet-4.5')));
+check('choosing one saves it', !!(await until(async () => { const a = await rpc('getAiSettings'); return a.chatModel.model === 'anthropic/claude-sonnet-4.5' && a.chatModel.connection === firstId; })));
+
+// the suggestion model: another connection than the chat
 await page.locator('#ai-suggest').click();
+await page.locator('.model-panel select').selectOption(ollamaId);
+await page.locator('.model-panel [role=option]', { hasText: 'qwen2.5:7b' }).waitFor({ timeout: 8000 });
+check('another connection lists its own models', (await page.locator('.model-panel [role=option]').count()) === 2);
+await page.locator('.model-panel [role=option]', { hasText: 'qwen2.5:7b' }).click();
+check('the suggestion model can be on another connection than the chat', !!(await until(async () => { const a = await rpc('getAiSettings'); return a.suggestModel.connection === ollamaId && a.suggestModel.model === 'qwen2.5:7b' && a.chatModel.connection === firstId; })));
+await page.locator('#ai-suggest').click();
+await page.locator('.model-panel select').selectOption(firstId);
 await page.getByLabel('Free models only').check();
 check('free models can be filtered', (await page.locator('.model-panel [role=option]').count()) === 2);
 await page.getByLabel('Search models').fill('my-own/model:1b');
 await page.getByLabel('Search models').press('Enter');
-check('a name that is not in the list can be used', !!(await until(async () => (await rpc('getAiSettings')).suggestModel === 'my-own/model:1b')));
-await rpc('setAiSettings', { chatModel: 'google/gemma-4-31b-it:free', suggestModel: 'google/gemma-4-31b-it:free' });
+check('a name that is not in the list can be used', !!(await until(async () => (await rpc('getAiSettings')).suggestModel.model === 'my-own/model:1b')));
+await rpc('setAiSettings', { chatModel: { connection: firstId, model: 'google/gemma-4-31b-it:free' }, suggestModel: { connection: firstId, model: 'google/gemma-4-31b-it:free' } });
 
 // thinking is set per job, on the same model
 await page.locator('#ai-chat-think').selectOption('high');
@@ -115,29 +162,26 @@ await page.locator('#ai-suggest-think').selectOption('low');
 check('and it can be changed separately', !!(await until(async () => (await rpc('getAiSettings')).suggestThinking === 'low')));
 await rpc('setAiSettings', { chatThinking: 'auto', suggestThinking: 'off' });
 
-// a custom server (Ollama): address, optional key, model list
-await page.unroute('**/api/ai/models');
-await page.route('**/api/ai/models', async route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ models: [{ id: 'llama3.2:3b' }, { id: 'qwen2.5:7b' }] }) }));
-await page.getByLabel('Provider').selectOption('custom');
-await page.getByLabel('Server address').waitFor();
-check('a custom server asks for an address and its key is optional', (await page.getByLabel('API key (optional)').count()) === 1);
-check('and is not ready until it has one', (await rpc('getAiSettings')).hasKey === false);
-await page.getByLabel('Server address').fill('http://localhost:11434');
-await page.getByRole('button', { name: 'Save', exact: true }).first().click();
-check('the address is kept in the vault', !!(await until(async () => { const a = await rpc('getAiSettings'); return a.provider === 'custom' && a.customUrl === 'http://localhost:11434' && a.hasKey === true && a.chatModel === 'llama3.2'; })));
-await page.locator('#ai-chat').click();
-await page.getByRole('option', { name: /qwen2.5:7b/ }).waitFor({ timeout: 8000 });
-check('what the server has installed fills the list', (await page.locator('.model-panel [role=option]').count()) === 2);
-await page.getByRole('option', { name: /qwen2.5:7b/ }).click();
-check('and one is chosen from it', !!(await until(async () => (await rpc('getAiSettings')).chatModel === 'qwen2.5:7b')));
-await page.getByLabel('Server address').fill('localhost:11434');
-await page.getByRole('button', { name: 'Save', exact: true }).first().click();
-await page.getByText(/must start with http/).waitFor({ timeout: 8000 });
-check('an address without http:// is refused with a reason', true);
-await page.getByLabel('Provider').selectOption('openrouter');
-await until(async () => (await rpc('getAiSettings')).provider === 'openrouter');
+// editing and removing a connection
+await page.locator('.conn').nth(1).getByRole('button', { name: 'Edit', exact: true }).click();
+await page.getByLabel('Name', { exact: true }).fill('Work (new key)');
+await page.getByLabel('API key', { exact: true }).fill('sk-or-work-2222');
+await page.locator('.conn-form').getByRole('button', { name: 'Save', exact: true }).click();
+check('a connection can be renamed and given a new key', !!(await until(async () => { const c = (await rpc('getAiSettings')).connections[1]; return c.name === 'Work (new key)' && c.keyHint === '2222'; })));
+page.once('dialog', d => void d.accept());
+await page.getByRole('button', { name: 'Remove Home Ollama' }).click();
+check('a connection can be removed', !!(await until(async () => (await rpc('getAiSettings')).connections.length === 2)));
+check('and the jobs that used it move to another', (await rpc('getAiSettings')).suggestModel.connection !== ollamaId);
+await rpc('setAiSettings', { chatModel: { connection: firstId, model: 'google/gemma-4-31b-it:free' } });
 await page.keyboard.press('Escape');
 await page.locator('.dialog').waitFor({ state: 'detached' }).catch(() => undefined);
+
+// the model is chosen in the chat itself
+await page.getByRole('button', { name: /^Chat model:/ }).click();
+await page.locator('.model-panel select').selectOption(workId);
+await page.locator('.model-panel [role=option]', { hasText: 'Claude Sonnet 4.5' }).click();
+check('the chat model is chosen from the chat, on any connection', !!(await until(async () => { const a = await rpc('getAiSettings'); return a.chatModel.connection === workId && a.chatModel.model === 'anthropic/claude-sonnet-4.5'; })));
+await rpc('setAiSettings', { chatModel: { connection: firstId, model: 'google/gemma-4-31b-it:free' } });
 
 // ---- chat answers a question (no changes)
 script.push([{ type: 'text', delta: 'You still need ' }, { type: 'text', delta: 'a charger and a passport.' }, { type: 'usage', input: 120, output: 12 }]);

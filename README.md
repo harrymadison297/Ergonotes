@@ -47,8 +47,9 @@ node dist/server/server.mjs            # PORT, HOST, ERGONOTES_DATA, ERGONOTES_W
   `create_note`, `append_to_note`, `replace_text`, `insert_after_heading`, `update_note`, `rename_note`, `add_tags`,
   `move_note`, `list_folders`, `list_tasks`, `complete_task`, `daily_note`. Notes marked private are invisible to agents.
   The skill that teaches Claude Code to use them is `docs/agents/ergonotes-skill/SKILL.md` (also a download button).
-* Assistant: *Settings → AI* takes an OpenRouter or Anthropic API key, or the address of your own OpenAI-compatible
-  server such as Ollama (`http://localhost:11434`; key optional). Keys are stored encrypted in the vault. On the server the
+* Assistant: *Settings → AI* holds any number of connections: OpenRouter or Anthropic keys, or the address of your own
+  OpenAI-compatible server such as Ollama (`http://localhost:11434`; key optional). Pick the chat model (also from the
+  chat) and a separate suggestion model, each on any connection. Keys are stored encrypted in the vault. On the server the
   key stays on the server and the browser streams through `/api/ai/stream`. The right sidebar holds the note's contents
   and the assistant (history, `@` to attach notes and files, Ask/Edit mode, its thinking shown, thinking level per job). See ADR 0008.
 

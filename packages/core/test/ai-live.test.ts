@@ -7,7 +7,11 @@ import {
 
 const key = process.env.OPENROUTER_API_KEY;
 const model = process.env.OPENROUTER_MODEL ?? 'google/gemma-4-31b-it:free';
-const cfg: AiConfig = { ...defaultAiConfig(), keys: { openrouter: key }, chatModel: model, suggestModel: model };
+const cfg: AiConfig = {
+  ...defaultAiConfig(),
+  connections: [{ id: 'or', name: 'OpenRouter', type: 'openrouter', key, url: '' }],
+  chatModel: { connection: 'or', model }, suggestModel: { connection: 'or', model },
+};
 const transport: AiTransport = (req: AiRequest, signal) => streamChat(cfg, req, { signal });
 
 /** Free models share an upstream pool and are often rate limited. That says nothing about our code: skip then. */

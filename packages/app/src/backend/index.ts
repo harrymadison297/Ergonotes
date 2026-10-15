@@ -9,7 +9,7 @@ export interface Backend {
   /** how the chat and the suggestions reach the AI provider: directly, or through the server that holds the key */
   aiTransport: AiTransport;
   /** the model names the provider offers */
-  aiModels(): Promise<ModelInfo[]>;
+  aiModels(connection: string): Promise<ModelInfo[]>;
   /** called once the vault is ready (starts sync timers in local mode) */
   start(): void;
 }
@@ -21,8 +21,8 @@ class HttpBackend implements Backend {
   private es: EventSource | null = null;
   api: VaultApi;
 
-  aiModels = async (): Promise<ModelInfo[]> => {
-    const r = await fetch('./api/ai/models', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: '{}' });
+  aiModels = async (connection: string): Promise<ModelInfo[]> => {
+    const r = await fetch('./api/ai/models', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ connection }) });
     const b = await r.json().catch(() => null) as { models?: ModelInfo[]; error?: string } | null;
     if (!r.ok) throw new Error(b?.error ?? `Request failed (${r.status})`);
     return b?.models ?? [];
@@ -98,12 +98,16 @@ class LocalBackend implements Backend {
   private vault: Vault;
   private started = false;
   aiTransport: AiTransport;
-  aiModels: () => Promise<ModelInfo[]>;
+  aiModels: (connection: string) => Promise<ModelInfo[]>;
 
   constructor(vault: Vault, fetchImpl?: typeof fetch) {
     this.vault = vault;
     this.aiTransport = (req, signal) => streamChat(vault.aiConfig(), req, { fetchImpl, signal });
-    this.aiModels = () => listModels(vault.aiConfig(), { fetchImpl });
+    this.aiModels = async connection => {
+      const conn = vault.aiConfig().connections.find(c => c.id === connection);
+      if (!conn) throw new Error('That connection does not exist.');
+      return listModels(conn, { fetchImpl });
+    };
     this.api = vault;
     window.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') void vault.flush();

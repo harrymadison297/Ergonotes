@@ -267,7 +267,11 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     if (!authed(req)) return json(res, 401, { error: 'Sign in first' });
     if (!sameOrigin(req)) return json(res, 403, { error: 'Cross-origin request refused' });
     if ((await vault.status()).state !== 'ready') return json(res, 409, { error: 'The vault is locked' });
-    try { return json(res, 200, { models: await listModels(vault.aiConfig(), { fetchImpl: o.aiFetch }) }); }
+    let want = '';
+    try { want = String((JSON.parse((await readBody(req, 64 * 1024)) || '{}') as { connection?: string }).connection ?? ''); } catch { return json(res, 400, { error: 'Bad JSON' }); }
+    const conn = vault.aiConfig().connections.find(c => c.id === want);
+    if (!conn) return json(res, 400, { error: 'That connection does not exist.' });
+    try { return json(res, 200, { models: await listModels(conn, { fetchImpl: o.aiFetch }) }); }
     catch (e) { return json(res, 400, { error: e instanceof Error ? e.message : String(e) }); }
   };
 

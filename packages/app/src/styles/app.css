@@ -671,3 +671,20 @@ html.kbd .resizer:focus-visible { outline: none; }
 .model-tag.warn { background: var(--danger-bg); color: var(--danger); }
 .model-note { padding: 12px; color: var(--text-2); font-size: var(--fs-s); display: flex; align-items: center; gap: 6px; }
 .model-note.err { color: var(--danger); }
+
+.ai-h { margin: 16px 0 6px; font-size: var(--fs-m); font-weight: 600; color: var(--text-strong); }
+.conn-list { list-style: none; margin: 8px 0 10px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.conn, .conn-empty { border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
+.conn-empty { color: var(--text-2); font-size: var(--fs-s); }
+.conn-main { flex: 1; min-width: 0; }
+.conn-name { font-weight: 600; color: var(--text-strong); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.conn-type { font-weight: 400; font-size: var(--fs-xs); color: var(--text-2); }
+.conn-sub { font-size: var(--fs-xs); color: var(--text-2); overflow-wrap: anywhere; }
+.conn-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.conn-form { border: 1px solid var(--green); border-radius: var(--radius-lg); padding: 12px 14px; margin: 8px 0 4px; }
+.model-conn { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.model-conn label { font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); flex: none; }
+.model-conn .input { flex: 1; min-width: 0; }
+.ai-model-pill { max-width: 150px; }
+.ai-model-pill-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-composer-bar { flex-wrap: wrap; row-gap: 4px; }

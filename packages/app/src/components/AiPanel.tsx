@@ -15,6 +15,7 @@ import { href } from '../state/router';
 import { drawingBlock, mermaidToScene } from '../editor/diagram';
 import { fileToText } from './FilePreview';
 import { IconBtn, useMenu } from './ui';
+import { ModelPicker } from './ModelPicker';
 
 const WRITE_TOOLS = /^(create_note|append_to_note|replace_text|insert_after_heading|update_note|rename_note|add_tags|move_note|complete_task|daily_note|insert_diagram)$/;
 
@@ -435,7 +436,7 @@ export function AiPanel() {
     }
   };
 
-  const noKey = !ai.hasKey;
+  const noKey = !ai.chatReady;
   const disabled = noKey || isPrivate;
   const empty = st.items.length === 0;
 
@@ -567,6 +568,8 @@ export function AiPanel() {
               ], 'left')}>
               {mode === 'edit' ? <Pencil size={14} /> : <Search size={14} />} {mode === 'edit' ? 'Edit' : 'Ask'} <ChevronDown size={14} />
             </button>
+            <ModelPicker label="Chat model" variant="pill" value={ai.chatModel} connections={ai.connections} needsTools
+              onPick={async ref => { await app.run(api.setAiSettings({ chatModel: ref })); await app.refresh(); }} />
             <button type="button" className="ai-mode" aria-haspopup="menu" aria-label={`Thinking: ${THINKING_LABEL[ai.chatThinking]}`} title="How much the model thinks before it answers"
               onClick={e => thinkMenu.open(e, (['auto', 'off', 'low', 'medium', 'high'] as ThinkingLevel[]).map(l => ({
                 label: l === 'auto' ? 'Auto (the model’s default)' : THINKING_LABEL[l], checked: ai.chatThinking === l,
