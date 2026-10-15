@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Brain, Check, ChevronDown, Loader2, RefreshCw, Search, Wrench } from 'lucide-react';
-import type { AiConnectionInfo, ModelInfo, ModelRef } from '@ergonotes/core';
+import { THINKING_LEVELS, type AiConnectionInfo, type ModelInfo, type ModelRef, type ThinkingLevel } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames } from '../state/util';
 
@@ -36,11 +36,24 @@ export function useModels(conn: AiConnectionInfo | undefined, enabled = true): L
 
 const nameOf = (list: ModelInfo[] | null, id: string): string => list?.find(m => m.id === id)?.name ?? id;
 
+/** A model's name as short as it can be and still be recognised: no provider prefix, quantisation or "free" tags. */
+export function shortModelName(name: string): string {
+  let n = name.trim();
+  n = n.replace(/^[A-Z][\w .-]{0,24}:\s+(?=\S)/, '');       // "Anthropic: Claude Sonnet 4.5"
+  n = n.replace(/\s*\((?:free|beta|preview)\)$/i, '');        // "(free)"
+  if (n.includes('/')) n = n.slice(n.lastIndexOf('/') + 1);    // "hf.co/unsloth/Qwen3.5-2B-GGUF:Q8_0"
+  n = n.replace(/:(?:free|extended|thinking|nitro|online)$/i, '').replace(/:(?:[QqFf]\d[\w.]*)$/, '');
+  n = n.replace(/[-_.]?GGUF$/i, '');
+  return n || name;
+}
+
+export const EFFORT_LABEL: Record<ThinkingLevel, string> = { auto: 'Auto', off: 'Off', low: 'Low', medium: 'Medium', high: 'High' };
+
 /**
  * A model chooser across connections: pick the connection, then search the models it offers (free, tools, thinking,
  * context are shown). A name that is not in the list can still be typed and used.
  */
-export function ModelPicker({ id, label, value, connections, needsTools, variant = 'field', onPick }: {
+export function ModelPicker({ id, label, value, connections, needsTools, variant = 'field', effort, onEffort, onPick }: {
   id?: string;
   label: string;
   value: ModelRef;
@@ -49,6 +62,9 @@ export function ModelPicker({ id, label, value, connections, needsTools, variant
   needsTools?: boolean;
   /** `pill`: a compact button for the chat composer */
   variant?: 'field' | 'pill';
+  /** the pill also shows, and the panel lets the person change, how much the model thinks */
+  effort?: ThinkingLevel;
+  onEffort?: (l: ThinkingLevel) => void;
   onPick: (ref: ModelRef) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -107,9 +123,11 @@ export function ModelPicker({ id, label, value, connections, needsTools, variant
   return (
     <>
       {variant === 'pill' ? (
-        <button ref={btn} id={id} type="button" className="ai-mode ai-model-pill" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${value.model || 'none'}`}
-          title={`${label}${where ? ` (${where})` : ''}: ${value.model}`} onClick={() => setOpen(o => !o)}>
-          <span className="ai-model-pill-name">{value.model ? shownName : 'Choose a model'}</span> <ChevronDown size={14} />
+        <button ref={btn} id={id} type="button" className="ai-mode ai-model-pill" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${value.model ? shortModelName(shownName) : 'none'}${effort ? `, thinking ${EFFORT_LABEL[effort]}` : ''}`}
+          title={`${label}${where ? ` (${where})` : ''}: ${value.model}${effort ? ` · thinking: ${EFFORT_LABEL[effort]}` : ''}`} onClick={() => setOpen(o => !o)}>
+          <span className="ai-model-pill-name">{value.model ? shortModelName(shownName) : 'Choose a model'}</span>
+          {effort && value.model && <span className="ai-model-pill-effort">{effort === 'medium' ? 'Med' : EFFORT_LABEL[effort]}</span>}
+          <ChevronDown size={14} />
         </button>
       ) : (
         <button ref={btn} id={id} type="button" className="input model-btn" aria-haspopup="listbox" aria-expanded={open} aria-label={`${label}: ${value.model || 'none'}`}
@@ -174,6 +192,16 @@ export function ModelPicker({ id, label, value, connections, needsTools, variant
               );
             })}
           </div>
+          {effort && onEffort && (
+            <div className="model-effort">
+              <span id={`${id ?? 'mp'}-effort`} title="How much the model thinks before it answers">Effort</span>
+              <div className="seg" role="group" aria-labelledby={`${id ?? 'mp'}-effort`}>
+                {THINKING_LEVELS.map(l => (
+                  <button key={l} type="button" aria-pressed={effort === l} onClick={() => onEffort(l)}>{l === 'medium' ? 'Med' : EFFORT_LABEL[l]}</button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </>

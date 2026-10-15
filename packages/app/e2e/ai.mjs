@@ -202,9 +202,18 @@ await page.locator('.ai-md', { hasText: 'Two things.' }).waitFor({ timeout: 8000
 check('the thinking is shown, collapsed once the answer is there', (await page.locator('.ai-think summary', { hasText: 'Thought process' }).count()) === 1 && !(await page.locator('.ai-think').first().evaluate(d => d.open)));
 await page.locator('.ai-think summary').first().click();
 check('and can be opened', (await page.locator('.ai-think-text', { hasText: 'Two items.' }).first().isVisible()));
-await page.getByRole('button', { name: /^Thinking:/ }).click();
-await page.getByRole('menuitem', { name: 'High' }).click();
-check('the level is chosen from the composer', !!(await until(async () => (await rpc('getAiSettings')).chatThinking === 'high')));
+const modeBtn = page.getByRole('button', { name: /^Mode:/ });
+check('the mode is an icon, not a word', ((await modeBtn.textContent()) ?? '').trim() === '' && (await modeBtn.locator('svg').count()) === 1);
+const pill = page.getByRole('button', { name: /^Chat model:/ });
+check('the model shows a short name and its effort in one pill', /^Gemma 4 31B\s*Auto$/.test(((await pill.textContent()) ?? '').trim()), await pill.textContent());
+{ const tops = await page.evaluate(() => { const b = document.querySelector('.ai-composer-bar'); return [...b.children].filter(c => !c.classList.contains('model-panel') && !c.classList.contains('grow')).map(c => c.className + '@' + Math.round(c.getBoundingClientRect().top)); });
+  check('the composer bar stays on one line', Math.max(...tops.map(t => Number(t.split('@')[1]))) - Math.min(...tops.map(t => Number(t.split('@')[1]))) < 12, tops.join(', ')); }
+await pill.click();
+await page.getByRole('group', { name: 'Effort' }).getByRole('button', { name: 'High' }).click();
+await page.screenshot({ path: `${shots}/model-effort.png` });
+check('the level is chosen in the same panel as the model', !!(await until(async () => (await rpc('getAiSettings')).chatThinking === 'high')));
+check('and shown on the pill', !!(await until(async () => /High$/.test(((await pill.textContent()) ?? '').trim()))));
+await page.keyboard.press('Escape');
 script.push([{ type: 'text', delta: 'noted' }]);
 await page.getByLabel('Message the assistant').fill('again');
 await page.getByLabel('Message the assistant').press('Enter');

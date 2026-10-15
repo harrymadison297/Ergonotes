@@ -948,3 +948,12 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .rec-opt input { margin-top: 3px; flex: none; }
 .rec-opt .hint { display: block; }
 .audio-ico { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--green-fill); color: #fff; flex: none; }
+
+/* composer: mode is an icon, the model and its effort share one pill, all on one line */
+.ai-mode.icon { width: 30px; padding: 0; justify-content: center; margin-left: 2px; }
+.ai-composer-bar { flex-wrap: nowrap; min-width: 0; }
+.ai-composer-bar .ai-model-pill { flex: 0 1 auto; min-width: 0; max-width: 100%; margin-left: 2px; }
+.ai-model-pill-name { min-width: 0; font-weight: 600; color: var(--text-strong); }
+.ai-model-pill-effort { flex: none; color: var(--text-2); font-weight: 500; }
+.model-effort { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--border); font-size: var(--fs-s); font-weight: 600; color: var(--text-2); flex: none; }
+.model-effort .seg button { min-height: 28px; padding: 2px 9px; font-size: var(--fs-xs); }

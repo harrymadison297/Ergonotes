@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AtSign, Brain, Check, ChevronDown, FileText, History as HistoryIcon, Info, Lightbulb, Loader2, Paperclip, Pencil, Plus, RotateCcw, Search, Send, Shapes,
+  AtSign, Brain, Check, ChevronDown, FileText, Glasses, History as HistoryIcon, Info, Lightbulb, Loader2, Paperclip, Pencil, Plus, RotateCcw, Search, Send, Shapes,
   SquarePen, Square, Trash2, WandSparkles, X,
 } from 'lucide-react';
 import { buildTools, chatSystemPrompt, lineDiff, mergeText, runAgent, type AgentTool, type ChatSummary, type NoteIO, type ThinkingLevel } from '@ergonotes/core';
@@ -161,7 +161,6 @@ export function AiPanel() {
   const outline = useOutline();
   const modeMenu = useMenu();
   const plusMenu = useMenu();
-  const thinkMenu = useMenu();
   const upload = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState('');
   const [mentions, setMentions] = useState<Mention[]>([]);
@@ -561,29 +560,23 @@ export function AiPanel() {
                 { label: 'A file from this device', icon: <Paperclip size={16} />, onClick: () => upload.current?.click() },
               ], 'left')} />
             <IconBtn label="Mention a note or file" icon={<AtSign size={18} />} disabled={disabled} onClick={startMention} />
-            <button type="button" className="ai-mode" aria-haspopup="menu" aria-label={`Mode: ${mode === 'edit' ? 'Edit' : 'Ask'}`}
+            <button type="button" className="ai-mode icon" aria-haspopup="menu" aria-label={`Mode: ${mode === 'edit' ? 'Edit' : 'Ask'}`} title={mode === 'edit' ? 'Edit: the assistant may change notes' : 'Ask: answers only'}
               onClick={e => modeMenu.open(e, [
-                { label: 'Ask: answers only', icon: <Search size={16} />, checked: mode === 'ask', onClick: () => setPrefs({ aiMode: 'ask' }) },
+                { label: 'Ask: answers only', icon: <Glasses size={16} />, checked: mode === 'ask', onClick: () => setPrefs({ aiMode: 'ask' }) },
                 { label: 'Edit: may change notes', icon: <Pencil size={16} />, checked: mode === 'edit', onClick: () => setPrefs({ aiMode: 'edit' }) },
               ], 'left')}>
-              {mode === 'edit' ? <Pencil size={14} /> : <Search size={14} />} {mode === 'edit' ? 'Edit' : 'Ask'} <ChevronDown size={14} />
+              {mode === 'edit' ? <Pencil size={15} /> : <Glasses size={16} />}
             </button>
             <ModelPicker label="Chat model" variant="pill" value={ai.chatModel} connections={ai.connections} needsTools
+              effort={ai.chatThinking} onEffort={async l => { await app.run(api.setAiSettings({ chatThinking: l })); await app.refresh(); }}
               onPick={async ref => { await app.run(api.setAiSettings({ chatModel: ref })); await app.refresh(); }} />
-            <button type="button" className="ai-mode" aria-haspopup="menu" aria-label={`Thinking: ${THINKING_LABEL[ai.chatThinking]}`} title="How much the model thinks before it answers"
-              onClick={e => thinkMenu.open(e, (['auto', 'off', 'low', 'medium', 'high'] as ThinkingLevel[]).map(l => ({
-                label: l === 'auto' ? 'Auto (the model’s default)' : THINKING_LABEL[l], checked: ai.chatThinking === l,
-                onClick: async () => { await app.run(api.setAiSettings({ chatThinking: l })); await app.refresh(); },
-              })), 'left')}>
-              <Brain size={14} /> {THINKING_LABEL[ai.chatThinking]} <ChevronDown size={14} />
-            </button>
             <span className="grow" />
             {st.busy
               ? <IconBtn label="Stop" icon={<Square size={16} />} variant="primary" onClick={() => abort.current?.abort()} />
               : <IconBtn label="Send" icon={<Send size={16} />} variant="primary" disabled={disabled || !draft.trim()} onClick={() => void send(draft)} />}
           </div>
         </form>
-        {modeMenu.node}{plusMenu.node}{thinkMenu.node}
+        {modeMenu.node}{plusMenu.node}
         <input ref={upload} type="file" hidden multiple accept=".txt,.md,.json,.csv,.tsv,.xlsx,.pptx,text/*" onChange={e => { void attachLocal(e.target.files); e.target.value = ''; }} />
         <p className="ai-disclaimer">AI can make mistakes. Check important information.</p>
       </div>
