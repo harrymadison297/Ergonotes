@@ -366,7 +366,22 @@ html.kbd .menu-item:focus-visible { background: var(--bg-hover); outline-offset:
 .title-input::placeholder { color: var(--text-3); }
 .editor-foot { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--border); color: var(--text-2); font-size: var(--fs-xs); min-height: 46px; flex-wrap: wrap; }
 .editor-foot .grow { flex: 1; }
-.tag-input { border: 0; background: transparent; min-width: 90px; font-size: var(--fs-s); }
+.editor-foot > :nth-child(n+3) { flex: none; }
+.editor-foot .tag-bar { flex: 1 1 160px; }
+/* tags: pills while they fit on the line, dots (with a panel on hover or focus) when they would not */
+.tag-bar { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tag-measure { position: absolute; left: 0; top: 0; display: inline-flex; gap: 8px; white-space: nowrap; visibility: hidden; pointer-events: none; }
+.tag-input { border: 0; background: transparent; flex: 1 1 90px; min-width: 90px; font-size: var(--fs-s); }
+.tag-cluster { position: relative; display: inline-flex; align-items: center; flex: none; padding: 8px 6px; margin: -8px 0; border-radius: 12px; cursor: default; }
+.tag-cluster .tag-dots { gap: 5px; }
+.tag-cluster .tag-dot { width: 11px; height: 11px; }
+@media (hover: hover) { .tag-cluster:hover { background: var(--bg-hover); } }
+html.kbd .tag-cluster:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+/* the panel is out of the flow (nothing around it moves) and touches the dots (the pointer can go from one to the other) */
+.tag-pop { position: absolute; left: -6px; bottom: 100%; z-index: 30; padding-bottom: 14px; opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease), visibility 0s linear var(--t-base); }
+.tag-pop-in { display: flex; flex-wrap: wrap; gap: 6px; width: max-content; max-width: min(440px, calc(100vw - 32px)); padding: 10px; background: var(--bg); border-radius: var(--radius-lg); box-shadow: var(--shadow-pop); }
+.tag-cluster:hover .tag-pop, .tag-cluster:focus-within .tag-pop { opacity: 1; visibility: visible; transform: none; transition-delay: 120ms, 120ms, 0s; }
 .tag-input:focus { box-shadow: 0 1px 0 var(--focus); }
 .banner { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--danger-bg); color: var(--danger); border-bottom: 1px solid color-mix(in srgb, var(--danger) 25%, transparent); }
 .banner .grow { flex: 1; }

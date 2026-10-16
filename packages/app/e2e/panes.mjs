@@ -90,6 +90,55 @@ await page.keyboard.press('Enter');
 await settle();
 check('the command "Show or hide the note list" shows it again', (await width('.pane-list')) === before.list && (await prefs()).listHidden === false, JSON.stringify(await prefs()));
 
+// ---- tags in the editor footer: pills with names while they fit, dots with a panel when they would not
+{
+  const tagged = await rpc('createNote', { title: 'Tagged', body: 'x', tags: ['projects/alpha-release', 'reading-list', 'meeting-notes', 'ideas', 'later'] });
+  await page.goto(`${base}/#/notes/${tagged.id}`);
+  await page.locator('.editor-foot .tag-bar').waitFor({ timeout: 15000 });
+  const mode = () => page.evaluate(() => document.querySelector('.editor-foot .tag-cluster') ? 'dots' : document.querySelectorAll('.editor-foot .tag-bar > .tag-pill').length ? 'pills' : 'none');
+  const foot = () => page.evaluate(() => { const r = document.querySelector('.editor-foot').getBoundingClientRect(); return `${Math.round(r.top)}/${Math.round(r.height)}`; });
+  await page.getByRole('button', { name: 'Full screen', exact: true }).click(); // the note alone: the line is as wide as the window
+  await page.setViewportSize({ width: 1800, height: 900 });
+  await settle();
+  check('with room the tags show their names, five pills in one line', (await mode()) === 'pills' && (await page.evaluate(() => { const t = [...document.querySelectorAll('.editor-foot .tag-bar > .tag-pill')].map(e => Math.round(e.getBoundingClientRect().top)); return new Set(t).size === 1 && t.length === 5; })));
+  // sweep the width down and up again: the mode changes once each way and never flaps
+  const trail = [];
+  for (let w = 1800; w >= 500; w -= 20) { await page.setViewportSize({ width: w, height: 900 }); await page.waitForTimeout(40); trail.push(await mode()); }
+  for (let w = 500; w <= 1800; w += 20) { await page.setViewportSize({ width: w, height: 900 }); await page.waitForTimeout(40); trail.push(await mode()); }
+  const flips = trail.filter((m, i) => i && m !== trail[i - 1]).length;
+  check('narrowing the window turns the pills into dots once, widening turns them back once', flips === 2 && trail[0] === 'pills' && trail.includes('dots'), `${flips} flips: ${trail.join(',').replace(/(pills,)+/g, 'pills…').replace(/(dots,)+/g, 'dots…')}`);
+  check('the footer stays one line tall while it happens', await page.evaluate(() => document.querySelector('.editor-foot').getBoundingClientRect().height < 60));
+  await page.setViewportSize({ width: 800, height: 900 });
+  await settle();
+  check('narrow: only coloured dots are left in the line', (await mode()) === 'dots' && (await page.locator('.editor-foot .tag-cluster .tag-dots .tag-dot').count()) === 5 && (await page.locator('.editor-foot .tag-bar > .tag-pill').count()) === 0);
+  check('and the panel is not on screen yet', await page.evaluate(() => getComputedStyle(document.querySelector('.tag-pop')).visibility === 'hidden'));
+  const before = { foot: await foot(), cluster: await page.evaluate(() => JSON.stringify(document.querySelector('.tag-cluster').getBoundingClientRect())), input: await page.evaluate(() => JSON.stringify(document.querySelector('.tag-input').getBoundingClientRect())) };
+  await page.locator('.tag-cluster').hover();
+  await page.waitForTimeout(500);
+  const open = await page.evaluate(() => { const p = document.querySelector('.tag-pop-in'); const r = p.getBoundingClientRect(); return { shown: getComputedStyle(document.querySelector('.tag-pop')).visibility === 'visible', names: [...p.querySelectorAll('.tag-pill')].map(e => e.textContent.trim()), above: r.bottom <= document.querySelector('.editor-foot').getBoundingClientRect().top + 1, inside: r.left >= 0 && r.right <= innerWidth }; });
+  check('pointing at the dots opens a panel above them with every tag by name', open.shown && open.names.slice().sort().join('|') === 'ideas|later|meeting-notes|projects/alpha-release|reading-list' && open.above && open.inside, JSON.stringify(open));
+  const after = { foot: await foot(), cluster: await page.evaluate(() => JSON.stringify(document.querySelector('.tag-cluster').getBoundingClientRect())), input: await page.evaluate(() => JSON.stringify(document.querySelector('.tag-input').getBoundingClientRect())) };
+  check('and nothing else moves: footer, dots and field stay exactly where they were', JSON.stringify(before) === JSON.stringify(after), JSON.stringify({ before, after }));
+  // the pointer can travel from the dots into the panel (it stays open) and remove a tag there
+  await page.locator('.tag-pop-in .tag-pill', { hasText: 'later' }).hover();
+  await page.waitForTimeout(300);
+  check('the panel stays open while the pointer is in it', await page.evaluate(() => getComputedStyle(document.querySelector('.tag-pop')).visibility === 'visible'));
+  await page.locator('.tag-pop-in').getByRole('button', { name: 'Remove tag later' }).click();
+  check('a tag is removed from the panel', !!(await until(async () => !(await rpc('getNote', tagged.id)).tags.includes('later'))), JSON.stringify((await rpc('getNote', tagged.id)).tags));
+  await page.mouse.move(600, 300);
+  await page.waitForTimeout(500);
+  check('moving away closes it', await page.evaluate(() => getComputedStyle(document.querySelector('.tag-pop')).visibility === 'hidden'));
+  // from the keyboard
+  await page.locator('.tag-cluster').focus();
+  await page.waitForTimeout(400);
+  check('the dots can be reached with the keyboard and open the panel too', await page.evaluate(() => getComputedStyle(document.querySelector('.tag-pop')).visibility === 'visible'));
+  await page.screenshot({ path: `${shots}/tags-dots.png` });
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.keyboard.press('Escape');
+  await page.locator('.tag-cluster').blur();
+  await page.keyboard.press('Escape');
+}
+
 // ---- the collapsed sidebar: one size, one rhythm, no slack
 {
   const c2 = await browser.newContext({ viewport: { width: 1280, height: 780 } });

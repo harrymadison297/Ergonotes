@@ -151,6 +151,47 @@ export function TagPill({ tag, onRemove }: { tag: string; onRemove?: () => void 
   );
 }
 
+/**
+ * A note's tags and the field to add one. With room, every tag is a pill with its name. When the pills and the field
+ * would not fit on one line they become coloured dots, and pointing at (or tabbing to) the dots opens a panel above with
+ * the pills, names and remove buttons included. The choice is made by measuring a hidden copy of the pills against the
+ * width this bar is given (which does not depend on what is inside), so it cannot flip back and forth by itself.
+ */
+export function TagBar({ tags, onRemove, children }: { tags: string[]; onRemove?: (tag: string) => void; children?: ReactNode }) {
+  const bar = useRef<HTMLDivElement>(null);
+  const measure = useRef<HTMLSpanElement>(null);
+  const [dots, setDots] = useState(false);
+  const FIELD = children ? 90 + 8 : 0; // the add-tag field keeps this much beside the pills
+  const SLACK = 12; // coming back to pills needs this much more room than leaving them did
+  useLayoutEffect(() => {
+    const el = bar.current, m = measure.current;
+    if (!el || !m) return;
+    const fit = () => {
+      const need = m.getBoundingClientRect().width + (tags.length ? FIELD : 0);
+      const have = el.clientWidth;
+      setDots(d => tags.length > 0 && (d ? need + SLACK > have : need > have));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [tags, FIELD]);
+  const pill = (t: string) => <TagPill key={t} tag={t} onRemove={onRemove && (() => onRemove(t))} />;
+  const shown = dots && tags.length > 0;
+  return (
+    <div className="tag-bar" ref={bar}>
+      <span className="tag-measure" ref={measure} aria-hidden>{tags.map(t => <TagPill key={t} tag={t} onRemove={onRemove && (() => undefined)} />)}</span>
+      {shown ? (
+        <span className="tag-cluster" tabIndex={0} role="group" aria-label={`Tags: ${tags.join(', ')}`}>
+          <span className="tag-dots">{tags.map(t => <i key={t} className="tag-dot" style={tagStyle(t)} />)}</span>
+          <span className="tag-pop"><span className="tag-pop-in">{tags.map(pill)}</span></span>
+        </span>
+      ) : tags.map(pill)}
+      {children}
+    </div>
+  );
+}
+
 export function NoteChips({ n }: { n: ItemSummary }) {
   return (
     <>

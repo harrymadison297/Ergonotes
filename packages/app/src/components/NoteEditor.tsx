@@ -30,7 +30,7 @@ import { blobToB64, RecorderDialog, TranscribeDialog, type Recording } from './R
 import { DrawingDialog } from './DrawingDialog';
 import { editorBridge } from '../state/editorBridge';
 import { suggestionRequest, cleanSuggestion, completeText } from '@ergonotes/core';
-import { Dialog, IconBtn, TagPill, useMenu, type MenuEntry } from './ui';
+import { Dialog, IconBtn, TagBar, useMenu, type MenuEntry } from './ui';
 import { href } from '../state/router';
 import { ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, clampZoom, setPrefs, usePrefs, usePrefsNow } from '../state/prefs';
 
@@ -649,15 +649,13 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
 
       <div className="editor-foot">
         <Tag size={15} />
-        {doc.tags.map(t => (
-          <TagPill key={t} tag={t} onRemove={locked ? undefined : () => void removeTag(t)} />
-        ))}
-        {!locked && (
-          <input className="tag-input" aria-label="Add tag" placeholder="Add tag" value={tagDraft} onChange={e => setTagDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); void addTag(tagDraft); } else if (e.key === 'Backspace' && !tagDraft && doc.tags.length) void removeTag(doc.tags[doc.tags.length - 1]); }}
-            onBlur={() => void addTag(tagDraft)} />
-        )}
-        <span className="grow" />
+        <TagBar tags={doc.tags} onRemove={locked ? undefined : t => void removeTag(t)}>
+          {!locked && (
+            <input className="tag-input" aria-label="Add tag" placeholder="Add tag" value={tagDraft} onChange={e => setTagDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); void addTag(tagDraft); } else if (e.key === 'Backspace' && !tagDraft && doc.tags.length) void removeTag(doc.tags[doc.tags.length - 1]); }}
+              onBlur={() => void addTag(tagDraft)} />
+          )}
+        </TagBar>
         {app.ai.suggest && ghostState.busy && <span className="ghost-status" role="status"><Sparkles size={12} /> Thinking of a suggestion…</span>}
         {app.ai.suggest && !ghostState.busy && ghostState.error && <span className="ghost-status err" role="status" title={ghostState.error}>Suggestion unavailable: {ghostState.error.length > 60 ? ghostState.error.slice(0, 59) + '…' : ghostState.error}</span>}
         {app.ai.suggest && !ghostState.busy && !ghostState.error && ghostState.empty && <span className="ghost-status" role="status">No suggestion for this text</span>}
