@@ -31,7 +31,7 @@ function RouteView() {
   switch (route.name) {
     case 'home': return <Home />;
     case 'notes': return <NotesView noteId={route.note} />;
-    case 'tasks': return <TasksView noteId={route.note} />;
+    case 'tasks': return <TasksView noteId={route.note} taskIndex={route.task} />;
     case 'calendar': return <CalendarView noteId={route.note} />;
     case 'files': return <FilesView fileId={route.file} />;
     case 'folders': return <FoldersView />;

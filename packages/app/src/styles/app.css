@@ -308,6 +308,8 @@ html.kbd .menu-item:focus-visible { background: var(--bg-hover); outline-offset:
 .ex-tile.sel { background: var(--indigo-tint); border-color: var(--sel); }
 .ex-tile.cut, .explorer tr.cut, .nav-item.cut { opacity: .45; }
 .explorer:focus { outline: none; }
+@keyframes task-flash { 0%, 60% { background: var(--indigo-tint); box-shadow: 0 0 0 4px var(--indigo-tint); } 100% { background: transparent; box-shadow: 0 0 0 4px transparent; } }
+.prose li[data-checked].task-flash { animation: task-flash 1.8s ease-out; border-radius: 6px; }
 .zoom-ctl { display: inline-flex; align-items: center; gap: 0; margin: 0 2px; }
 .zoom-pct { min-width: 44px; height: 28px; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; cursor: pointer; }
 .zoom-pct:hover { background: var(--bg-hover); color: var(--text); }

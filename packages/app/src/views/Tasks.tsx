@@ -17,7 +17,7 @@ export function TaskRow({ t, compact, active }: { t: TaskEntry; compact?: boolea
         onClick={async () => { await app.run(app.api.toggleTask(t.noteId, t.index, !t.done)); await app.refresh(); }}>
         {t.done && <Check size={14} />}
       </button>
-      <a className="body" href={href({ name: 'tasks', note: t.noteId })} style={{ color: 'inherit', textDecoration: 'none' }}>
+      <a className="body" href={href({ name: 'tasks', note: t.noteId, task: t.index })} style={{ color: 'inherit', textDecoration: 'none' }}>
         <span className="tt">{t.text || 'Untitled task'} {t.flag && <Flag size={13} className="flag" />}</span>
         {due && <span className={classNames('due', due.overdue && !t.done && 'overdue')}>{due.text}</span>}
         {!compact && <span className="src" style={{ display: 'block' }}>{t.noteTitle}</span>}
@@ -26,7 +26,7 @@ export function TaskRow({ t, compact, active }: { t: TaskEntry; compact?: boolea
   );
 }
 
-export function TasksView({ noteId }: { noteId?: string }) {
+export function TasksView({ noteId, taskIndex }: { noteId?: string; taskIndex?: number }) {
   const app = useApp();
   const [tab, setTab] = useState<'open' | 'due' | 'done'>('open');
   const [q, setQ] = useState('');
@@ -56,7 +56,7 @@ export function TasksView({ noteId }: { noteId?: string }) {
       </div>
       <div className="list-scroll">
         {list.length === 0 && <div className="empty"><h3>{tab === 'done' ? 'Nothing completed yet' : 'No tasks'}</h3><p>Add a checklist in any note and it appears here.</p></div>}
-        {list.map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} active={t.noteId === noteId} />)}
+        {list.map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} active={t.noteId === noteId && (taskIndex === undefined || t.index === taskIndex)} />)}
       </div>
     </PaneList>
   );
@@ -64,7 +64,7 @@ export function TasksView({ noteId }: { noteId?: string }) {
   return (
     <div className="split">
       {listPane}
-      <div className="pane-body">{noteId ? <NoteEditor key={noteId} id={noteId} /> : <div className="empty"><h3>Select a task</h3><p>Its note opens here.</p></div>}</div>
+      <div className="pane-body">{noteId ? <NoteEditor key={noteId} id={noteId} focusTask={taskIndex === undefined ? undefined : { index: taskIndex, text: app.tasks.find(t => t.noteId === noteId && t.index === taskIndex)?.text }} /> : <div className="empty"><h3>Select a task</h3><p>Its note opens here.</p></div>}</div>
     </div>
   );
 }

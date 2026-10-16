@@ -37,7 +37,10 @@ import { ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, clampZoom, setPrefs, usePrefs, usePrefsN
 type SaveState = 'saved' | 'saving' | 'error';
 
 
-export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () => void; readOnly?: boolean }) {
+/** A task to bring into view when the note opens: its place among the note's tasks, and its words (to find it again if the note changed). */
+export interface FocusTask { index: number; text?: string }
+
+export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; onBack?: () => void; readOnly?: boolean; focusTask?: FocusTask }) {
   const app = useApp();
   const { api } = app;
   const [doc, setDoc] = useState<NoteDoc | null>(null);
@@ -301,6 +304,29 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     dom.addEventListener('drop', onDrop);
     return () => { dom.removeEventListener('paste', onPaste); dom.removeEventListener('drop', onDrop); };
   });
+
+  // opened from a task: scroll to it and let it show for a moment
+  useEffect(() => {
+    if (!editor || !doc || !focusTask) return;
+    let tries = 0;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const find = () => {
+      const items = Array.from(editor.view.dom.querySelectorAll<HTMLElement>('li[data-checked]'));
+      const text = (el: HTMLElement) => (el.querySelector(':scope > div > p, :scope > p')?.textContent ?? el.textContent ?? '').trim();
+      let el: HTMLElement | undefined = items[focusTask.index];
+      // the note was edited since the list was made: the task with the same words nearest to where it was
+      if (focusTask.text && (!el || text(el) !== focusTask.text.trim())) {
+        const same = items.map((it, i) => ({ it, i })).filter(x => text(x.it) === focusTask.text!.trim()).sort((a, b) => Math.abs(a.i - focusTask.index) - Math.abs(b.i - focusTask.index));
+        el = same[0]?.it ?? el;
+      }
+      if (!el) { if (++tries < 25) t = setTimeout(find, 80); return; }
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.add('task-flash');
+      setTimeout(() => el!.classList.remove('task-flash'), 1800);
+    };
+    t = setTimeout(find, 60);
+    return () => { if (t) clearTimeout(t); };
+  }, [editor, doc?.id, focusTask?.index, focusTask?.text]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl + wheel over the note changes the size of its text (a plain wheel scrolls as always)
   useEffect(() => {
