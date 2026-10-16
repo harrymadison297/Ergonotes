@@ -4,7 +4,7 @@
 import MarkdownIt from 'markdown-it';
 import MiniSearch from 'minisearch';
 import type {
-  CalendarData, ChatRecord, ChatSummary, ConflictChoice, ConflictDetail, EventEntry, ExportResult, FileBlob, FileInfo, HeadInfo, ImportFile, ItemSummary, NoteDoc, RecordInfo, SearchHit,
+  CalendarData, ChatRecord, ChatSummary, ConflictChoice, ConflictDetail, EventEntry, ExportResult, FileBlob, FileInfo, HeadInfo, ImportFile, ImportResult, ItemSummary, NoteDoc, RecordInfo, SearchHit,
   Settings, StoreConfig, SyncReport, TaskEntry, VaultApi, VaultState, VaultStatus, VersionInfo,
 } from './api.ts';
 import {
@@ -2048,24 +2048,40 @@ export class Vault implements VaultApi {
   // ---------- import / export ----------
   /** Copy Markdown files into the vault under `parent`; they become notes on the next look at the folder. */
   async importMarkdown(files: ImportFile[], parent: string | null = null): Promise<{ notes: number; folders: number }> {
+    const r = await this.importFiles(files.filter(f => /\.(md|markdown|txt)$/i.test(f.path)), parent ?? this.folderByRole('resources')?.id ?? null);
+    return { notes: r.notes, folders: r.folders };
+  }
+
+  /**
+   * Take files into the vault under `parent` with their folders: Markdown becomes notes, the kinds of file a note can
+   * embed (images, PDF, audio…) are copied to the same relative place so links between them keep working. The rest is
+   * counted as skipped. They become items on the look at the folder that follows.
+   */
+  async importFiles(files: ImportFile[], parent: string | null = null): Promise<ImportResult> {
     this.ready();
-    const base = parent ? this.folderPath(parent) : this.folderByRole('resources')?.path ?? '';
-    let notes = 0;
+    const base = parent ? this.folderPath(parent) : '';
+    const out: ImportResult = { notes: 0, files: 0, folders: 0, skipped: 0 };
     const dirs = new Set<string>();
+    const known = (d: string) => this.diskDirs.has(d) || [...this.views.values()].some(v => v.type === 'folder' && v.path === d);
     for (const f of files) {
-      if (!/\.(md|markdown|txt)$/i.test(f.path)) continue;
-      const segs = f.path.replace(/\\/g, '/').split('/').filter(s => s && s !== '.' && s !== '..').map(s => safeName(s));
+      const raw = f.path.replace(/\\/g, '/');
+      const ext = extOf(raw);
+      const isNote = /\.(md|markdown|txt)$/i.test(raw);
+      const bytes = f.data !== undefined ? fromB64(f.data) : f.content !== undefined ? enc(f.content) : null;
+      if (!bytes || (!isNote && (!ATTACH_EXT.has(ext) || SCAN_ONLY_IN_RECORD.has(ext))) || bytes.length > (isNote ? MAX_NOTE_BYTES : MAX_ATTACHMENT)) { out.skipped++; continue; }
+      const segs = raw.split('/').filter(s => s && s !== '.' && s !== '..').map(s => safeName(s));
       const file = segs.pop();
-      if (!file) continue;
+      if (!file) { out.skipped++; continue; }
       const dir = joinPath(base, ...segs);
-      const fresh = dir && !this.diskDirs.has(dir) && ![...this.views.values()].some(v => v.type === 'folder' && v.path === dir);
-      if (fresh) for (let d = dir; d && !dirs.has(d); d = dirname(d)) dirs.add(d);
-      const path = await this.freePath(dir, stripExt(file).replace(/\.txt$/i, ''), '.md');
-      await this.diskTask(async () => { await this.fs.write(path, f.content); });
-      notes++;
+      // the folders this file makes (the ones above that are already there do not count)
+      for (let d = dir; d && !dirs.has(d) && !known(d); d = dirname(d)) dirs.add(d);
+      const path = isNote ? await this.freePath(dir, stripExt(file).replace(/\.txt$/i, ''), '.md') : await this.freePath(dir, file.slice(0, file.lastIndexOf('.')), file.slice(file.lastIndexOf('.')));
+      await this.diskTask(async () => { await this.fs.write(path, bytes); });
+      if (isNote) out.notes++; else out.files++;
     }
     await this.rescan();
-    return { notes, folders: dirs.size };
+    out.folders = dirs.size;
+    return out;
   }
 
   async exportNote(id: string, format: 'md' | 'html'): Promise<ExportResult> {

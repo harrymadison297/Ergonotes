@@ -5,7 +5,7 @@ import {
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { activateKeys, classNames, relTime } from '../state/util';
-import { dragSource, dropZone, useDropState, useMoveInto } from '../state/dnd';
+import { dragSource, dropZone, useDropState, useImportInto, useMoveInto } from '../state/dnd';
 import { href, noteHref } from '../state/router';
 import { FileImg } from '../components/FileImg';
 import { IconBtn, TagDots, useMenu, type MenuEntry } from '../components/ui';
@@ -39,6 +39,7 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
   const drop = useDropState();
   const hover = drop.key;
   const moveInto = useMoveInto();
+  const importInto = useImportInto();
   const menu = useMenu();
   useEffect(() => { setSel(null); }, [parentId, heading]);
 
@@ -73,7 +74,7 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
     return (
       <div key={it.id} role="button" tabIndex={0} className={classNames('ex-tile', sel === it.id && 'sel', hover === key && 'drop-over')} title={it.title}
         {...dragSource({ id: it.id, type: isFolder ? 'folder' : 'note' })}
-        {...(isFolder ? dropZone(key, drop, moveInto(it.id)) : {})}
+        {...(isFolder ? dropZone(key, drop, moveInto(it.id), undefined, importInto(it.id)) : {})}
         onClick={() => activate(it)} onDoubleClick={() => open(it)}
         onKeyDown={activateKeys(() => open(it))}
         onContextMenu={e => { e.preventDefault(); setSel(it.id); menu.open({ currentTarget: e.currentTarget }, entries(it)); }}>
@@ -99,7 +100,7 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
     return (
       <tr key={it.id} className={classNames('clickable', hover === key && 'drop-over')} aria-selected={sel === it.id}
         {...dragSource({ id: it.id, type: isFolder ? 'folder' : 'note' })}
-        {...(isFolder ? dropZone(key, drop, moveInto(it.id)) : {})}
+        {...(isFolder ? dropZone(key, drop, moveInto(it.id), undefined, importInto(it.id)) : {})}
         onClick={() => activate(it)} onDoubleClick={() => open(it)}
         onContextMenu={e => { e.preventDefault(); setSel(it.id); menu.open({ currentTarget: e.currentTarget }, entries(it)); }}>
         <td className="name"><div className="name-cell">
@@ -126,7 +127,7 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
             return (
               <span key={key} className="ex-crumb">
                 {i > 0 && <ChevronRight size={14} aria-hidden />}
-                <button className={hover === key ? 'drop-over' : undefined} {...dropZone(key, drop, moveInto(c.id))}
+                <button className={hover === key ? 'drop-over' : undefined} {...dropZone(key, drop, moveInto(c.id), undefined, importInto(c.id))}
                   onClick={() => app.go(c.id ? { name: 'notes', folder: c.id } : { name: 'notes' })}>{c.title}</button>
               </span>
             );
@@ -139,7 +140,7 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
       {menu.node}
 
       <div className={classNames('ex-body', hover === 'body' && 'drop-over')} onClick={e => { if (e.target === e.currentTarget) setSel(null); }}
-        {...(isFolderCtx ? dropZone('body', drop, moveInto(parentId ?? null)) : {})}>
+        {...(isFolderCtx ? dropZone('body', drop, moveInto(parentId ?? null), undefined, importInto(parentId ?? null)) : {})}>
         {total === 0 ? (
           <div className="ex-empty">
             <FolderOpen size={44} strokeWidth={1.25} />

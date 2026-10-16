@@ -1,5 +1,6 @@
 import { useState, type DragEvent } from 'react';
 import { useApp } from './app';
+import { hasOsFiles, readDropped } from './dropImport';
 
 /** Items (notes, folders) are dragged inside the app. Carried as this type so Firefox starts the drag; the id is read from `current`. */
 const ITEM_MIME = 'application/x-ergo-item';
@@ -22,10 +23,17 @@ export function dragSource(item: Dragged) {
 export interface DropState { key: string | null; set: (k: string | null) => void }
 
 /** Handlers that make an element accept a dragged item. `key` identifies it in the shared hover state. */
-export function dropZone(key: string, state: DropState, onItem: (d: Dragged) => void, ok?: (d: Dragged) => boolean) {
+export function dropZone(key: string, state: DropState, onItem: (d: Dragged) => void, ok?: (d: Dragged) => boolean, onFiles?: (dt: DataTransfer) => void) {
   return {
     onDragOver: (e: DragEvent) => {
       const d = current;
+      if (!d && onFiles && hasOsFiles(e.dataTransfer)) {
+        // files or folders from the computer, not one of the app's own items
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        if (state.key !== key) state.set(key);
+        return;
+      }
       if (!d || (ok && !ok(d))) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
@@ -36,6 +44,13 @@ export function dropZone(key: string, state: DropState, onItem: (d: Dragged) => 
     },
     onDrop: (e: DragEvent) => {
       const d = current;
+      if (!d && onFiles && hasOsFiles(e.dataTransfer)) {
+        e.preventDefault();
+        e.stopPropagation();
+        state.set(null);
+        onFiles(e.dataTransfer); // read at once: a drop's data is gone when the handler returns
+        return;
+      }
       if (!d || (ok && !ok(d))) return;
       e.preventDefault();
       e.stopPropagation();
@@ -59,5 +74,22 @@ export function useMoveInto() {
     if (d.id === target || (app.byId.get(d.id)?.parent ?? null) === target) return;
     await app.run(app.api.move(d.id, target));
     await app.refresh();
+  };
+}
+
+/** Takes what was dropped from the computer into a folder (null: the Vault's default place), folders and attachments with it. */
+export function useImportInto() {
+  const app = useApp();
+  return (target: string | null) => (dt: DataTransfer) => {
+    const read = readDropped(dt); // started inside the drop event
+    void (async () => {
+      const files = await read;
+      if (!files.length) return;
+      const r = await app.run(app.api.importFiles(files, target));
+      if (!r) return;
+      await app.refresh();
+      const parts = [r.notes && `${r.notes} note${r.notes === 1 ? '' : 's'}`, r.files && `${r.files} file${r.files === 1 ? '' : 's'}`, r.folders && `${r.folders} new folder${r.folders === 1 ? '' : 's'}`].filter(Boolean);
+      app.toast(parts.length ? `Imported ${parts.join(', ')}${r.skipped ? ` (${r.skipped} skipped)` : ''}` : `Nothing could be imported (${r.skipped} skipped: only notes and files a note can hold are taken)`);
+    })();
   };
 }

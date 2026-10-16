@@ -112,6 +112,18 @@ _Avoid_: Journal entry, diary
 A checkbox Block inside a Note, optionally with a due date and reminder. A Task does not exist outside its Note.
 _Avoid_: Todo, reminder, action item
 
+**Command**:
+A named action of the app ("Toggle sidebar", "New note", "Open Settings") that the search palette lists and runs. A Command is not a menu entry of one Item; those are *item actions* (Open, Rename, Move, Duplicate…).
+_Avoid_: Macro, menu item
+
+**Search palette**:
+The Ctrl+K popup: one box that finds Notes, Folders, Tags, Tasks, Commands and Pages. Typing `>` shows only Commands, `#` only Tags, `-` only Tasks.
+_Avoid_: Quick open, command bar, spotlight
+
+**Item clipboard**:
+What Copy and Cut put aside inside the app: Notes and Folders (never text). Pasting a copy makes a duplicate; pasting a cut moves it. Separate from the text clipboard of the editor.
+_Avoid_: Buffer
+
 **Trash**:
 The `.trash/` folder of the Vault: where deleted Notes stay, recoverable, for 30 days. A file deleted by another program is treated the same way and can be restored from its history.
 _Avoid_: Recycle bin, deleted items

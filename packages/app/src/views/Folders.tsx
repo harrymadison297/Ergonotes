@@ -4,7 +4,7 @@ import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames, relTime, rowClick } from '../state/util';
-import { dragSource, dropZone, useDropState, useMoveInto } from '../state/dnd';
+import { dragSource, dropZone, useDropState, useImportInto, useMoveInto } from '../state/dnd';
 import { IconBtn, useMenu } from '../components/ui';
 
 export function FoldersView() {
@@ -14,6 +14,7 @@ export function FoldersView() {
   const menu = useMenu();
   const drop = useDropState();
   const moveInto = useMoveInto();
+  const importInto = useImportInto();
   const folders = app.items.filter(i => i.type === 'folder' && !i.inTrash);
   const notes = app.items.filter(i => i.type === 'note' && !i.inTrash);
   const kids = useMemo(() => {
@@ -30,7 +31,7 @@ export function FoldersView() {
     const isOpen = open.has(f.id);
     const out = [(
       <tr key={f.id} className={classNames('clickable', drop.key === f.id && 'drop-over')}
-        {...dragSource({ id: f.id, type: 'folder' })} {...dropZone(f.id, drop, moveInto(f.id))}
+        {...dragSource({ id: f.id, type: 'folder' })} {...dropZone(f.id, drop, moveInto(f.id), undefined, importInto(f.id))}
         onClick={rowClick(() => app.go({ name: 'notes', folder: f.id }))}>
         <td className="name"><div className="name-cell" style={{ paddingLeft: depth * 22 }}>
           <button className="nav-chevron" aria-label={isOpen ? 'Collapse' : 'Expand'} onClick={() => setOpen(s => { const n = new Set(s); if (n.has(f.id)) n.delete(f.id); else n.add(f.id); return n; })} style={{ visibility: children.length ? 'visible' : 'hidden' }}>

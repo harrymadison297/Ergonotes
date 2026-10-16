@@ -120,6 +120,29 @@ describe('Vault', () => {
     expect((await v.getNote(one.id))!.body).toBe('# One\nsee [[Two]]');
   });
 
+  it('imports a dropped folder: notes, the attachments beside them with their places kept, and counts what it leaves', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const folder = await v.createFolder({ title: 'Drop here' });
+    const png = Buffer.from([137, 80, 78, 71, 1, 2, 3]).toString('base64');
+    const res = await v.importFiles([
+      { path: 'Trip/Plan.md', content: 'see ![map](map.png)' },
+      { path: 'Trip/map.png', data: png },
+      { path: 'Trip/deep/Notes.md', content: 'x' },
+      { path: 'Trip/run.exe', data: 'AAAA' },
+      { path: 'Trip/package.json', content: '{}' },
+    ], folder.id);
+    expect(res).toMatchObject({ notes: 2, files: 1, skipped: 2, folders: 2 });
+    const plan = (await v.listItems()).find(i => i.title === 'Plan')!;
+    expect(plan.filePath).toBe('Drop here/Trip/Plan.md');
+    // the picture is where the note expects it
+    expect((await v.getFileByPath('Drop here/Trip/map.png'))?.data).toBe(png);
+    expect((await v.listItems()).filter(i => i.type === 'folder').map(i => i.filePath)).toEqual(expect.arrayContaining(['Drop here/Trip', 'Drop here/Trip/deep']));
+    // no target folder: the top of the Vault
+    await v.importFiles([{ path: 'Loose.md', content: 'l' }], null);
+    expect((await v.listItems()).find(i => i.title === 'Loose')?.filePath).toBe('Loose.md');
+  });
+
   it('daily note is created once per date from the daily template', async () => {
     const v = await open('A', () => Date.parse('2026-10-14T09:30:00'));
     await v.createVault(PASSWORD);

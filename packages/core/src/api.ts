@@ -127,7 +127,9 @@ export interface CalendarData {
 }
 
 export interface FileBlob { name: string; mime: string; data: string }
-export interface ImportFile { path: string; content: string }
+/** A file to take into the Vault: Markdown by its text, anything else by its bytes (base64). `path` is relative to where it lands. */
+export interface ImportFile { path: string; content?: string; data?: string }
+export interface ImportResult { notes: number; files: number; folders: number; skipped: number }
 /** One record folder (ADR 0011) as the player needs it. Paths are vault-relative. */
 export interface RecordInfo {
   /** `attachments/record_…` */
@@ -245,6 +247,8 @@ export interface VaultApi {
   getFileByPath(path: string): Promise<FileBlob | null>;
 
   importMarkdown(files: ImportFile[], parent?: string | null): Promise<{ notes: number; folders: number }>;
+  /** Notes and the attachments beside them, with their folders kept (a folder dropped from the computer). `null`: the top of the Vault. */
+  importFiles(files: ImportFile[], parent?: string | null): Promise<ImportResult>;
   exportNote(id: string, format: 'md' | 'html'): Promise<ExportResult>;
 }
 
@@ -254,5 +258,5 @@ export const VAULT_METHODS = [
   'renameTag', 'setPinned', 'setPrivate', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'searchHits', 'linkTargets', 'tags', 'tasks', 'toggleTask',
   'calendar', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
   'resolveConflict', 'history', 'versionText', 'restoreVersion', 'listChats', 'getChat', 'saveChat', 'deleteChat', 'getSettings', 'setSettings', 'getAiSettings', 'setAiSettings', 'setStore',
-  'sync', 'flush', 'addFile', 'removeFiles', 'listFiles', 'listRecords', 'getRecord', 'getFile', 'getFileByPath', 'importMarkdown', 'exportNote',
+  'sync', 'flush', 'addFile', 'removeFiles', 'listFiles', 'listRecords', 'getRecord', 'getFile', 'getFileByPath', 'importMarkdown', 'importFiles', 'exportNote',
 ] as const satisfies readonly (keyof VaultApi)[];
