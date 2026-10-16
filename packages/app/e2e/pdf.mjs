@@ -127,6 +127,17 @@ check('a link to the web keeps its address, shown in full; a link to another not
 check('code wraps instead of running off the page, on a light panel', sheet.codeWrap === 'pre-wrap' && sheet.codeBg === 'rgb(246, 245, 244)', `${sheet.codeWrap} ${sheet.codeBg}`);
 check('the table and the page break are there', sheet.tableRows >= 3 && sheet.pageBreak, JSON.stringify([sheet.tableRows, sheet.pageBreak]));
 
+// the page margins stay small so the browser adds no header and footer of its own; the 20 mm are rows that repeat on every page
+const pageRule = await page.evaluate(() => {
+  for (const sheet of document.styleSheets) { let rules; try { rules = [...sheet.cssRules]; } catch { continue; } for (const r of rules) if (r instanceof CSSPageRule && /bottom/i.test(r.cssText)) return { top: r.style.marginTop, bottom: r.style.marginBottom, text: r.cssText.slice(0, 160) }; }
+  return null;
+});
+check('the page has no top margin and under 9 mm at the bottom, so the browser prints no header or footer of its own', !!pageRule && parseFloat(pageRule.top) === 0 && parseFloat(pageRule.bottom) > 0 && parseFloat(pageRule.bottom) < 9 && /mm$/.test(pageRule.bottom), JSON.stringify(pageRule));
+const gaps = await page.evaluate(() => { const mm = e => Math.round(e.getBoundingClientRect().height / 96 * 25.4); return { top: mm(document.querySelector('.pr-gap.top')), bottom: mm(document.querySelector('.pr-gap.bottom')) }; });
+check('the top and bottom rows add up to 20 mm of margin', gaps.top === 20 && gaps.bottom + parseFloat(pageRule?.bottom ?? '0') === 20, JSON.stringify(gaps));
+const side = await page.evaluate(() => { const c = document.querySelector('.pr-cell'); return Math.round(parseFloat(getComputedStyle(c).paddingLeft) / 96 * 25.4); });
+check('and 20 mm on each side', side === 20, side);
+
 // ---- the PDF itself
 const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: false });
 writeFileSync(`${shots}/note.pdf`, pdf);
@@ -140,6 +151,24 @@ await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
 await page.waitForTimeout(200);
 check('when the dialog closes the sheet is taken away and the title is back', (await page.locator('#print-root').count()) === 0 && (await page.title()) === 'Ergonotes' && !(await page.evaluate(() => document.documentElement.classList.contains('printing-note'))), await page.title());
 check('the note on screen is untouched', (await page.locator('.prose h1').count()) === 1 && (await page.locator('.editor-foot').isVisible()));
+
+// ---- a long table runs onto more pages and keeps its header row
+await page.evaluate(() => { window.__printed = 0; });
+const rows = Array.from({ length: 70 }, (_, i) => `| Row ${i + 1} | ${'text '.repeat(3)}| ${i * 7} |`);
+const long = await rpc('createNote', { title: 'Long table', body: ['# A long table', '', '| Name | Words | Number |', '|---|---|---|', ...rows].join('\n'), tags: [] });
+await page.goto(`${base}/#/notes/${long.id}`);
+await page.locator('.prose table').waitFor({ timeout: 15000 });
+await page.getByRole('button', { name: 'Export' }).click();
+await page.getByRole('menuitem', { name: /^PDF/ }).click();
+await until(async () => (await page.evaluate(() => window.__printed)) === 1);
+await page.emulateMedia({ media: 'print' });
+const lt = await page.evaluate(() => ({ thead: document.querySelectorAll('#print-root .pr-body table thead').length, headCells: [...document.querySelectorAll('#print-root .pr-body table thead th')].map(c => c.textContent), rows: document.querySelectorAll('#print-root .pr-body table tbody tr').length }));
+check('the header row of a table is a real header (it repeats on each page)', lt.thead === 1 && lt.headCells.join('|') === 'Name|Words|Number' && lt.rows === 70, JSON.stringify(lt));
+const pdf2 = await page.pdf({ preferCSSPageSize: true, printBackground: false });
+writeFileSync(`${shots}/long-table.pdf`, pdf2);
+check('the long table makes more than one page', (pdf2.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length >= 2);
+await page.emulateMedia({ media: 'screen' });
+await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
 
 check('no console errors', errors.filter(e => !/Failed to load resource|status of 400/.test(e)).length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

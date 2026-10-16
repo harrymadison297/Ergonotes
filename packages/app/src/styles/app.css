@@ -1115,7 +1115,6 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
    `#print-root` is built when a note is printed (state/printNote.ts): the note, copied and stripped of what only an editor
    needs. It is never on screen. Paper is always light, whatever the theme, and backgrounds are kept (tags, code, callouts). */
 #print-root { display: none; }
-@page { size: A4; margin: 20mm; }
 @media print {
   html.printing-note, html.printing-note body { height: auto !important; overflow: visible !important; background: #fff !important; }
   html.printing-note body > :not(#print-root) { display: none !important; }
@@ -1140,7 +1139,7 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
   #print-root .pr-body h3 { font-size: 12.5pt; margin: 1.1em 0 .25em; }
   #print-root p { orphans: 3; widows: 3; overflow-wrap: anywhere; }
   #print-root li { break-inside: avoid; }
-  #print-root blockquote, #print-root .pr-record, #print-root figure, #print-root .pr-diagram, #print-root .pr-audio, #print-root img, #print-root tr, #print-root .math-block { break-inside: avoid; }
+  #print-root blockquote, #print-root .pr-record, #print-root figure, #print-root .pr-diagram, #print-root .pr-audio, #print-root img, #print-root .pr-body tr, #print-root .math-block { break-inside: avoid; }
   #print-root img { max-width: 100%; height: auto; max-height: 230mm; border-radius: 0; }
   #print-root a { color: var(--indigo-ink); text-decoration: none; }
   #print-root a[href^="http"]::after { content: " (" attr(href) ")"; color: var(--text-3); font-size: .85em; overflow-wrap: anywhere; word-break: break-all; }
@@ -1151,11 +1150,19 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
   #print-root blockquote { margin-left: 0; padding: 2pt 0 2pt 12pt; border-left: 2.5pt solid var(--green-mark); color: var(--text-2); }
   #print-root blockquote.callout { background: var(--green-tint); padding: 8pt 12pt; border-radius: 0 4pt 4pt 0; color: var(--text); }
   #print-root hr { border: 0; border-top: 0.75pt solid var(--border-strong); margin: 1.2em 0; }
+  #print-root .pr-sheet { width: 100%; border-collapse: collapse; }
+  #print-root .pr-sheet > thead, #print-root .pr-sheet > tbody, #print-root .pr-sheet > tfoot { border: 0; }
+  #print-root .pr-sheet > thead { display: table-header-group; }
+  #print-root .pr-sheet > tfoot { display: table-footer-group; }
+  #print-root .pr-sheet > * > tr > td { padding: 0; border: 0; }
+  #print-root .pr-gap { height: 20mm; }
+  #print-root .pr-gap.bottom { height: 12mm; } /* 12 mm here and 8 mm of page margin: 20 mm */
+  #print-root .pr-cell { padding: 0 20mm !important; vertical-align: top; }
   #print-root .tableWrapper { overflow: visible; }
-  #print-root table { width: 100%; table-layout: auto; border-collapse: collapse; font-size: 10pt; }
-  #print-root thead { display: table-header-group; }
-  #print-root th, #print-root td { border: 0.75pt solid var(--border-strong); padding: 4pt 7pt; vertical-align: top; overflow-wrap: anywhere; }
-  #print-root th { background: var(--bg-sidebar); color: #000; text-align: left; }
+  #print-root .pr-body table { width: 100%; table-layout: auto; border-collapse: collapse; font-size: 10pt; }
+  #print-root .pr-body thead { display: table-header-group; }
+  #print-root .pr-body th, #print-root .pr-body td { border: 0.75pt solid var(--border-strong); padding: 4pt 7pt; vertical-align: top; overflow-wrap: anywhere; }
+  #print-root .pr-body th { background: var(--bg-sidebar); color: #000; text-align: left; }
   #print-root ul[data-type='taskList'] { list-style: none; padding-left: 2pt; }
   #print-root ul[data-type='taskList'] li { display: flex; gap: 7pt; align-items: flex-start; }
   #print-root ul[data-type='taskList'] li > div { flex: 1; min-width: 0; }
