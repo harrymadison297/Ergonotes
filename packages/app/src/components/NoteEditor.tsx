@@ -10,7 +10,7 @@ import TableRow from '@tiptap/extension-table-row';
 import { Markdown } from 'tiptap-markdown';
 import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
-  ChevronsLeft, ChevronsRight, EyeOff, Maximize2, Minimize2, MoveHorizontal, AlignCenter, AudioLines, Mic, Sparkles, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
+  ChevronsLeft, ChevronsRight, ZoomIn, ZoomOut, EyeOff, Maximize2, Minimize2, MoveHorizontal, AlignCenter, AudioLines, Mic, Sparkles, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
 } from 'lucide-react';
 import { mergeText, preserveBlocks, toB64, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
@@ -32,7 +32,7 @@ import { editorBridge } from '../state/editorBridge';
 import { suggestionRequest, cleanSuggestion, completeText } from '@ergonotes/core';
 import { Dialog, IconBtn, TagPill, useMenu, type MenuEntry } from './ui';
 import { href } from '../state/router';
-import { setPrefs, usePrefs } from '../state/prefs';
+import { ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, clampZoom, setPrefs, usePrefs, usePrefsNow } from '../state/prefs';
 
 type SaveState = 'saved' | 'saving' | 'error';
 
@@ -302,6 +302,19 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
     return () => { dom.removeEventListener('paste', onPaste); dom.removeEventListener('drop', onDrop); };
   });
 
+  // Ctrl + wheel over the note changes the size of its text (a plain wheel scrolls as always)
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.deltaY === 0) return;
+      e.preventDefault();
+      setPrefs({ textZoom: clampZoom(usePrefsNow().textZoom + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)) });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [id, editor, !!doc]); // the page exists once the note has loaded // eslint-disable-line react-hooks/exhaustive-deps
+
   // follow wiki links
   useEffect(() => {
     if (!editor) return;
@@ -552,6 +565,13 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
           onClick={() => setPrefs(aiOpen ? { aside: false } : { aside: true, asideTab: 'ai' })} />
         {!app.isMobile && <IconBtn label={tocOpen ? 'Hide table of contents' : 'Show table of contents'} active={tocOpen} icon={<TableOfContents size={18} />}
           className="toc-toggle" onClick={() => setPrefs(tocOpen ? { aside: false } : { aside: true, asideTab: 'toc' })} />}
+        {!app.isMobile && (
+          <span className="zoom-ctl" role="group" aria-label="Text size">
+            <IconBtn label="Smaller text" icon={<ZoomOut size={18} />} disabled={prefs.textZoom <= ZOOM_MIN} onClick={() => setPrefs({ textZoom: clampZoom(prefs.textZoom - ZOOM_STEP) })} />
+            <button type="button" className="zoom-pct" title="Normal text size" aria-label={`Text size ${prefs.textZoom}%, reset`} onClick={() => setPrefs({ textZoom: 100 })}>{prefs.textZoom}%</button>
+            <IconBtn label="Larger text" icon={<ZoomIn size={18} />} disabled={prefs.textZoom >= ZOOM_MAX} onClick={() => setPrefs({ textZoom: clampZoom(prefs.textZoom + ZOOM_STEP) })} />
+          </span>
+        )}
         <IconBtn label="Export" haspopup icon={<Share2 size={18} />} onClick={e => exportMenu.open(e, exportEntries(), 'right')} />
         <IconBtn label="More actions" haspopup icon={<MoreHorizontal size={20} />} onClick={e => moreMenu.open(e, moreEntries(), 'right')} />
       </div>

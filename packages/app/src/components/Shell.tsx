@@ -23,6 +23,8 @@ import { useSync } from './useSync';
 import { RecorderMini } from './RecorderPanel';
 import { recorder, useRecorder } from '../record/recorder';
 import { usePrefs } from '../state/prefs';
+import { COMMANDS, keysFor, useCommands } from '../state/commands';
+import { chordOf, needsModifier } from '../state/keymap';
 
 function RouteView() {
   const { route } = useApp();
@@ -70,40 +72,38 @@ function DialogHost() {
 }
 
 function useGlobalShortcuts() {
-  const app = useApp();
-  const sync = useSync();
-  const runSync = sync.run;
-  const pending = useRef<string | null>(null);
+  const cmds = useCommands();
+  const latest = useRef(cmds);
+  latest.current = cmds;
+  const pending = useRef<{ first: string; timer: ReturnType<typeof setTimeout> } | null>(null);
   useEffect(() => {
-    const onKey = async (e: KeyboardEvent) => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.isComposing) return;
+      const chord = chordOf(e);
+      if (!chord) return;
       const el = e.target as HTMLElement;
       const typing = el.matches('input, textarea, select, [contenteditable="true"]') || el.isContentEditable;
-      const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); app.setDialog(app.dialog?.kind === 'search' ? null : { kind: 'search' }); return; }
-      if ((mod && e.key.toLowerCase() === 'n') || (e.altKey && e.key.toLowerCase() === 'n')) { e.preventDefault(); void app.newNote(); return; }
-      if (mod && e.altKey && e.key.toLowerCase() === 'd') {
-        e.preventDefault();
-        void app.openDaily();
-        return;
-      }
-      if (mod && e.shiftKey && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        void runSync();
-        return;
-      }
-      if (typing || mod || e.altKey) return;
-      if (e.key === '?') { app.setDialog({ kind: 'shortcuts' }); return; }
-      if (pending.current === 'g') {
+      const { prefs } = latest.current;
+      const bound = COMMANDS.filter(c => !c.scoped).map(c => ({ id: c.id, keys: keysFor(c, prefs.keys) }));
+      // the second key of a two-key shortcut
+      if (pending.current) {
+        const seq = `${pending.current.first} ${chord}`;
+        clearTimeout(pending.current.timer);
         pending.current = null;
-        const m: Record<string, Parameters<typeof app.go>[0]> = { h: { name: 'home' }, n: { name: 'notes' }, t: { name: 'tasks' }, c: { name: 'calendar' } };
-        if (m[e.key]) app.go(m[e.key]);
-        return;
+        const hit = bound.find(b => b.keys.includes(seq));
+        if (hit) { e.preventDefault(); latest.current.run(hit.id); return; }
       }
-      if (e.key === 'g') { pending.current = 'g'; setTimeout(() => { pending.current = null; }, 900); }
+      // a bare key is text while typing; only a chord with Ctrl or Alt (or a function key) is a shortcut there
+      if (typing && !needsModifier(chord) && !/^F\d/.test(chord)) return;
+      const hit = bound.find(b => b.keys.includes(chord));
+      if (hit) { e.preventDefault(); latest.current.run(hit.id); return; }
+      if (!typing && bound.some(b => b.keys.some(k => k.startsWith(`${chord} `)))) {
+        pending.current = { first: chord, timer: setTimeout(() => { pending.current = null; }, 900) };
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [app, runSync]);
+  }, []);
 }
 
 /** Android: text shared into the app from another app becomes a Capture in the Inbox. */

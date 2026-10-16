@@ -306,6 +306,9 @@ html.kbd .menu-item:focus-visible { background: var(--bg-hover); outline-offset:
 .ex-tile.sel { background: var(--indigo-tint); border-color: var(--sel); }
 .ex-tile.cut, .explorer tr.cut, .nav-item.cut { opacity: .45; }
 .explorer:focus { outline: none; }
+.zoom-ctl { display: inline-flex; align-items: center; gap: 0; margin: 0 2px; }
+.zoom-pct { min-width: 44px; height: 28px; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; cursor: pointer; }
+.zoom-pct:hover { background: var(--bg-hover); color: var(--text); }
 .ex-icon { width: 84px; height: 84px; display: grid; place-items: center; color: var(--green-ink); }
 .ex-paper { width: 64px; height: 80px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg); box-shadow: 0 1px 3px rgba(52, 51, 50, .18); padding: 6px 5px; overflow: hidden; text-align: left; position: relative; }
 .ex-paper p { margin: 0; font-size: 6px; line-height: 8px; color: var(--text-2); word-break: break-all; }
@@ -346,15 +349,15 @@ html.kbd .menu-item:focus-visible { background: var(--bg-hover); outline-offset:
 .banner .grow { flex: 1; }
 .banner.info { background: var(--green-tint); color: var(--green-ink); border-color: transparent; }
 
-.prose { font-size: var(--fs-editor); line-height: 1.65; min-height: 50vh; color: var(--text); }
+.prose { font-size: calc(var(--fs-editor) * var(--note-zoom, 1)); line-height: 1.65; min-height: 50vh; color: var(--text); }
 .prose > * + * { margin-top: .7em; }
 .prose p { margin: 0; }
 .prose li > ul, .prose li > ol { margin-top: .2em; }
 .prose li + li { margin-top: .15em; }
 .prose h1, .prose h2, .prose h3 { color: var(--text-strong); }
-.prose h1 { font-size: var(--fs-title); margin: 1.1em 0 .3em; line-height: 1.25; }
-.prose h2 { font-size: var(--fs-h); margin: 1em 0 .3em; line-height: 1.3; }
-.prose h3 { font-size: var(--fs-lg); margin: .9em 0 .25em; }
+.prose h1 { font-size: calc(var(--fs-title) * var(--note-zoom, 1)); margin: 1.1em 0 .3em; line-height: 1.25; }
+.prose h2 { font-size: calc(var(--fs-h) * var(--note-zoom, 1)); margin: 1em 0 .3em; line-height: 1.3; }
+.prose h3 { font-size: calc(var(--fs-lg) * var(--note-zoom, 1)); margin: .9em 0 .25em; }
 .prose p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--text-3); float: left; height: 0; pointer-events: none; }
 .prose ul, .prose ol { padding-left: 1.5em; }
 .prose li > p { margin: 0; }

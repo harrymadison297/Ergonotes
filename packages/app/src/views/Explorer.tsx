@@ -8,6 +8,8 @@ import { activateKeys, classNames, relTime } from '../state/util';
 import { dragSource, dropZone, useDropState, useImportInto, useMoveInto } from '../state/dnd';
 import { useItemMenu } from '../state/itemMenu';
 import { useItemClip, useItemOps } from '../state/itemClipboard';
+import { useCommands } from '../state/commands';
+import { chordOf } from '../state/keymap';
 import { href, noteHref } from '../state/router';
 import { FileImg } from '../components/FileImg';
 import { IconBtn, TagDots, useMenu } from '../components/ui';
@@ -41,6 +43,7 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
   const anchor = useRef<string | null>(null);
   const clip = useItemClip();
   const ops = useItemOps();
+  const cmds = useCommands();
   const drop = useDropState();
   const hover = drop.key;
   const moveInto = useMoveInto();
@@ -84,14 +87,14 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
   const pasteTarget = (): string | null | undefined => (picked.length === 1 && picked[0].type === 'folder' ? picked[0].id : parentId);
   const onKeyDown = (e: React.KeyboardEvent) => {
     if ((e.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]')) return;
-    const mod = e.ctrlKey || e.metaKey;
-    const k = e.key.toLowerCase();
-    if (mod && k === 'a') { e.preventDefault(); setSel(new Set(ordered.map(i => i.id))); }
-    else if (mod && k === 'c' && picked.length) { e.preventDefault(); ops.copy(picked.map(i => i.id)); }
-    else if (mod && k === 'x' && picked.length) { e.preventDefault(); ops.cut(picked.map(i => i.id)); }
-    else if (mod && k === 'v') { const t = pasteTarget(); if (t !== undefined) { e.preventDefault(); void ops.paste(t); } }
-    else if (e.key === 'Delete' && picked.length) { e.preventDefault(); void ops.trash(picked); setSel(new Set()); }
-    else if (e.key === 'F2' && picked.length === 1) { e.preventDefault(); app.setDialog({ kind: 'rename', id: picked[0].id }); }
+    const chord = chordOf(e);
+    const is = (id: string) => !!chord && cmds.keys(id).includes(chord);
+    if (is('item.selectAll')) { e.preventDefault(); setSel(new Set(ordered.map(i => i.id))); }
+    else if (is('item.copy') && picked.length) { e.preventDefault(); ops.copy(picked.map(i => i.id)); }
+    else if (is('item.cut') && picked.length) { e.preventDefault(); ops.cut(picked.map(i => i.id)); }
+    else if (is('item.paste')) { const t = pasteTarget(); if (t !== undefined) { e.preventDefault(); void ops.paste(t); } }
+    else if (is('item.delete') && picked.length) { e.preventDefault(); void ops.trash(picked); setSel(new Set()); }
+    else if (is('item.rename') && picked.length === 1) { e.preventDefault(); app.setDialog({ kind: 'rename', id: picked[0].id }); }
     else if (e.key === 'Escape' && sel.size) setSel(new Set());
   };
   const isCut = (it: ItemSummary) => clip?.mode === 'cut' && clip.ids.includes(it.id);
