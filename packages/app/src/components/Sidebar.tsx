@@ -9,7 +9,7 @@ import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { activateKeys, classNames, rowClick } from '../state/util';
 import { tagStyle } from '../state/tags';
-import { dragSource, dropZone, useDropState, useImportInto, useMoveInto, type Dragged } from '../state/dnd';
+import { dragSource, dropZone, useDropState, useCanMoveInto, useImportInto, useMoveInto, type Dragged } from '../state/dnd';
 import { useItemMenu } from '../state/itemMenu';
 import { useItemClip, useItemOps } from '../state/itemClipboard';
 import { useCommands } from '../state/commands';
@@ -56,6 +56,7 @@ export function Sidebar() {
   const drop = useDropState();
   const hover = drop.key;
   const moveInto = useMoveInto();
+  const canMove = useCanMoveInto();
   const importInto = useImportInto();
   const itemEntries = useItemMenu();
   const ops = useItemOps();
@@ -104,7 +105,7 @@ export function Sidebar() {
     return (
       <div key={f.id}>
         <div className={classNames('nav-item', active && 'active', hover === key && 'drop-over', clip?.mode === 'cut' && clip.ids.includes(f.id) && 'cut')} style={{ paddingLeft: depth * 14 }} title={f.title}
-          {...dragSource({ id: f.id, type: 'folder' })} {...dropZone(key, drop, moveInto(f.id), undefined, importInto(f.id))}
+          {...dragSource({ id: f.id, type: 'folder' })} {...dropZone(key, drop, moveInto(f.id), canMove(f.id), importInto(f.id))}
           onClick={rowClick(() => go({ name: 'notes', folder: f.id }))}
           onKeyDown={e => {
             const chord = chordOf(e);
@@ -206,7 +207,7 @@ export function Sidebar() {
         <div className="nav-sep" />
 
         <div className={classNames('nav-item', route.name === 'folders' && 'active', hover === 'root' && 'drop-over')} title="Folders"
-          {...dropZone('root', drop, moveInto(null), undefined, importInto(null))}
+          {...dropZone('root', drop, moveInto(null), canMove(null), importInto(null))}
           onClick={rowClick(() => go({ name: 'folders' }))}>
           <button className="nav-chevron" aria-label="Toggle folders" onClick={() => setFoldersOpen(o => !o)}>{foldersOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
           <a className="nav-link" href={href({ name: 'folders' })}><FolderIcon size={18} /><span className="label">Folders</span></a>

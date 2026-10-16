@@ -30,12 +30,15 @@ export function dropZone(key: string, state: DropState, onItem: (d: Dragged) => 
       if (!d && onFiles && hasOsFiles(e.dataTransfer)) {
         // files or folders from the computer, not one of the app's own items
         e.preventDefault();
+        // the innermost zone answers: a folder tile inside the folder's own zone must not hand the highlight back and forth
+        e.stopPropagation();
         e.dataTransfer.dropEffect = 'copy';
         if (state.key !== key) state.set(key);
         return;
       }
       if (!d || (ok && !ok(d))) return;
       e.preventDefault();
+      e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
       if (state.key !== key) state.set(key);
     },
@@ -65,6 +68,16 @@ export function dropZone(key: string, state: DropState, onItem: (d: Dragged) => 
 export function useDropState(): DropState {
   const [key, set] = useState<string | null>(null);
   return { key, set };
+}
+
+/** Whether dropping `d` into the folder `target` (null = top level) would change anything: not where it already is, not into itself or below itself. */
+export function useCanMoveInto() {
+  const app = useApp();
+  return (target: string | null) => (d: Dragged): boolean => {
+    if (d.id === target || (app.byId.get(d.id)?.parent ?? null) === target) return false;
+    if (d.type === 'folder') for (let id = target; id; id = app.byId.get(id)?.parent ?? null) if (id === d.id) return false;
+    return true;
+  };
 }
 
 /** The handler every drop target uses to move a dragged item into a folder (null = top level). */

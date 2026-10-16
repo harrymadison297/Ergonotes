@@ -47,6 +47,35 @@ await page.locator('.ex-tile[title="Beta"]').waitFor({ timeout: 15000 });
 await page.locator('.ex-tile[title="Dragged"]').dragTo(page.locator('.ex-tile[title="Beta"]'));
 check('a note dragged onto a folder moves into it', !!(await until(async () => (await items()).find(i => i.id === note.id)?.parent === B.id)), JSON.stringify((await items()).find(i => i.id === note.id)?.parent));
 
+// ---- the highlight does not flicker between the open folder and the folder under the pointer
+const N2 = await rpc('createNote', { title: 'Hover me', body: 'y', parent: A.id });
+await page.goto(`${base}/#/notes?folder=${A.id}`);
+await page.locator('.ex-tile[title="Hover me"]').waitFor({ timeout: 15000 });
+const flick = await page.evaluate(async () => {
+  const dt = new DataTransfer();
+  const fire = (el, type) => { const ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }); el.dispatchEvent(ev); return ev.defaultPrevented; };
+  const src = document.querySelector('.ex-tile[title="Hover me"]');
+  const tile = document.querySelector('.ex-tile[title="Beta"]');
+  const body = document.querySelector('.ex-body');
+  fire(src, 'dragstart');
+  const log = [];
+  const watch = new MutationObserver(() => log.push(`${body.classList.contains('drop-over') ? 'B' : '-'}${tile.classList.contains('drop-over') ? 'T' : '-'}`));
+  watch.observe(body, { attributes: true, subtree: true, attributeFilter: ['class'] });
+  for (let i = 0; i < 8; i++) { fire(tile, 'dragover'); await new Promise(r => setTimeout(r, 30)); }
+  watch.disconnect();
+  const overTile = `${body.classList.contains('drop-over') ? 'B' : '-'}${tile.classList.contains('drop-over') ? 'T' : '-'}`;
+  // over the empty part of the open folder, the item already lives there: nothing to drop, nothing lit
+  fire(tile, 'dragleave');
+  fire(body, 'dragover');
+  await new Promise(r => setTimeout(r, 50));
+  const overOwn = `${body.classList.contains('drop-over') ? 'B' : '-'}${tile.classList.contains('drop-over') ? 'T' : '-'}`;
+  fire(src, 'dragend');
+  return { log, overTile, overOwn };
+});
+check('only the folder under the pointer is lit, and it stays lit', flick.overTile === '-T' && flick.log.every(l => l === '-T'), JSON.stringify(flick));
+check('an item already in the open folder does not light the open folder', flick.overOwn === '--', JSON.stringify(flick));
+void N2;
+
 // ---- files dropped from the computer onto a folder
 // spec: { name, text } | { name, b64 } | { name, dir: [spec…] }
 const drop = (selector, specs) => page.evaluate(({ sel, specs }) => {
