@@ -157,6 +157,8 @@ a.nav-item { padding: 0 6px 0 0; }
 .palette-item .ctx { font-size: var(--fs-s); color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
 .palette-item .side { flex: none; display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: var(--fs-xs); padding-top: 2px; }
 .palette mark { background: color-mix(in srgb, var(--sel) 22%, transparent); color: inherit; font-weight: 700; border-radius: 2px; padding: 0 1px; }
+.palette-item.dim { opacity: .6; }
+.palette-item .side kbd { font: var(--fs-xs) var(--font); padding: 1px 6px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg-soft); }
 .palette-empty { padding: 36px 16px; text-align: center; color: var(--text-2); }
 .palette-foot { display: flex; align-items: center; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-2); flex: none; background: var(--bg-soft); }
 .palette-foot kbd { font: var(--fs-xs) var(--font); padding: 1px 6px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg); }

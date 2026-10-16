@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 export type Route =
   | { name: 'home' }
   | { name: 'notes'; folder?: string; tag?: string; note?: string; q?: string }
-  | { name: 'tasks'; note?: string }
+  | { name: 'tasks'; note?: string; task?: number }
   | { name: 'calendar'; note?: string; day?: string }
   | { name: 'files'; file?: string }
   | { name: 'folders' }
@@ -17,7 +17,7 @@ export function parseHash(hash: string): Route {
   const seg = path.split('/').filter(Boolean);
   switch (seg[0]) {
     case 'notes': return { name: 'notes', folder: p.get('folder') ?? undefined, tag: p.get('tag') ?? undefined, note: seg[1], q: p.get('q') ?? undefined };
-    case 'tasks': return { name: 'tasks', note: seg[1] };
+    case 'tasks': return { name: 'tasks', note: seg[1], task: seg[2] !== undefined && /^\d+$/.test(seg[2]) ? Number(seg[2]) : undefined };
     case 'calendar': return { name: 'calendar', note: seg[1], day: p.get('day') ?? undefined };
     case 'files': return { name: 'files', file: seg[1] };
     case 'folders': return { name: 'folders' };
@@ -37,7 +37,7 @@ export function href(r: Route): string {
       if (r.tag) q.set('tag', r.tag);
       if (r.q) q.set('q', r.q);
       return `#/notes${r.note ? '/' + r.note : ''}${q.size ? '?' + q.toString() : ''}`;
-    case 'tasks': return `#/tasks${r.note ? '/' + r.note : ''}`;
+    case 'tasks': return `#/tasks${r.note ? '/' + r.note : ''}${r.note && r.task !== undefined ? '/' + r.task : ''}`;
     case 'calendar':
       if (r.day) q.set('day', r.day);
       return `#/calendar${r.note ? '/' + r.note : ''}${q.size ? '?' + q.toString() : ''}`;
