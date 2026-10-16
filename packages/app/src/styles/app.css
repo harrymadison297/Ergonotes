@@ -304,6 +304,8 @@ html.kbd .menu-item:focus-visible { background: var(--bg-hover); outline-offset:
 .ex-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; padding: 10px 6px 8px; border-radius: 8px; border: 1px solid transparent; text-align: center; color: var(--text); min-width: 0; user-select: none; }
 @media (hover: hover) { .ex-tile:hover { background: var(--bg-hover); } }
 .ex-tile.sel { background: var(--indigo-tint); border-color: var(--sel); }
+.ex-tile.cut, .explorer tr.cut, .nav-item.cut { opacity: .45; }
+.explorer:focus { outline: none; }
 .ex-icon { width: 84px; height: 84px; display: grid; place-items: center; color: var(--green-ink); }
 .ex-paper { width: 64px; height: 80px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg); box-shadow: 0 1px 3px rgba(52, 51, 50, .18); padding: 6px 5px; overflow: hidden; text-align: left; position: relative; }
 .ex-paper p { margin: 0; font-size: 6px; line-height: 8px; color: var(--text-2); word-break: break-all; }

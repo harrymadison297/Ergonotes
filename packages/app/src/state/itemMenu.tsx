@@ -1,10 +1,13 @@
 // What the right-click menu of a Note or a Folder offers: one list for every place an item is shown (the Explorer, the
 // sidebar tree, the note list, the cards), so they never disagree.
-import { FilePlus2, FolderOpen, FolderPlus, Link2, Pin, PinOff, Trash2, Copy, ExternalLink } from 'lucide-react';
+import { ClipboardPaste, Copy, CopyPlus, ExternalLink, FilePlus2, FolderOpen, FolderPlus, Link2, Pin, PinOff, Scissors, Trash2 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import type { MenuEntry } from '../components/ui';
 import { canRevealInFolder, revealInFolder } from '../backend/tauriFs';
 import { useApp } from './app';
+import { useItemClip, useItemOps } from './itemClipboard';
+
+const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
 
 /** `[Title](Folder/Note.md)`: the standard Markdown link the app itself writes (spaces escaped). */
 export const markdownLinkTo = (it: Pick<ItemSummary, 'title' | 'filePath' | 'type'>): string =>
@@ -12,6 +15,8 @@ export const markdownLinkTo = (it: Pick<ItemSummary, 'title' | 'filePath' | 'typ
 
 export function useItemMenu() {
   const app = useApp();
+  const ops = useItemOps();
+  const clip = useItemClip();
   const open = (it: ItemSummary) => {
     if (it.type === 'folder') app.go({ name: 'notes', folder: it.id });
     else app.go({ name: 'notes', note: it.id, folder: it.parent ?? undefined });
@@ -22,15 +27,20 @@ export function useItemMenu() {
   const showInFolder = async (it: ItemSummary) => {
     try { await revealInFolder(it.filePath); } catch (e) { app.toast(e instanceof Error ? e.message : String(e), 'error'); }
   };
-  const duplicate = async (it: ItemSummary) => {
-    const copy = await app.run(app.api.duplicate(it.id));
-    if (!copy) return;
-    await app.refresh();
-    app.toast(`Duplicated “${it.title}”`, 'info', { label: 'Open', run: () => open(copy) });
-  };
-
-  return (it: ItemSummary): MenuEntry[] => {
+  /** `selected`: the items picked in the view; when the one clicked is among several, the menu is about all of them. */
+  return (it: ItemSummary, selected?: ItemSummary[]): MenuEntry[] => {
     const folder = it.type === 'folder';
+    if (selected && selected.length > 1 && selected.some(x => x.id === it.id)) {
+      const ids = selected.map(x => x.id);
+      return [
+        { title: `${selected.length} items` },
+        { label: 'Copy', icon: <Copy size={16} />, kbd: `${MOD}+C`, onClick: () => ops.copy(ids) },
+        { label: 'Cut', icon: <Scissors size={16} />, kbd: `${MOD}+X`, onClick: () => ops.cut(ids) },
+        { label: 'Duplicate', icon: <CopyPlus size={16} />, onClick: () => void ops.duplicate(selected) },
+        { sep: true },
+        { label: 'Move to trash', icon: <Trash2 size={16} />, danger: true, onClick: () => void ops.trash(selected) },
+      ];
+    }
     return [
       { label: 'Open', icon: <FolderOpen size={16} />, onClick: () => open(it) },
       ...(folder ? [
@@ -40,7 +50,11 @@ export function useItemMenu() {
       { sep: true },
       { label: 'Rename…', onClick: () => app.setDialog({ kind: 'rename', id: it.id }) },
       { label: 'Move to…', onClick: () => app.setDialog({ kind: 'move', id: it.id }) },
-      { label: 'Duplicate', icon: <Copy size={16} />, onClick: () => void duplicate(it) },
+      { label: 'Duplicate', icon: <CopyPlus size={16} />, onClick: () => void ops.duplicate([it]) },
+      { sep: true },
+      { label: 'Copy', icon: <Copy size={16} />, kbd: `${MOD}+C`, onClick: () => ops.copy([it.id]) },
+      { label: 'Cut', icon: <Scissors size={16} />, kbd: `${MOD}+X`, onClick: () => ops.cut([it.id]) },
+      ...(folder ? [{ label: 'Paste here', icon: <ClipboardPaste size={16} />, kbd: `${MOD}+V`, disabled: !clip, onClick: () => void ops.paste(it.id) }] : []),
       { sep: true },
       { label: folder ? 'Copy path' : 'Copy link', icon: <Link2 size={16} />, onClick: () => void copyText(markdownLinkTo(it), folder ? 'Path' : 'Link') },
       ...(canRevealInFolder() ? [{ label: 'Show in folder', icon: <ExternalLink size={16} />, onClick: () => void showInFolder(it) }] : []),

@@ -11,6 +11,7 @@ import { activateKeys, classNames, rowClick } from '../state/util';
 import { tagStyle } from '../state/tags';
 import { dragSource, dropZone, useDropState, useImportInto, useMoveInto, type Dragged } from '../state/dnd';
 import { useItemMenu } from '../state/itemMenu';
+import { useItemClip, useItemOps } from '../state/itemClipboard';
 import { IconBtn, useMenu, type MenuEntry } from './ui';
 import { setPrefs, usePrefs } from '../state/prefs';
 import { Resizer } from './Resizer';
@@ -55,6 +56,8 @@ export function Sidebar() {
   const moveInto = useMoveInto();
   const importInto = useImportInto();
   const itemEntries = useItemMenu();
+  const ops = useItemOps();
+  const clip = useItemClip();
   const noteMenu = useMenu();
 
   const folders = useMemo(() => items.filter(i => i.type === 'folder' && !i.inTrash), [items]);
@@ -97,9 +100,16 @@ export function Sidebar() {
     const key = `f:${f.id}`;
     return (
       <div key={f.id}>
-        <div className={classNames('nav-item', active && 'active', hover === key && 'drop-over')} style={{ paddingLeft: depth * 14 }} title={f.title}
+        <div className={classNames('nav-item', active && 'active', hover === key && 'drop-over', clip?.mode === 'cut' && clip.ids.includes(f.id) && 'cut')} style={{ paddingLeft: depth * 14 }} title={f.title}
           {...dragSource({ id: f.id, type: 'folder' })} {...dropZone(key, drop, moveInto(f.id), undefined, importInto(f.id))}
           onClick={rowClick(() => go({ name: 'notes', folder: f.id }))}
+          onKeyDown={e => {
+            const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+            if (mod && k === 'c') { e.preventDefault(); ops.copy([f.id]); }
+            else if (mod && k === 'x') { e.preventDefault(); ops.cut([f.id]); }
+            else if (mod && k === 'v' && clip) { e.preventDefault(); void ops.paste(f.id); }
+            else if (e.key === 'F2') { e.preventDefault(); app.setDialog({ kind: 'rename', id: f.id }); }
+          }}
           onContextMenu={e => { e.preventDefault(); folderMenu.open({ currentTarget: e.currentTarget }, itemEntries(f)); }}>
           <button className="nav-chevron" aria-label={open ? 'Collapse' : 'Expand'} onClick={() => toggleFolder(f.id)} style={{ visibility: kids.length ? 'visible' : 'hidden' }}>
             {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
