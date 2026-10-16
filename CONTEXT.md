@@ -116,6 +116,10 @@ _Avoid_: Todo, reminder, action item
 A named action of the app ("Toggle sidebar", "New note", "Open Settings") that the search palette lists and runs. A Command is not a menu entry of one Item; those are *item actions* (Open, Rename, Move, Duplicate…).
 _Avoid_: Macro, menu item
 
+**Shortcut**:
+The keys bound to a Command: one chord ("Ctrl+K") or two plain keys in turn ("g then h"). A Command may have several. The person's own are kept on the Device and win over the ones a Command came with; a key can belong to only one Command.
+_Avoid_: Hotkey, keybinding
+
 **Search palette**:
 The Ctrl+K popup: one box that finds Notes, Folders, Tags, Tasks, Commands and Pages. Typing `>` shows only Commands, `#` only Tags, `-` only Tasks.
 _Avoid_: Quick open, command bar, spotlight

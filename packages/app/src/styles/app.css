@@ -310,6 +310,20 @@ html.kbd .menu-item:focus-visible { background: var(--bg-hover); outline-offset:
 .explorer:focus { outline: none; }
 @keyframes task-flash { 0%, 60% { background: var(--indigo-tint); box-shadow: 0 0 0 4px var(--indigo-tint); } 100% { background: transparent; box-shadow: 0 0 0 4px transparent; } }
 .prose li[data-checked].task-flash { animation: task-flash 1.8s ease-out; border-radius: 6px; }
+.kbd-settings { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+.kbd-head { display: flex; gap: 8px; align-items: center; }
+.kbd-head .input { flex: 1; }
+.kbd-settings .hint kbd, .kbd-chip kbd, .kbd-clash kbd { font: var(--fs-xs) var(--font); padding: 1px 6px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--bg-soft); color: var(--text); }
+.kbd-clash { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg-soft); }
+.kbd-clash span { flex: 1 1 220px; }
+.kbd-list h4 { margin: 14px 0 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); }
+.kbd-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.kbd-name { flex: 1 1 200px; min-width: 0; }
+.kbd-keys { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.kbd-chip { display: inline-flex; align-items: center; gap: 2px; }
+.kbd-chip button { border: 0; background: transparent; color: var(--text-3); cursor: pointer; padding: 2px; border-radius: 4px; display: grid; place-items: center; }
+.kbd-chip button:hover { color: var(--text); background: var(--bg-hover); }
+.kbd-listening { padding: 2px 8px; border-radius: 6px; background: var(--indigo-tint); color: var(--text-strong); font-size: var(--fs-s); }
 .zoom-ctl { display: inline-flex; align-items: center; gap: 0; margin: 0 2px; }
 .zoom-pct { min-width: 44px; height: 28px; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; cursor: pointer; }
 .zoom-pct:hover { background: var(--bg-hover); color: var(--text); }

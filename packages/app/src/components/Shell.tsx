@@ -15,7 +15,7 @@ import { NotesView, TrashView } from '../views/Notes';
 import { TasksView } from '../views/Tasks';
 import { FilePreviewDialog } from './FilePreview';
 import { SearchPalette } from './SearchPalette';
-import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, SettingsDialog, ShortcutsDialog, TemplatesDialog } from './Dialogs';
+import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, SettingsDialog, TemplatesDialog } from './Dialogs';
 import { Sidebar } from './Sidebar';
 import { RightSidebar, useAsideVisible } from './RightSidebar';
 import { IconBtn, TagLink, Toasts } from './ui';
@@ -48,7 +48,7 @@ function DialogHost() {
   if (!d) return null;
   switch (d.kind) {
     case 'settings': return <SettingsDialog tab={d.tab} onClose={close} />;
-    case 'shortcuts': return <ShortcutsDialog onClose={close} />;
+    case 'shortcuts': return <SettingsDialog tab="keyboard" onClose={close} />;
     case 'search': return <SearchPalette onClose={close} />;
     case 'templates': return <TemplatesDialog onClose={close} />;
     case 'move': return <MoveDialog id={d.id} onClose={close} />;

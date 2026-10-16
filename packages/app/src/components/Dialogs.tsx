@@ -5,6 +5,7 @@ import { useApp } from '../state/app';
 import { classNames, download, relTime } from '../state/util';
 import { Dialog, IconBtn } from './ui';
 import { ModelPicker } from './ModelPicker';
+import { KeyboardSettings } from './KeyboardSettings';
 import { setPrefs, usePrefs } from '../state/prefs';
 import { StoreForm, formFromStore, storeFromForm, type StoreFormState } from './StoreForm';
 
@@ -256,20 +257,6 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ---------------------------------------------------------------- shortcuts
-export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
-  const rows: [string, string][] = [
-    ['New note', 'Ctrl + N'], ['Search', 'Ctrl + K'], ['Today’s daily note', 'Ctrl + Alt + D'], ['Sync now', 'Ctrl + Shift + S'],
-    ['Home', 'g then h'], ['Notes', 'g then n'], ['Tasks', 'g then t'], ['Calendar', 'g then c'], ['This help', '?'],
-    ['Bold / Italic', 'Ctrl + B / I'], ['Insert a block', '/'], ['Link to a note', '[['],
-  ];
-  return (
-    <Dialog title="Keyboard shortcuts" onClose={onClose}>
-      <table className="table"><tbody>{rows.map(([a, b]) => <tr key={a}><td className="name">{a}</td><td style={{ textAlign: 'right' }}><kbd>{b}</kbd></td></tr>)}</tbody></table>
-    </Dialog>
-  );
-}
-
 // ---------------------------------------------------------------- settings
 export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onClose: () => void }) {
   const app = useApp();
@@ -299,7 +286,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
   return (
     <Dialog title="Settings" wide onClose={onClose}>
       <div className="tabs" role="tablist" style={{ margin: '0 -8px 14px' }}>
-        {[['general', 'General'], ['sync', 'Sync & storage'], ['ai', 'AI'], ...(remote ? [['agents', 'Agents (MCP)']] : []), ['security', 'Security'], ['data', 'Data']].map(([k, l]) =>
+        {[['general', 'General'], ['sync', 'Sync & storage'], ['ai', 'AI'], ...(remote ? [['agents', 'Agents (MCP)']] : []), ['keyboard', 'Keyboard'], ['security', 'Security'], ['data', 'Data']].map(([k, l]) =>
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}
       </div>
       {tab === 'general' && (
@@ -351,6 +338,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
         </div>
       )}
       {tab === 'ai' && <AiSettings />}
+      {tab === 'keyboard' && <KeyboardSettings />}
       {tab === 'agents' && remote && <AgentsPanel />}
       {tab === 'security' && (
         <div style={{ maxWidth: 480 }}>
