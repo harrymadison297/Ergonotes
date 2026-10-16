@@ -143,6 +143,37 @@ describe('Vault', () => {
     expect((await v.listItems()).find(i => i.title === 'Loose')?.filePath).toBe('Loose.md');
   });
 
+  it('duplicates a note as it is, and a folder with everything in it', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const f = await v.createFolder({ title: 'Plans' });
+    const sub = await v.createFolder({ title: 'Deep', parent: f.id });
+    const a = await v.createNote({ parent: f.id, title: 'Alpha', body: '# Alpha\n- [ ] do it\nsee [Beta](Deep/Beta.md)', tags: ['x'] });
+    await v.createNote({ parent: sub.id, title: 'Beta', body: 'b' });
+    await v.setPinned(a.id, true);
+    await v.setPrivate(a.id, true);
+    const copy = await v.duplicate(a.id);
+    expect(copy.title).toBe('Alpha copy');
+    expect(copy.id).not.toBe(a.id);
+    expect(copy.parent).toBe(f.id);
+    expect(copy.tags).toEqual(['x']);
+    expect(copy.pinned).toBe(false);
+    expect(copy.private).toBe(true);
+    expect((await v.getNote(copy.id))!.body).toBe('# Alpha\n- [ ] do it\nsee [Beta](Deep/Beta.md)');
+    expect((await v.duplicate(a.id)).title).toBe('Alpha copy 2');
+    // the original is untouched
+    expect((await v.getNote(a.id))!.body).toContain('do it');
+    // a folder: a deep copy, next to the original, links inside it still resolve the same way
+    const fc = await v.duplicate(f.id);
+    expect(fc.title).toBe('Plans copy');
+    const paths = (await v.listItems()).map(i => i.filePath).sort();
+    expect(paths).toEqual(expect.arrayContaining(['Plans copy', 'Plans copy/Alpha.md', 'Plans copy/Alpha copy.md', 'Plans copy/Deep', 'Plans copy/Deep/Beta.md']));
+    const inCopy = (await v.listItems()).find(i => i.filePath === 'Plans copy/Alpha.md')!;
+    expect((await v.getNote(inCopy.id))!.links.map(l => l.title)).toEqual(['Beta']);
+    expect((await v.getNote(inCopy.id))!.links[0].id).toBe((await v.listItems()).find(i => i.filePath === 'Plans copy/Deep/Beta.md')!.id);
+    await expect(v.duplicate('nope')).rejects.toThrow(/not found/);
+  });
+
   it('daily note is created once per date from the daily template', async () => {
     const v = await open('A', () => Date.parse('2026-10-14T09:30:00'));
     await v.createVault(PASSWORD);

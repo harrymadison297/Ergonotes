@@ -165,7 +165,7 @@ export function TrashView({ noteId }: { noteId?: string }) {
             <div className="info"><div className="t">{n.title}</div><div className="when">Folder</div></div>
             <button className="btn" onClick={async () => { await app.run(app.api.restore(n.id)); await app.refresh(); }}>Restore</button>
           </div>
-        ) : <NoteRow key={n.id} n={n} active={n.id === noteId} href={href({ name: 'trash', note: n.id })} />)}
+        ) : <NoteRow key={n.id} n={n} plain active={n.id === noteId} href={href({ name: 'trash', note: n.id })} />)}
       </div>
     </PaneList>
   );

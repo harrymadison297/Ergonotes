@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AudioLines, Download, File as FileIcon, FileSpreadsheet, FileText, Image as ImageIcon, Music, Presentation, Search, Video } from 'lucide-react';
+import { AudioLines, Copy, Download, ExternalLink, File as FileIcon, FileSpreadsheet, FileText, Image as ImageIcon, Music, Presentation, Search, Trash2, Video } from 'lucide-react';
 import { fmtClock, recordFilePaths, type FileInfo, type RecordInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
@@ -8,6 +8,8 @@ import { FileImg } from '../components/FileImg';
 import { FilePreviewBody, useFilePreview } from '../components/FilePreview';
 import { Resizer } from '../components/Resizer';
 import { PaneList } from '../components/RecorderPanel';
+import { useMenu, type MenuEntry } from '../components/ui';
+import { canRevealInFolder, revealInFolder } from '../backend/tauriFs';
 
 type Tab = 'all' | 'media' | 'docs' | 'records';
 const isMedia = (f: FileInfo) => /^(image|video|audio)\//.test(f.mime);
@@ -55,6 +57,7 @@ export function FilesView({ fileId }: { fileId?: string }) {
   const [q, setQ] = useState('');
   const [records, setRecords] = useState<RecordInfo[]>([]);
   const [reload, setReload] = useState(0);
+  const menu = useMenu();
   useEffect(() => {
     let live = true;
     void app.api.listFiles().then(f => { if (live) setFiles(f); });
@@ -67,6 +70,31 @@ export function FilesView({ fileId }: { fileId?: string }) {
     setReload(n => n + 1);
   };
 
+  const reveal = async (path: string) => {
+    try { await revealInFolder(path); } catch (e) { app.toast(e instanceof Error ? e.message : String(e), 'error'); }
+  };
+  const copyText = async (text: string, what: string) => {
+    try { await navigator.clipboard.writeText(text); app.toast(`${what} copied`); } catch { app.toast(`Could not copy the ${what.toLowerCase()}`, 'error'); }
+  };
+  const fileEntries = (f: FileInfo): MenuEntry[] => [
+    { label: 'Open', icon: <FileIcon size={16} />, onClick: () => app.go({ name: 'files', file: f.id }) },
+    ...(f.noteId ? [{ label: 'Open the note', onClick: () => app.go({ name: 'notes', note: f.noteId! }) }] : []),
+    { sep: true },
+    { label: 'Copy link', icon: <Copy size={16} />, onClick: () => void copyText(`${f.mime.startsWith('image/') ? '!' : ''}[${f.name}](${f.path.split('/').map(encodeURIComponent).join('/')})`, 'Link') },
+    ...(canRevealInFolder() ? [{ label: 'Show in folder', icon: <ExternalLink size={16} />, onClick: () => void reveal(f.path) }] : []),
+    { sep: true },
+    { label: 'Delete…', icon: <Trash2 size={16} />, danger: true, onClick: async () => {
+      if (!confirm(`Delete “${f.name}” for good?${f.noteId ? ` The note “${f.noteTitle}” uses it and will show it as missing.` : ''}`)) return;
+      await app.run(app.api.removeFiles([f.path]));
+      setReload(n => n + 1);
+    } },
+  ];
+  const recordEntries = (r: RecordInfo): MenuEntry[] => [
+    ...(r.noteId ? [{ label: 'Open the note', icon: <FileIcon size={16} />, onClick: () => app.go({ name: 'notes', note: r.noteId! }) }, { sep: true } as MenuEntry] : []),
+    ...(canRevealInFolder() ? [{ label: 'Show in folder', icon: <ExternalLink size={16} />, onClick: () => void reveal(r.path) }] : []),
+    { label: 'Delete…', icon: <Trash2 size={16} />, danger: true, onClick: () => void removeRecord(r) },
+  ];
+
   const shown = useMemo(() => tab === 'records' ? [] : (files ?? []).filter(f =>
     (tab === 'all' || (tab === 'media') === isMedia(f)) && (!q || f.name.toLowerCase().includes(q.toLowerCase()))), [files, tab, q]);
   const total = (files ?? []).reduce((a, f) => a + f.size, 0);
@@ -74,6 +102,7 @@ export function FilesView({ fileId }: { fileId?: string }) {
 
   const list = (
     <PaneList>
+      {menu.node}
       <Resizer pane="listW" edge="right" label="Resize list" />
       <div className="list-head files-head">
         <h2><span className="ttl">Files</span><span className="count">{tab === 'records' ? records.length : files?.length ?? 0}</span><span className="grow" /><span className="total">Total size: {fileSize(tab === 'records' ? records.reduce((a, r) => a + r.size, 0) : total)}</span></h2>
@@ -91,7 +120,7 @@ export function FilesView({ fileId }: { fileId?: string }) {
         <div className="list-scroll">
           {records.length === 0 && <div className="empty"><AudioLines size={32} /><h3>No records</h3><p>Recordings and meetings you make in a note are listed here.</p></div>}
           {records.map(r => (
-            <div key={r.path} className="record-row">
+            <div key={r.path} className="record-row" onContextMenu={e => { e.preventDefault(); menu.open({ currentTarget: e.currentTarget }, recordEntries(r)); }}>
               <AudioLines size={20} aria-hidden />
               <div className="record-row-main">
                 <strong>{r.meta?.kind === 'meeting' ? 'Meeting' : 'Recording'} {r.meta?.startedAt ? new Date(r.meta.startedAt).toLocaleString() : r.path.slice(r.path.lastIndexOf('/') + 1)}</strong>
@@ -106,7 +135,8 @@ export function FilesView({ fileId }: { fileId?: string }) {
       <div className="list-scroll file-grid" hidden={tab === 'records'}>
         {files && shown.length === 0 && <div className="empty"><FileIcon size={32} /><h3>No files</h3><p>Attach files from a note’s Insert menu and they show up here.</p></div>}
         {shown.map(f => (
-          <a key={f.id} className={classNames('file-card', f.id === fileId && 'active')} href={href({ name: 'files', file: f.id })}>
+          <a key={f.id} className={classNames('file-card', f.id === fileId && 'active')} href={href({ name: 'files', file: f.id })}
+            onContextMenu={e => { e.preventDefault(); menu.open({ currentTarget: e.currentTarget }, fileEntries(f)); }}>
             <span className="file-thumb">{f.mime.startsWith('image/') ? <FileImg src={`ergo-file:${f.id}`} alt="" /> : kindIcon(f)}</span>
             <span className="file-name">{f.name}</span>
             <span className="file-sub">{f.noteTitle ?? 'Not in a note'}</span>

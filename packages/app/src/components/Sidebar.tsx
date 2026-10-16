@@ -10,6 +10,7 @@ import { href } from '../state/router';
 import { activateKeys, classNames, rowClick } from '../state/util';
 import { tagStyle } from '../state/tags';
 import { dragSource, dropZone, useDropState, useImportInto, useMoveInto, type Dragged } from '../state/dnd';
+import { useItemMenu } from '../state/itemMenu';
 import { IconBtn, useMenu, type MenuEntry } from './ui';
 import { setPrefs, usePrefs } from '../state/prefs';
 import { Resizer } from './Resizer';
@@ -53,6 +54,8 @@ export function Sidebar() {
   const hover = drop.key;
   const moveInto = useMoveInto();
   const importInto = useImportInto();
+  const itemEntries = useItemMenu();
+  const noteMenu = useMenu();
 
   const folders = useMemo(() => items.filter(i => i.type === 'folder' && !i.inTrash), [items]);
   const childrenOf = useMemo(() => {
@@ -97,7 +100,7 @@ export function Sidebar() {
         <div className={classNames('nav-item', active && 'active', hover === key && 'drop-over')} style={{ paddingLeft: depth * 14 }} title={f.title}
           {...dragSource({ id: f.id, type: 'folder' })} {...dropZone(key, drop, moveInto(f.id), undefined, importInto(f.id))}
           onClick={rowClick(() => go({ name: 'notes', folder: f.id }))}
-          onContextMenu={e => { e.preventDefault(); folderMenu.open({ currentTarget: e.currentTarget }, folderEntries(f)); }}>
+          onContextMenu={e => { e.preventDefault(); folderMenu.open({ currentTarget: e.currentTarget }, itemEntries(f)); }}>
           <button className="nav-chevron" aria-label={open ? 'Collapse' : 'Expand'} onClick={() => toggleFolder(f.id)} style={{ visibility: kids.length ? 'visible' : 'hidden' }}>
             {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
@@ -105,25 +108,12 @@ export function Sidebar() {
             <FolderIcon size={18} /><span className="label">{f.title}</span>
           </a>
           <span className="count">{f.childCount || ''}</span>
-          <button className="nav-more" aria-label={`Actions for ${f.title}`} onClick={e => folderMenu.open(e, folderEntries(f), 'right')}><MoreHorizontal size={16} /></button>
+          <button className="nav-more" aria-label={`Actions for ${f.title}`} onClick={e => folderMenu.open(e, itemEntries(f), 'right')}><MoreHorizontal size={16} /></button>
         </div>
         {open && kids.map(k => folderNode(k, depth + 1))}
       </div>
     );
   };
-
-  function folderEntries(f: ItemSummary): MenuEntry[] {
-    return [
-      { label: 'New note here', icon: <FilePlus2 size={16} />, onClick: () => void app.newNote({ parent: f.id }) },
-      { label: 'New subfolder', icon: <FolderPlus size={16} />, onClick: () => app.setDialog({ kind: 'newFolder', parent: f.id }) },
-      { sep: true },
-      { label: 'Rename…', onClick: () => app.setDialog({ kind: 'rename', id: f.id }) },
-      { label: 'Move to…', onClick: () => app.setDialog({ kind: 'move', id: f.id }) },
-      { label: 'Use for new captures', onClick: async () => { await app.run(app.api.setSettings({ captureFolder: f.id })); await app.refresh(); app.toast(`New captures go to “${f.title}”`); } },
-      { sep: true },
-      { label: 'Move to trash', danger: true, icon: <Trash2 size={16} />, onClick: () => void app.trashItem(f.id) },
-    ];
-  }
 
   const pinnedEntries = (): MenuEntry[] => pinned.length
     ? pinned.map(p => ({ label: p.title, icon: <FileText size={16} />, onClick: () => go({ name: 'notes', note: p.id, folder: p.parent ?? undefined }) }))
@@ -167,7 +157,7 @@ export function Sidebar() {
         <IconBtn label="Create…" className="ring ring-more" haspopup icon={<MoreHorizontal size={18} />} onClick={e => createMenu.open(e, createEntries(), 'left', 'create')} />
       </div>
       {createMenu.node}
-      {folderMenu.node}
+      {folderMenu.node}{noteMenu.node}
       {tagMenu.node}
       {pinnedMenu.node}
 
@@ -187,6 +177,7 @@ export function Sidebar() {
             {pinned.length === 0 && <div className="nav-hint">Pin a note, or drop one here</div>}
             {pinned.map(p => (
               <a key={p.id} className="nav-item" href={href({ name: 'notes', note: p.id, folder: p.parent ?? undefined })} title={p.title}
+                onContextMenu={e => { e.preventDefault(); noteMenu.open({ currentTarget: e.currentTarget }, itemEntries(p)); }}
                 {...dragSource({ id: p.id, type: 'note' })}>
                 <span className="nav-chevron blank" aria-hidden /><FileText size={16} /><span className="label">{p.title}</span>
               </a>

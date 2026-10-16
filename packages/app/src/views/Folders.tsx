@@ -5,6 +5,7 @@ import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames, relTime, rowClick } from '../state/util';
 import { dragSource, dropZone, useDropState, useImportInto, useMoveInto } from '../state/dnd';
+import { useItemMenu } from '../state/itemMenu';
 import { IconBtn, useMenu } from '../components/ui';
 
 export function FoldersView() {
@@ -15,6 +16,7 @@ export function FoldersView() {
   const drop = useDropState();
   const moveInto = useMoveInto();
   const importInto = useImportInto();
+  const itemEntries = useItemMenu();
   const folders = app.items.filter(i => i.type === 'folder' && !i.inTrash);
   const notes = app.items.filter(i => i.type === 'note' && !i.inTrash);
   const kids = useMemo(() => {
@@ -31,6 +33,7 @@ export function FoldersView() {
     const isOpen = open.has(f.id);
     const out = [(
       <tr key={f.id} className={classNames('clickable', drop.key === f.id && 'drop-over')}
+        onContextMenu={e => { e.preventDefault(); menu.open({ currentTarget: e.currentTarget }, itemEntries(f)); }}
         {...dragSource({ id: f.id, type: 'folder' })} {...dropZone(f.id, drop, moveInto(f.id), undefined, importInto(f.id))}
         onClick={rowClick(() => app.go({ name: 'notes', folder: f.id }))}>
         <td className="name"><div className="name-cell" style={{ paddingLeft: depth * 22 }}>
@@ -43,14 +46,7 @@ export function FoldersView() {
         <td>{f.created ? new Date(f.created).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}</td>
         <td>{relTime(f.updated)}</td>
         <td style={{ textAlign: 'right' }}>
-          <IconBtn label={`Actions for ${f.title}`} icon={<MoreHorizontal size={18} />} onClick={e => menu.open(e, [
-            { label: 'New note here', onClick: () => void app.newNote({ parent: f.id }) },
-            { label: 'New subfolder', onClick: () => app.setDialog({ kind: 'newFolder', parent: f.id }) },
-            { label: 'Rename…', onClick: () => app.setDialog({ kind: 'rename', id: f.id }) },
-            { label: 'Move to…', onClick: () => app.setDialog({ kind: 'move', id: f.id }) },
-            { sep: true },
-            { label: 'Move to trash', danger: true, onClick: () => void app.trashItem(f.id) },
-          ], 'right')} />
+          <IconBtn label={`Actions for ${f.title}`} icon={<MoreHorizontal size={18} />} onClick={e => menu.open(e, itemEntries(f), 'right')} />
         </td>
       </tr>
     )];

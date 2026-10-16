@@ -1031,6 +1031,39 @@ export class Vault implements VaultApi {
     return this.summary(f, this.counts());
   }
 
+  /** A note's file as it is, under a new id and name, in `parent` (nothing but the identity differs). */
+  private async copyNote(id: string, parent: string | null, title: string): Promise<ItemSummary> {
+    const r = this.ready();
+    const text = r.text(id);
+    if (text === null) throw new Error('Note not found');
+    const fresh = newId();
+    const path = await this.freePath(parent ? this.folderPath(parent) : '', safeName(title), '.md');
+    // the copy is not pinned and is not the daily note of its date
+    const file = editFm(toFileText(text), { id: fresh, pinned: undefined, daily: undefined }, { top: ['id'] });
+    await r.commit(fresh, toItemText(file, { path }), this.now());
+    this.refresh([fresh]);
+    await this.flushDisk();
+    return this.summary(this.views.get(fresh)!, this.counts());
+  }
+
+  private async copyFolderInto(from: string, to: string): Promise<void> {
+    const kids = [...this.views.values()].filter(c => c.parent === from && !c.trashed);
+    for (const c of kids) {
+      if (c.type === 'note') await this.copyNote(c.id, to, c.title);
+      else await this.copyFolderInto(c.id, (await this.makeDir(to, c.title)).id);
+    }
+  }
+
+  async duplicate(id: string): Promise<ItemSummary> {
+    this.ready();
+    const v = this.views.get(id);
+    if (!v || v.trashed) throw new Error('Item not found');
+    if (v.type === 'note') return this.copyNote(id, v.parent, `${v.title} copy`);
+    const copy = await this.makeDir(v.parent, `${v.title} copy`);
+    await this.copyFolderInto(id, copy.id);
+    return this.summary(this.views.get(copy.id)!, this.counts());
+  }
+
   async capture(input: { text: string; title?: string }): Promise<ItemSummary> {
     const first = input.text.split('\n').find(l => l.trim()) ?? '';
     const title = input.title?.trim() || (first.length > 60 ? first.slice(0, 57) + '…' : first) || 'Quick note';

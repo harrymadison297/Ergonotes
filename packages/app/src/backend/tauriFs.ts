@@ -22,6 +22,11 @@ export class TauriFs implements VaultFs {
   }
 }
 
+/** The desktop app can show a vault file in the system's file manager. */
+export const canRevealInFolder = (): boolean =>
+  typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window && !/Android/i.test(navigator.userAgent);
+export const revealInFolder = (path: string): Promise<void> => invoke('vault_reveal', { path });
+
 /** The device's own settings: next to the app's, never in the vault folder. */
 export const deviceMetaFor = (key?: string): LocalMeta => ({
   async load() { return JSON.parse(await invoke<string>('device_meta_load', { key })) as Record<string, unknown>; },

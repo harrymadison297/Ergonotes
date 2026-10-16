@@ -5,6 +5,7 @@ import type { ItemSummary } from '@ergonotes/core';
 import { classNames, dueLabel, firstSentence, relTime } from '../state/util';
 import { tagStyle } from '../state/tags';
 import { dragSource } from '../state/dnd';
+import { useItemMenu } from '../state/itemMenu';
 import { FileImg } from './FileImg';
 
 // ---------------------------------------------------------------- menus
@@ -160,11 +161,16 @@ export function NoteChips({ n }: { n: ItemSummary }) {
   );
 }
 
-export function NoteRow({ n, active, href, onClick, cards }: { n: ItemSummary; active?: boolean; href: string; onClick?: () => void; cards?: boolean }) {
+export function NoteRow({ n, active, href, onClick, cards, plain }: { n: ItemSummary; active?: boolean; href: string; onClick?: () => void; cards?: boolean; plain?: boolean }) {
   // cards show the opening of the note over a few lines; list rows only its first sentence
   const s = cards ? n.snippet : firstSentence(n.snippet);
+  const menu = useMenu();
+  const entries = useItemMenu();
   return (
+    <>
+    {menu.node}
     <a className={classNames('note-row', active && 'active')} href={href} onClick={onClick} aria-current={active ? 'true' : undefined}
+      onContextMenu={plain ? undefined : e => { e.preventDefault(); menu.open({ currentTarget: e.currentTarget }, entries(n)); }}
       {...dragSource({ id: n.id, type: 'note' })}>
       <div className="info">
         <div className="t">{n.title}{n.conflicted && <span className="chip warn" title="Conflicted revision">conflict</span>}</div>
@@ -176,12 +182,18 @@ export function NoteRow({ n, active, href, onClick, cards }: { n: ItemSummary; a
       </div>
       {n.thumb && <FileImg className="thumb" src={n.thumb} alt="" />}
     </a>
+    </>
   );
 }
 
 export function NoteCard({ n, href, folder }: { n: ItemSummary; href: string; folder?: string }) {
+  const menu = useMenu();
+  const entries = useItemMenu();
   return (
-    <a className="card" href={href} {...dragSource({ id: n.id, type: 'note' })}>
+    <>
+    {menu.node}
+    <a className="card" href={href} onContextMenu={e => { e.preventDefault(); menu.open({ currentTarget: e.currentTarget }, entries(n)); }}
+      {...dragSource({ id: n.id, type: 'note' })}>
       {folder && <span className="crumb">{folder}</span>}
       <span className="t">{n.title}</span>
       {n.snippet && <span className="s">{n.snippet}</span>}
@@ -192,6 +204,7 @@ export function NoteCard({ n, href, folder }: { n: ItemSummary; href: string; fo
         <span className="date">{relTime(n.updated)}</span>
       </span>
     </a>
+    </>
   );
 }
 

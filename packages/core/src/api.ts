@@ -184,6 +184,8 @@ export interface VaultApi {
   createFolder(input: { title: string; parent?: string | null }): Promise<ItemSummary>;
   capture(input: { text: string; title?: string }): Promise<ItemSummary>;
   rename(id: string, title: string): Promise<void>;
+  /** A copy next to the original, named “… copy”; a folder is copied with everything in it. Attachments and records are shared, not copied. */
+  duplicate(id: string): Promise<ItemSummary>;
   move(id: string, parent: string | null): Promise<void>;
   setTags(id: string, tags: string[]): Promise<void>;
   renameTag(from: string, to: string): Promise<number>;
@@ -254,7 +256,7 @@ export interface VaultApi {
 
 export const VAULT_METHODS = [
   'status', 'createVault', 'joinVault', 'unlock', 'lock', 'changePassword', 'setDeviceName',
-  'listItems', 'getNote', 'createNote', 'saveNote', 'createFolder', 'capture', 'rename', 'move', 'setTags',
+  'listItems', 'getNote', 'createNote', 'saveNote', 'createFolder', 'capture', 'rename', 'duplicate', 'move', 'setTags',
   'renameTag', 'setPinned', 'setPrivate', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'searchHits', 'linkTargets', 'tags', 'tasks', 'toggleTask',
   'calendar', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
   'resolveConflict', 'history', 'versionText', 'restoreVersion', 'listChats', 'getChat', 'saveChat', 'deleteChat', 'getSettings', 'setSettings', 'getAiSettings', 'setAiSettings', 'setStore',

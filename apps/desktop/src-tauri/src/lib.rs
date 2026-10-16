@@ -265,6 +265,41 @@ fn vault_stat(root: State<VaultRoot>, path: String) -> Result<Option<Stat>, Stri
     }))
 }
 
+/// Show a file or folder of the vault in the system's file manager (the file selected where the manager can do that).
+#[tauri::command]
+fn vault_reveal(root: State<VaultRoot>, path: String) -> Result<(), String> {
+    let p = resolve(&root, &path)?;
+    if !p.exists() {
+        return Err("That file is not on this device".into());
+    }
+    reveal(&p)
+}
+
+#[cfg(target_os = "windows")]
+fn reveal(p: &Path) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    // explorer wants backslashes and one quoted argument; it also exits with 1 when it worked, so only the start is checked
+    let win = p.to_string_lossy().replace('/', "\\");
+    std::process::Command::new("explorer").raw_arg(format!("/select,\"{}\"", win)).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn reveal(p: &Path) -> Result<(), String> {
+    std::process::Command::new("open").arg("-R").arg(p).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+fn reveal(p: &Path) -> Result<(), String> {
+    // most Linux file managers cannot be told to select a file: its folder is opened
+    let dir = if p.is_dir() { p } else { p.parent().unwrap_or(p) };
+    std::process::Command::new("xdg-open").arg(dir).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "android")]
+fn reveal(_p: &Path) -> Result<(), String> {
+    Err("Showing a file in the file manager is not available on Android".into())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -284,6 +319,7 @@ pub fn run() {
             vault_rename,
             vault_mkdir,
             vault_stat,
+            vault_reveal,
             device_meta_load,
             device_meta_save,
         ])

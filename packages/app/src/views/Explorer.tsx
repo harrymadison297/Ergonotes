@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Archive, ArrowUp, ChevronRight, FilePlus2, Folder as FolderIcon, FolderOpen, FolderPlus, Inbox, LayoutGrid, List, MoreHorizontal, Pin, PinOff, Trash2,
+  Archive, ArrowUp, ChevronRight, FilePlus2, Folder as FolderIcon, FolderOpen, FolderPlus, Inbox, LayoutGrid, List, MoreHorizontal,
 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { activateKeys, classNames, relTime } from '../state/util';
 import { dragSource, dropZone, useDropState, useImportInto, useMoveInto } from '../state/dnd';
+import { useItemMenu } from '../state/itemMenu';
 import { href, noteHref } from '../state/router';
 import { FileImg } from '../components/FileImg';
-import { IconBtn, TagDots, useMenu, type MenuEntry } from '../components/ui';
+import { IconBtn, TagDots, useMenu } from '../components/ui';
 
 type ViewMode = 'icons' | 'details';
 const coarse = () => window.matchMedia('(pointer: coarse)').matches;
@@ -53,16 +54,7 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
   };
   const activate = (it: ItemSummary) => { setSel(it.id); if (coarse()) open(it); };
 
-  const entries = (it: ItemSummary): MenuEntry[] => [
-    { label: 'Open', icon: <FolderOpen size={16} />, onClick: () => open(it) },
-    { sep: true },
-    { label: 'Rename…', onClick: () => app.setDialog({ kind: 'rename', id: it.id }) },
-    { label: 'Move to…', onClick: () => app.setDialog({ kind: 'move', id: it.id }) },
-    ...(it.type === 'note' ? [{ label: it.pinned ? 'Unpin' : 'Pin to sidebar', icon: it.pinned ? <PinOff size={16} /> : <Pin size={16} />,
-      onClick: async () => { await app.run(app.api.setPinned(it.id, !it.pinned)); await app.refresh(); } }] : []),
-    { sep: true },
-    { label: 'Move to trash', icon: <Trash2 size={16} />, danger: true, onClick: () => void app.trashItem(it.id) },
-  ];
+  const entries = useItemMenu();
 
   const sortedFolders = useMemo(() => [...folders].sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true })), [folders]);
   const sortedNotes = useMemo(() => [...notes].sort((a, b) => b.updated.localeCompare(a.updated)), [notes]);
