@@ -30,6 +30,7 @@ import { blobToB64, RecorderDialog, TranscribeDialog, type Recording } from './R
 import { DrawingDialog } from './DrawingDialog';
 import { editorBridge } from '../state/editorBridge';
 import { suggestionRequest, cleanSuggestion, completeText } from '@ergonotes/core';
+import { canPrint, printNote } from '../state/printNote';
 import { Dialog, IconBtn, TagBar, useMenu, type MenuEntry } from './ui';
 import { href } from '../state/router';
 import { ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, clampZoom, setPrefs, usePrefs, usePrefsNow } from '../state/prefs';
@@ -441,7 +442,10 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
   const exportEntries = (): MenuEntry[] => [
     { label: 'Markdown (.md)', icon: <FileText size={16} />, onClick: async () => { await flushNow(); const r = await app.run(api.exportNote(id, 'md')); if (r) download(r.filename, r.mime, r.content); } },
     { label: 'Web page (.html)', icon: <FileText size={16} />, onClick: async () => { await flushNow(); const r = await app.run(api.exportNote(id, 'html')); if (r) download(r.filename, r.mime, r.content); } },
-    { label: 'PDF / Print…', icon: <Download size={16} />, onClick: () => window.print() },
+    ...(canPrint() ? [{ label: 'PDF…', icon: <Download size={16} />, onClick: async () => {
+      await flushNow();
+      await printNote({ title: title || doc.title, tags: doc.tags, body: editor.view.dom as HTMLElement });
+    } }] : []),
   ];
   const flushNow = async () => { saveBody.flush(); saveTitle.flush(); await inflight.current; };
 

@@ -423,6 +423,18 @@ function DiagramSvg({ svg }: { svg: string }) {
   return <div style={{ minWidth: w ? Math.min(w, 960) : undefined, margin: '0 auto' }} dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
+/** A diagram drawn in the light theme for paper (the editor draws it in the app's theme, which may be the dark one). */
+export async function renderDiagramLight(source: string): Promise<string | null> {
+  try {
+    const m = await loadMermaid();
+    m.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'default', fontFamily: 'inherit' });
+    return (await m.render(`ergo-mermaid-${++mermaidSeq}`, source)).svg;
+  } catch {
+    document.getElementById(`dergo-mermaid-${mermaidSeq}`)?.remove();
+    return null;
+  }
+}
+
 function MermaidView({ node, editor, extension }: NodeViewProps) {
   const lang = String(node.attrs.language ?? '');
   const source = node.textContent;

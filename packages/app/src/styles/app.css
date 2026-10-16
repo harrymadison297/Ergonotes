@@ -519,12 +519,6 @@ html.kbd .tag-cluster:focus-visible { outline: 2px solid var(--focus); outline-o
   .icon-btn { width: 40px; height: 40px; }
   .editor-top .icon-btn { width: 36px; height: 36px; }
 }
-@media print {
-  .sidebar, .aside-wrap, .toolbar, .editor-top, .editor-foot, .banner, .bottom-nav, .fab, .pane-list { display: none !important; }
-  body { overflow: visible; }
-  .app, .split, .pane-body, .editor, .editor-scroll { display: block !important; height: auto !important; overflow: visible !important; }
-  .editor-page { max-width: none; padding: 0; }
-}
 
 /* ---------- resizable panes ---------- */
 .resizer { position: absolute; top: 0; bottom: 0; width: 9px; z-index: 5; cursor: col-resize; touch-action: none; }
@@ -1116,3 +1110,78 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .rec-row-text strong { color: var(--text-strong); }
 .rec-ico { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--bg-active); color: var(--text-2); flex: none; }
 .rec-row input[type=checkbox] { width: 18px; height: 18px; margin-top: 6px; flex: none; }
+
+/* ---------- a note on paper ----------
+   `#print-root` is built when a note is printed (state/printNote.ts): the note, copied and stripped of what only an editor
+   needs. It is never on screen. Paper is always light, whatever the theme, and backgrounds are kept (tags, code, callouts). */
+#print-root { display: none; }
+@page { size: A4; margin: 20mm; }
+@media print {
+  html.printing-note, html.printing-note body { height: auto !important; overflow: visible !important; background: #fff !important; }
+  html.printing-note body > :not(#print-root) { display: none !important; }
+  #print-root { display: block; color-scheme: light; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    --bg: #ffffff; --bg-sidebar: #f6f5f4; --bg-soft: #faf9f8; --bg-hover: #eeeeee; --bg-active: #e7e6e5;
+    --text-strong: #000000; --text: #343332; --text-2: #4e4d4c; --text-3: #696564;
+    --border: #e7e6e5; --border-card: #dad9d8; --border-strong: #dad9d8;
+    --green-ink: #00701f; --green-mark: #009b29; --green-tint: #e6f7ec;
+    --indigo-ink: #3d52e8; --indigo-tint: #ebeeff; --sel: #4d64ff;
+    --task: #7d3ebe; --task-tint: #fde9ff; --event-ink: #bf4a1c; --danger: #c8283a; --danger-bg: #fde8eb; --tag-alpha: 14%;
+    font-family: var(--font); font-size: 11pt; line-height: 1.55; color: var(--text); background: #fff; }
+  #print-root * { box-sizing: border-box; }
+  #print-root .pr-title { margin: 0 0 6pt; font-size: 24pt; font-weight: 700; line-height: 1.2; color: #000; overflow-wrap: anywhere; break-after: avoid; }
+  #print-root .pr-tags { display: flex; flex-wrap: wrap; gap: 5pt; margin: 0 0 14pt; padding-bottom: 12pt; border-bottom: 0.75pt solid var(--border-strong); }
+  #print-root .pr-tags:empty { display: none; }
+  #print-root .pr-tag { font-size: 9pt; line-height: 15pt; padding: 1pt 8pt 1pt 6pt; }
+  #print-root .pr-body { font-size: 11pt; line-height: 1.55; min-height: 0; }
+  #print-root .pr-body > * + * { margin-top: 0.6em; }
+  #print-root h1, #print-root h2, #print-root h3, #print-root h4 { break-after: avoid; break-inside: avoid; color: #000; overflow-wrap: anywhere; }
+  #print-root .pr-body h1 { font-size: 18pt; margin: 1.3em 0 .35em; }
+  #print-root .pr-body h2 { font-size: 15pt; margin: 1.2em 0 .3em; }
+  #print-root .pr-body h3 { font-size: 12.5pt; margin: 1.1em 0 .25em; }
+  #print-root p { orphans: 3; widows: 3; overflow-wrap: anywhere; }
+  #print-root li { break-inside: avoid; }
+  #print-root blockquote, #print-root .pr-record, #print-root figure, #print-root .pr-diagram, #print-root .pr-audio, #print-root img, #print-root tr, #print-root .math-block { break-inside: avoid; }
+  #print-root img { max-width: 100%; height: auto; max-height: 230mm; border-radius: 0; }
+  #print-root a { color: var(--indigo-ink); text-decoration: none; }
+  #print-root a[href^="http"]::after { content: " (" attr(href) ")"; color: var(--text-3); font-size: .85em; overflow-wrap: anywhere; word-break: break-all; }
+  #print-root .pr-link, #print-root .wikilink { color: var(--green-ink); background: none; padding: 0; }
+  #print-root pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; font-size: 9.5pt; line-height: 1.45; padding: 8pt 10pt; border: 0.75pt solid var(--border-card); border-radius: 4pt; background: var(--bg-sidebar); }
+  #print-root pre, #print-root code { font-family: var(--mono); }
+  #print-root :not(pre) > code { font-size: .9em; background: var(--bg-active); padding: 0 3pt; border-radius: 3pt; }
+  #print-root blockquote { margin-left: 0; padding: 2pt 0 2pt 12pt; border-left: 2.5pt solid var(--green-mark); color: var(--text-2); }
+  #print-root blockquote.callout { background: var(--green-tint); padding: 8pt 12pt; border-radius: 0 4pt 4pt 0; color: var(--text); }
+  #print-root hr { border: 0; border-top: 0.75pt solid var(--border-strong); margin: 1.2em 0; }
+  #print-root .tableWrapper { overflow: visible; }
+  #print-root table { width: 100%; table-layout: auto; border-collapse: collapse; font-size: 10pt; }
+  #print-root thead { display: table-header-group; }
+  #print-root th, #print-root td { border: 0.75pt solid var(--border-strong); padding: 4pt 7pt; vertical-align: top; overflow-wrap: anywhere; }
+  #print-root th { background: var(--bg-sidebar); color: #000; text-align: left; }
+  #print-root ul[data-type='taskList'] { list-style: none; padding-left: 2pt; }
+  #print-root ul[data-type='taskList'] li { display: flex; gap: 7pt; align-items: flex-start; }
+  #print-root ul[data-type='taskList'] li > div { flex: 1; min-width: 0; }
+  #print-root ul[data-type='taskList'] li[data-checked='true'] > div { color: var(--text-2); text-decoration: line-through; }
+  #print-root .pr-check { flex: none; display: inline-block; position: relative; width: 10pt; height: 10pt; margin: 2.6pt 1pt 0 0; border: 1pt solid #878382; border-radius: 2pt; vertical-align: -1pt; }
+  #print-root .inline-check .pr-check { margin: 0 2pt 0 0; }
+  #print-root .pr-check.on { background: var(--task); border-color: var(--task); }
+  #print-root .pr-check.on::after { content: ''; position: absolute; left: 2.6pt; top: 0.6pt; width: 2.6pt; height: 5.2pt; border: solid #fff; border-width: 0 1.2pt 1.2pt 0; transform: rotate(45deg); }
+  #print-root .task-meta { font-size: 8.5pt; line-height: 1.6; padding: 0 5pt; border-radius: 3pt; text-decoration: none; }
+  #print-root .date-chip, #print-root .hashtag { font-size: .92em; }
+  #print-root .pr-toggle-title { font-weight: 600; color: #000; break-after: avoid; }
+  #print-root .pr-toggle-title::before { content: '\25BE\00a0'; color: var(--text-3); }
+  #print-root .pr-toggle-body { margin-left: 4pt; padding-left: 12pt; border-left: 1.5pt solid var(--border-strong); }
+  #print-root .pr-toggle-body > * + * { margin-top: .5em; }
+  #print-root .pr-figure { margin: 0; text-align: center; }
+  #print-root .pr-figure img { max-height: 200mm; }
+  #print-root .pr-diagram { text-align: center; }
+  #print-root .pr-diagram svg { max-width: 100%; height: auto; }
+  #print-root .pr-audio { padding: 5pt 9pt; border: 0.75pt solid var(--border-card); border-radius: 4pt; background: var(--bg-soft); color: var(--text-2); font-size: 10pt; }
+  #print-root .pr-record { padding: 7pt 10pt; border: 0.75pt solid var(--border-card); border-radius: 4pt; background: var(--bg-soft); break-inside: auto; }
+  #print-root .pr-record-title { font-weight: 600; color: #000; margin-bottom: 4pt; break-after: avoid; }
+  #print-root .pr-record-line { display: flex; gap: 8pt; font-size: 10pt; line-height: 1.45; break-inside: avoid; }
+  #print-root .pr-record-line + .pr-record-line { margin-top: 2pt; }
+  #print-root .pr-record-time { flex: none; width: 34pt; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  #print-root .math-block { text-align: center; overflow: visible; }
+  #print-root .katex-display { overflow: visible; }
+  #print-root .page-break { break-after: page; height: 0; margin: 0; overflow: hidden; }
+  #print-root .page-break * { display: none; }
+}
