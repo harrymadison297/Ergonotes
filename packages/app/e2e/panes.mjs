@@ -90,6 +90,38 @@ await page.keyboard.press('Enter');
 await settle();
 check('the command "Show or hide the note list" shows it again', (await width('.pane-list')) === before.list && (await prefs()).listHidden === false, JSON.stringify(await prefs()));
 
+// ---- the collapsed sidebar: one size, one rhythm, no slack
+{
+  const c2 = await browser.newContext({ viewport: { width: 1280, height: 780 } });
+  await c2.addInitScript(() => { try { localStorage.setItem('ergo.rail', '1'); } catch { /* ignore */ } });
+  const p2 = await c2.newPage();
+  await p2.goto(base);
+  await p2.getByLabel('Password').fill(PASSWORD);
+  await p2.getByRole('button', { name: 'Sign in' }).click();
+  await p2.locator('.sidebar.rail').waitFor({ timeout: 30000 });
+  await p2.waitForTimeout(500);
+  const m = await p2.evaluate(() => {
+    const sb = document.querySelector('.sidebar');
+    const sr = sb.getBoundingClientRect();
+    const els = [...sb.querySelectorAll('.quick > *, .nav > .nav-item, .sidebar-foot .icon-btn')].filter(e => e.offsetParent);
+    const boxes = els.map(e => e.getBoundingClientRect());
+    // the room between the navigation and the foot is whatever the window leaves: it is not part of the rhythm
+    const footTop = Math.min(...[...sb.querySelectorAll('.sidebar-foot .icon-btn')].map(e => e.getBoundingClientRect().top));
+    return { railW: Math.round(sr.width), n: boxes.length,
+      sizes: [...new Set(boxes.map(r => `${Math.round(r.width)}x${Math.round(r.height)}`))],
+      off: Math.max(...boxes.map(r => Math.abs(Math.round(r.left + r.width / 2 - sr.width / 2)))),
+      // the quick buttons are ordered search, new, more by CSS; sort by position before taking the gaps
+      gaps: boxes.sort((a, b) => a.top - b.top).slice(1).map((r, i, all) => r.top === footTop ? 0 : Math.round(r.top - (i === 0 ? boxes[0].bottom : all[i - 1].bottom))),
+      overflowX: sb.scrollWidth > sb.clientWidth, navScroll: document.querySelector('.sidebar .nav').scrollHeight > document.querySelector('.sidebar .nav').clientHeight + 1 };
+  });
+  check('the collapsed sidebar is no wider than its icons need', m.railW <= 64, m.railW);
+  check('every control is the same size and sits in the middle', m.sizes.length === 1 && m.sizes[0] === '36x36' && m.off <= 1, JSON.stringify({ sizes: m.sizes, off: m.off }));
+  check('the controls are 4 px apart, and the groups 20 px apart (no other gap)', m.gaps.filter(g => g > 0).every(g => g === 4 || g === 20) && m.gaps.filter(g => g === 20).length >= 4, JSON.stringify(m.gaps));
+  check('nothing scrolls or spills', !m.overflowX && !m.navScroll, JSON.stringify(m));
+  await p2.screenshot({ path: `${shots}/rail.png`, clip: { x: 0, y: 0, width: 260, height: 780 } });
+  await c2.close();
+}
+
 check('no console errors', errors.filter(e => !/Failed to load resource|status of 400/.test(e)).length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 console.log(failures ? `${failures} check(s) failed` : 'all checks passed');
