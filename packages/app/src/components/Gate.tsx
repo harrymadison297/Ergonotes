@@ -48,7 +48,7 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
   return (
     <div className="gate">
       <form className="gate-card" onSubmit={submit}>
-        <img src="./icon.svg" width={48} height={48} alt="" />
+        <img src="./mark.svg" width={48} height={48} alt="" />
         {!noVault ? (
           <>
             <h1>{remote ? 'Sign in' : 'Unlock your notes'}</h1>

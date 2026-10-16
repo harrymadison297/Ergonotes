@@ -194,10 +194,12 @@ Sentence case everywhere ("New note", not "New Note"). No all-caps except the sm
 
 ## 4. Logo
 
-The mark is a white page with a folded top-right corner and three slate text lines, on a
-rounded square in brand green. File: `packages/app/public/icon.svg`. (The raster icons in
-`apps/desktop/src-tauri/icons` still carry the previous green and are regenerated with
-`tauri icon` on the next desktop build.)
+The mark is a folded page in two greens: a pale back page (`#9be3b4`), the brand-green front page
+with a darker folded corner (`#008629`) and two white text lines. The wordmark is Inter 700 in `--ink`.
+The whole pack (SVG with outlined text, PNG, favicon, app icons, Tauri source) is in `docs/logo/`; its README lists the
+colours. The web app uses `packages/app/public/icon.svg`, `favicon.*`, `mark.svg`; the desktop and Android icons are made
+from `docs/logo/app-icon/app-icon-square-light-1024.png` with `tauri icon` (`apps/desktop/src-tauri/icons`, copied into
+`gen/android`).
 
 - Clear space: half the mark's width on all sides.
 - Minimum size: 20 px (UI), 16 px (favicon).
