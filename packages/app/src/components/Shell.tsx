@@ -22,7 +22,7 @@ import { IconBtn, TagLink, Toasts } from './ui';
 import { useSync } from './useSync';
 import { RecorderMini } from './RecorderPanel';
 import { recorder, useRecorder } from '../record/recorder';
-import { usePrefs } from '../state/prefs';
+import { setPrefs, usePrefs } from '../state/prefs';
 import { COMMANDS, keysFor, useCommands } from '../state/commands';
 import { chordOf, needsModifier } from '../state/keymap';
 
@@ -104,6 +104,21 @@ function useGlobalShortcuts() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+}
+
+/** Esc leaves the note-only view, unless something on top of it (a menu, a dialog, a suggestion list) wants the key. */
+function useLeaveFocusOnEscape(focus: boolean) {
+  useEffect(() => {
+    if (!focus) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
+      if (document.querySelector('.menu, [role="menu"], [role="dialog"], .scrim, .palette-scrim, .ghost-text')) return;
+      setPrefs({ focus: false });
+    };
+    // first in line: whatever Esc closes is still on screen now, and is gone by the time the bubbling listeners are done
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [focus]);
 }
 
 /** Android: text shared into the app from another app becomes a Capture in the Inbox. */
@@ -269,6 +284,7 @@ export function Shell() {
   useShareIntent();
   const aside = useAsideVisible();
   const focus = prefs.focus && app.route.name === 'notes' && !!app.route.note;
+  useLeaveFocusOnEscape(focus);
   if (app.isMobile) {
     return <><MobileShell /><RightSidebar /><RecordingDock /><DialogHost /><Toasts toasts={app.toasts} /></>;
   }

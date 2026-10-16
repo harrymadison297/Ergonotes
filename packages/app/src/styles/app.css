@@ -81,6 +81,10 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .split.list-hidden .pane-body { margin-left: 8px; }
 .app.focus { grid-template-columns: minmax(0, 1fr); }
 .app.focus .sidebar { display: none; }
+/* the note on its own: the list steps aside as well (nothing is stored, leaving brings it back) */
+.app.focus .split { grid-template-columns: minmax(0, 1fr); }
+.app.focus .pane-list { display: none; }
+.app.focus .pane-body { margin-left: 8px; }
 .split { display: grid; grid-template-columns: min(var(--list-w), 50vw) minmax(0, 1fr); height: 100%; min-height: 0; background: var(--bg-sidebar); }
 .pane-list { position: relative; background: transparent; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .pane-body { min-width: 0; min-height: 0; display: flex; flex-direction: column; margin: 8px 8px 8px 0; background: var(--bg); border: 1px solid var(--border-card); border-radius: var(--radius-lg); overflow: hidden; }
