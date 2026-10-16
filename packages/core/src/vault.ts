@@ -117,6 +117,12 @@ const MIME: Record<string, string> = {
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 };
+/** `.txt` and `.json` are kept as attachments only inside a record folder (its transcript and its list); elsewhere they are the person's own files. */
+const SCAN_ONLY_IN_RECORD = new Set(['.txt', '.json']);
+const attachable = (path: string): boolean => {
+  const ext = extOf(path);
+  return ATTACH_EXT.has(ext) && (!SCAN_ONLY_IN_RECORD.has(ext) || recordDirOf(path) !== null);
+};
 const IGNORED_NAMES = new Set(['node_modules', 'Thumbs.db', 'desktop.ini']);
 
 const DEFAULT_FOLDERS = ['Inbox', 'Projects', 'Areas', 'Resources', 'Archive', 'Templates'];
@@ -596,6 +602,7 @@ export class Vault implements VaultApi {
     const cut = Date.now() - settle;
     let again = false;
     const skipped: string[] = [];
+    const oversized: string[] = [];
     for (const [path, f] of files) {
       const known = this.index.get(path);
       if (known && known.size === f.size && known.mtime === f.mtime) continue;
@@ -612,7 +619,8 @@ export class Vault implements VaultApi {
         if (known && known.hash === hash) { this.setIndex(path, { ...known, size: f.size, mtime: f.mtime }); continue; }
         changed.push({ path, kind: 'note', size: f.size, mtime: f.mtime, text, hash });
       } else {
-        if (!ATTACH_EXT.has(extOf(path)) || f.size > MAX_ATTACHMENT) continue;
+        if (!attachable(path)) continue;
+        if (f.size > MAX_ATTACHMENT) { oversized.push(path); continue; } // still in the folder and readable from it, but not an item (not synced)
         const raw = await this.fs.read(path);
         if (!raw) continue;
         const b64 = toB64(raw);
@@ -622,6 +630,9 @@ export class Vault implements VaultApi {
       }
     }
     if (again) setTimeout(() => { void this.rescan(); }, settle + 100);
+    if (oversized.length && !this.notice) {
+      this.notice = `${oversized.length} file${oversized.length === 1 ? ' is' : 's are'} over ${MAX_ATTACHMENT / 1024 / 1024} MB (${oversized[0]}${oversized.length > 1 ? ', …' : ''}): still in the folder, but not synced to other devices.`;
+    }
     if (skipped.length && !this.notice) {
       this.notice = `${skipped.length} Markdown file${skipped.length === 1 ? ' is' : 's are'} not UTF-8 text or too large (${skipped[0]}${skipped.length > 1 ? ', …' : ''}) and left alone.`;
     }

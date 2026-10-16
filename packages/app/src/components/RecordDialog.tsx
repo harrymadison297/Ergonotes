@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Camera, FileText, Mic, Presentation } from 'lucide-react';
 import type { RecordKind } from '@ergonotes/core';
 import { Dialog } from './ui';
-import { canShareScreen, recordingUnavailable } from '../record/session';
+import { canShareScreen, recordingUnavailable } from '../record/run';
 import { recorder, useRecorder } from '../record/recorder';
 import { getRecordHost } from '../record/host';
 import { classNames } from '../state/util';
@@ -21,7 +21,7 @@ export function RecordDialog({ kind, noteId, noteTitle, privateNote, onStarted, 
   onClose: () => void;
 }) {
   const host = getRecordHost();
-  const running = useRecorder().phase !== 'idle';
+  const recorderPhase = useRecorder().phase;
   const canWrite = !!host?.speechReady && !privateNote;
   const meeting = kind === 'meeting';
   const shareOk = canShareScreen();
@@ -29,6 +29,8 @@ export function RecordDialog({ kind, noteId, noteTitle, privateNote, onStarted, 
   const [every, setEvery] = useState(2);
   const [transcribe, setTranscribe] = useState(canWrite);
   const [busy, setBusy] = useState(false);
+  // another record is in progress: not this dialog's own start, which waits for the share picker or the microphone prompt
+  const running = recorderPhase !== 'idle' && !busy;
   const [err, setErr] = useState<string | null>(recordingUnavailable());
   const blocked = running || !!recordingUnavailable() || (meeting && !shareOk);
 
@@ -84,7 +86,7 @@ export function RecordDialog({ kind, noteId, noteTitle, privateNote, onStarted, 
               <span className="rec-ico"><Camera size={18} /></span>
               <span className="rec-row-text">
                 <strong>Take pictures of the shared screen</strong>
-                <span className="hint">A picture that repeats the last one is not kept. You can also press Capture.</span>
+                <span className="hint">A frame that repeats the last one is not kept. You can also press Take frame.</span>
               </span>
               <input type="checkbox" checked={frames} disabled={!shareOk} onChange={e => setFrames(e.target.checked)} />
             </label>

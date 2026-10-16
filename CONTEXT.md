@@ -48,7 +48,7 @@ _Avoid_: Recording file, clip (a clip is the older single audio file), session
 
 **Frame**:
 A picture taken from the shared screen during a Meeting, named by the second it was taken at. Dropped while recording when it is practically the last one; the person's own are always kept; a person-started Filter proposes which of the rest to cut.
-_Avoid_: Screenshot, capture, snapshot
+_Avoid_: Screenshot, capture (that is the Inbox word), snapshot. The button that takes one is **Take frame**; in running text the UI may say "a picture of the shared screen".
 
 **Voice note**:
 A short audio clip made in the app and kept in the Note as an audio clip. The older form of a Recording; clips already in notes keep playing.

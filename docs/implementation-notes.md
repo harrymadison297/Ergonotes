@@ -8,7 +8,7 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 |---|---|---|---|
 | Local index | ADR 0010: the folder is truth, the database is derived | The Markdown files are the notes; the commit graph (history, merging, sync), conversations and AI settings are items in `.ergonotes/` (sealed with the vault key); the search index (MiniSearch), backlinks and task lists are built **in memory** at unlock from the files | Works identically in the webview and on the server; a few thousand notes index in well under a second. |
 | Vault folder on every platform | "Windows: a folder the user chooses, openable in other editors" | Server peer: `$ERGONOTES_VAULT_DIR`. Windows and Linux apps: the folder chosen on the first screen (default `Documents/Ergonotes`), reached through the shell's `vault_*` commands. Android: the folder is chosen with the system's folder chooser (Storage Access Framework, `SafVault.kt`, reached from the webview as `window.ErgoVault`); until one is chosen the app uses its own folder on shared storage (`Android/data/<package>/files/Ergonotes`). The browser build without a server keeps the vault in IndexedDB with an in-memory folder | The Tauri fs plugin needs per-path permissions; the shell's own commands are confined to one folder. |
-| Attachments (Q24) | Content-addressed blobs, lazy download on Android, 50 MB soft limit | A file under the vault (normally `attachments/`) is real on disk and is also kept as an immutable `file` item (base64 body) so it syncs like any commit; identical content is stored once (sha-256); **no lazy download**, hard limit 25 MB (a bigger file stays on its disk, is shown, and is not synced), orphans are listed on the Files page | Simplest thing that keeps every device complete. |
+| Attachments (Q24) | Content-addressed blobs, lazy download on Android, 50 MB soft limit | A file under the vault (normally `attachments/`) is real on disk and is also kept as an immutable `file` item (base64 body) so it syncs like any commit; identical content is stored once (sha-256); **no lazy download**, hard limit 100 MB (a bigger file stays on its disk, is opened from it, is named in a warning, and is not synced), orphans are listed on the Files page | Simplest thing that keeps every device complete. |
 | Web client | ADR 0007: one TS core everywhere | The web build is a thin client: it calls the server peer's Vault over HTTP RPC (`/api/rpc/<method>`); the core runs in the webview only in the Tauri apps | Matches "web needs the server, no offline". |
 | Push debounce | ADR 0006 | `Vault` pushes 5 minutes after the last local change while the app runs; `flush()` runs on close/hide/Sync | As decided; the pull timer is 45 s. |
 | Merge granularity | ADR 0001 (line/hunk) | A Markdown paragraph is one line, so two edits inside one paragraph conflict; edits in different paragraphs merge. Hard-wrapped imported text is re-flowed by the editor on first edit | Inherent to line-based merging of Markdown. |
@@ -58,7 +58,7 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
 - A string passed to `insertContent` is read as Markdown by tiptap-markdown, which is how a summary lands as text under
   a record in one call. An editor always keeps one empty paragraph after a block (TrailingParagraph), so the
   caret has somewhere to go after a table, a diagram or a formula.
-- Recording uses MediaRecorder (Opus, 32 kbit/s) and needs a secure context; the microphone is not available on a plain
+- Recording uses MediaRecorder (mono Opus, 24 kbit/s) and needs a secure context; the microphone is not available on a plain
   http address other than localhost. Speech-to-text posts the file as multipart to `<custom server>/v1/audio/transcriptions`
   from the device, or from the server peer in the web build (`/api/ai/transcribe`, 40 MB body limit).
 
@@ -131,7 +131,7 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
   difference, and the WebM reader/writer. MediaRecorder writes a WebM with no size on the Segment or the Clusters and no
   Duration; `parseWebm` reads that (and a file cut off at the end), `joinWebm` re-emits the same packets with a Duration and
   sized elements, `sliceWebm` cuts a playable piece that starts at zero (what a transcription request is sent).
-- One MediaRecorder runs for the whole recording, so there is no gap; `record/session.ts` only writes the bytes it has
+- One MediaRecorder runs for the whole recording, so there is no gap; `record/run.ts` only writes the bytes it has
   produced as `audio-00N.webm` every 10 minutes, and joins them on stop. Frames are drawn from a hidden `<video>` of the
   share, compared as 160x90 gray pictures and dropped when under 0.3 % of the pixels differ from the last kept one.
 - A record's files are file items like any attachment. `Vault.addFile({ dir })` writes one under an exact name (and
@@ -143,4 +143,17 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
   panel is `RecorderPanel`; every view's list pane is a `PaneList`, which shows the panel in the list's place. `Shell`'s
   `RecordingDock` looks at whether the panel or the list's bar is really visible (the layout may hide the list) and
   shows a floating bar when not.
-- Test: `packages/app/e2e/audio.mjs` (fake microphone, a canvas as the shared screen whose slide changes every 2.5 s).
+- `FrameImg` (the player) keeps the picture with the path it was loaded for: the big frame is one instance whose path changes
+  with the playback. The Filter dialog works on the record it was opened with (the player reloads the record behind it,
+  and each reload is a new object); `distinctFlags` and `recommendCuts` both walk from the latest frame to the earliest so
+  that of frames that look alike the latest stays. The person's own frames are not sent to the model.
+- `RecordRun` (`record/run.ts`) keeps a meeting going when only its microphone ends (a notice, `heard` becomes `shared`);
+  when the share ends, or a recording's microphone ends, it stops and keeps what it has. If the WebM pieces cannot be
+  joined they stay as `audio-00N.webm` and the player and the transcript read them in order. `record.json` is written
+  at the start, with each kept frame, with each part and at the end.
+- A folder whose `record.json` says `recording` is live only while `recorder` is recording into that folder; otherwise the
+  player says it is incomplete. The note's privacy is read again when a recording stops, before anything is transcribed.
+- The desktop app answers its own close request (`onCloseRequested`, capability `core:window:allow-destroy`) while a
+  recording runs; a browser tab uses `beforeunload`.
+- Test: `packages/app/e2e/audio.mjs` (fake microphone, a canvas as the shared screen whose slide changes every 2.5 s; it ends
+  the microphone track on purpose, makes a note private mid-recording, and reloads the record behind the Filter dialog).

@@ -55,7 +55,11 @@ attachments/record_20260319_123410/
 - **Filtering after the fact.** A **Filter** button, pressed by the person, does a stricter local pass and asks the
   person's vision model which of the remaining frames to cut. The answer is `keep` or `cut` per frame, nothing else. The
   frames to cut are shown to the person, who can change them; **nothing is deleted until the person confirms**. Without a
-  vision model the stricter local pass is all it does, and it says so.
+  vision model the stricter local pass is all it does, and it says so. Of a run of frames that look the same, **the last is
+  kept** (a slide or a board only fills up), so both passes walk the frames from the latest to the earliest. The frames the
+  person took themselves are never proposed and never sent to the model. The *vision model* setting is optional: when it is
+  empty the chat model is used, if it can take images. The dialog keeps what it was opened with, so a reload of the record
+  behind it does not restart the comparison or undo what the person ticked.
 - **Transcript** is made after stopping (or later, by a button) from the audio, sent in windows of 10 minutes (each far
   below a server's 25 MB) through the speech-to-text of ADR 0009. Segments with times are asked for (`verbose_json`); a
   window whose answer has no times is sent again in one-minute pieces so the marks stay right. A failed transcript
@@ -67,12 +71,17 @@ attachments/record_20260319_123410/
 
 - A file of the Vault may be up to **100 MB** (was 25 MB). Records never come near it; a transcription server still takes
   25 MB per request, which one 10-minute window is far below.
-- If the share or the microphone ends, the record stops there and what was captured is kept, with a message. A meeting is
-  never continued with half of it.
+- If the **share** ends, the record stops there and what was captured is kept, with a message. A meeting is never
+  continued with half of it. If the **microphone** ends (unplugged, turned off, permission taken away) while a meeting's
+  shared sound is there, the meeting goes on with the shared sound alone and says so; a recording, whose only sound is the
+  microphone, stops.
+- If the pieces of a WebM cannot be joined, they are kept as they are and played in order; the record says so.
+- A folder whose `state` is still `recording` and that this app is not recording right now is shown as **incomplete**.
 - **A recording is a process of the app, not of the note.** It goes on when another note is opened. While it runs, a
-  panel takes the place of the note list (clock, level, the pictures kept so far, Capture, Pause, Stop, throw away; "Show
+  panel takes the place of the note list (clock, level, the frames kept so far, Take frame, Pause, Stop, throw away; "Show
   notes" brings the list back with a thin bar); where no list is on screen (home, a phone, a very narrow window) a small
-  floating bar does the same. Closing the window asks first.
+  floating bar does the same. Closing the window asks first: the browser asks through `beforeunload`; the desktop app answers its own
+  close request (`onCloseRequested`), and stops and saves the recording before it closes.
 - A meeting needs the shared screen, not a microphone: with none (or a refused one) it goes on with the shared sound and
   says so once. A recording without a microphone does not start, and says so once.
 
@@ -81,7 +90,9 @@ attachments/record_20260319_123410/
 - A note in the Trash takes the records it shows with it (unless another note still shows them) and brings them back
   when restored; deleting the note for good removes them with it. Deleting only the link leaves the folder, which is
   then listed in the Files page, tab **Records**, as a record without a note, to be removed by hand.
-- Each file of the folder is an ordinary attachment item (ADR 0010): it syncs file by file.
+- Each file of the folder is an ordinary attachment item (ADR 0010): it syncs file by file. `.txt` and `.json` are
+  attachments only inside a record folder (its transcript and its list); a `.txt` or `.json` elsewhere in the Vault is the
+  person's own file and is left alone.
 - What was said is part of what the note is found by (search), and the assistant and MCP agents read it with
   `read_record`; both follow ADR 0008: a private note's record is not found, not read and never transcribed or sent for
   filtering. An exported note keeps the record's name and its transcript as a toggle.
@@ -97,6 +108,6 @@ stricter local pass still works), no summary.
   (speech written into the text at the cursor) is unchanged.
 - A record is many items (a 90-minute lecture may have 100–300 frames). Dropping near-identical frames while capturing is
   therefore part of the design, not an optimisation.
-- Platforms that cannot share a screen can still record audio and play any record; the meeting entry is not offered there.
+- Platforms that cannot share a screen can still record audio and play any record; the meeting entry (menu, "/" menu and toolbar) is not offered there.
 - Everything the player shows can be rebuilt from the folder: frames by file name, transcript by marks, `record.json`
   only caches facts that are expensive to find (duration, which frames the person took).

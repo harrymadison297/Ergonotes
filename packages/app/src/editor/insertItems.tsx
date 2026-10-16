@@ -5,6 +5,7 @@ import {
   AudioLines, Calendar, CalendarClock, CalendarDays, CheckCircle2, CheckSquare, Clock, Code, FilePlus2, FileText, FunctionSquare, Hash, Heading1, Heading2, Heading3,
   ImageIcon, Link2, List, ListOrdered, ListTree, Mic, MicVocal, Minus, Network, Paperclip, Pencil, Quote, Scissors, Sigma, StickyNote, Table2, ToggleLeft,
 } from 'lucide-react';
+import { canShareScreen } from '../record/run';
 
 export type InsertGroup = 'Essentials' | 'Text styles' | 'Lists' | 'Media' | 'Advanced' | 'Utilities';
 export const INSERT_GROUPS: InsertGroup[] = ['Essentials', 'Text styles', 'Lists', 'Media', 'Advanced', 'Utilities'];
@@ -39,6 +40,8 @@ export interface InsertItem {
   hint?: string;
   /** set when the item cannot be used right now: shown greyed with this text */
   unavailable?: (c: Pick<InsertCtx, 'stt'>) => string | null;
+  /** false where the item makes no sense at all (not greyed: not listed) */
+  offered?: () => boolean;
   run(c: InsertCtx): void;
 }
 
@@ -78,7 +81,7 @@ export const INSERT_ITEMS: InsertItem[] = [
   // Media
   { id: 'image', group: 'Media', label: 'Image', icon: <ImageIcon size={S} />, keywords: 'picture photo', run: c => c.pickFile('image/*') },
   { id: 'file', group: 'Media', label: 'File', icon: <Paperclip size={S} />, keywords: 'attachment upload pdf xlsx csv pptx', run: c => c.pickFile('') },
-  { id: 'meeting', group: 'Media', label: 'Meeting', icon: <AudioLines size={S} />, keywords: 'record meeting lecture call share screen frames transcript summary minutes', run: c => c.record('meeting') },
+  { id: 'meeting', group: 'Media', label: 'Meeting', icon: <AudioLines size={S} />, keywords: 'record meeting lecture call share screen frames transcript summary minutes', offered: canShareScreen, run: c => c.record('meeting') },
   { id: 'voice', group: 'Media', label: 'Recording', icon: <Mic size={S} />, keywords: 'record audio microphone voice note transcript', run: c => c.record('recording') },
   { id: 'dictate', group: 'Media', label: 'Voice dictation', icon: <MicVocal size={S} />, keywords: 'speech to text type by voice', unavailable: NEEDS_STT, run: c => c.record('dictate') },
   { id: 'transcribe', group: 'Media', label: 'Transcribe media', icon: <FileText size={S} />, keywords: 'audio video file speech text', unavailable: NEEDS_STT, run: c => c.transcribeDialog() },
@@ -105,3 +108,6 @@ export function matchInsert(items: InsertItem[], q: string): InsertItem[] {
   const rank = (i: InsertItem) => { const l = i.label.toLowerCase(); return l.startsWith(t) ? 0 : l.includes(t) ? 1 : 2; };
   return items.filter(i => { const hay = `${i.label} ${i.keywords ?? ''} ${i.hint ?? ''}`.toLowerCase(); return words.every(w => hay.includes(w)); }).sort((a, b) => rank(a) - rank(b));
 }
+
+/** The items this device can use at all: a meeting needs a screen to share. */
+export const offeredItems = (): InsertItem[] => INSERT_ITEMS.filter(i => !i.offered || i.offered());

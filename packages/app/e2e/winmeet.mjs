@@ -44,19 +44,19 @@ console.log('dialogs open before:', await ev(`document.querySelectorAll('.dialog
 await shot('winmeet-note');
 console.log('Meeting button:', await clickByText('Meeting'));
 await sleep(700);
-console.log('Start button:', await ev(`(() => { const b = [...document.querySelectorAll('button')].find(e => e.textContent.includes('Start the meeting record')); return b ? { disabled: b.disabled } : null; })()`));
-const box = JSON.parse(await ev(`(() => { const b = [...document.querySelectorAll('button')].find(e => e.textContent.includes('Start the meeting record')); const r = b.getBoundingClientRect(); return JSON.stringify({ x: r.x + r.width / 2, y: r.y + r.height / 2 }); })()`));
+console.log('Start button:', await ev(`(() => { const b = [...document.querySelectorAll('button')].find(e => e.textContent.trim() === 'Start'); return b ? { disabled: b.disabled } : null; })()`));
+const box = JSON.parse(await ev(`(() => { const b = [...document.querySelectorAll('button')].find(e => e.textContent.trim() === 'Start'); const r = b.getBoundingClientRect(); return JSON.stringify({ x: r.x + r.width / 2, y: r.y + r.height / 2 }); })()`));
 for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', clickCount: 1 });
 console.log('Start: real mouse click at', JSON.stringify(box));
 await sleep(1500);
 console.log('errors in page:', await ev('JSON.stringify(window.__rej)'));
 for (let i = 0; i < 20; i++) {
   await sleep(1000);
-  const st = await ev(`JSON.stringify({ gdm: window.__gdm, bar: !!document.querySelector('.rec-bar .rec-dot.on'), err: [...document.querySelectorAll('.dialog .error-text')].map(e => e.textContent) })`);
+  const st = await ev(`JSON.stringify({ gdm: window.__gdm, bar: !!document.querySelector('.rec-panel .rec-dot.on'), err: [...document.querySelectorAll('.dialog .error-text')].map(e => e.textContent) })`);
   if (JSON.parse(st).gdm.length || i === 19) { console.log('after', i + 1, 's:', st); break; }
 }
 await shot('winmeet-after');
-const st = JSON.parse(await ev(`JSON.stringify({ gdm: window.__gdm, bar: !!document.querySelector('.rec-bar .rec-dot.on'), err: [...document.querySelectorAll('.dialog .error-text')].map(e => e.textContent) })`));
+const st = JSON.parse(await ev(`JSON.stringify({ gdm: window.__gdm, bar: !!document.querySelector('.rec-panel .rec-dot.on'), err: [...document.querySelectorAll('.dialog .error-text')].map(e => e.textContent) })`));
 if (st.bar) { await sleep(5000); await clickByText('Stop'); await sleep(4000); console.log('records:', JSON.stringify((await rpc('listRecords')).length)); }
 ws.close();
 process.exit(0);

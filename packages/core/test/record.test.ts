@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  changedFraction, distinctFlags, fmtClock, fmtMark, formatTranscript, frameFileName, frameSecond, isRecordDir, joinWebm, minuteBlocks, parseRecordMeta,
+  audioExt, audioPartName, changedFraction, concatBytes, distinctFlags, grayFromRgba, plural, fmtClock, fmtMark, formatTranscript, frameFileName, frameSecond, isRecordDir, joinWebm, minuteBlocks, parseRecordMeta,
   parseTranscript, parseWebm, recordDirName, recordDirOf, sliceWebm,
 } from '../src/record.ts';
 
@@ -84,13 +84,32 @@ describe('frames', () => {
     expect(changedFraction(a, flat(100))).toBe(0);
     expect(changedFraction(a, new Uint8Array(4))).toBe(1);
   });
-  it('keeps the first frame, real changes and the ones the person took', () => {
+  it('keeps the last frame of a run that looks the same, real changes and the ones the person took', () => {
     const cursor = flat(100); cursor[5] = 255;
     const slide2 = flat(30);
     const same = flat(100);
     const keep = distinctFlags([flat(100), cursor, same, slide2, slide2.slice()], 0.003);
-    expect(keep).toEqual([true, false, false, true, false]);
-    expect(distinctFlags([flat(100), flat(100)], 0.003, [false, true])).toEqual([true, true]);
+    expect(keep).toEqual([false, false, true, false, true]);
+    expect(distinctFlags([flat(100), flat(100), flat(100)], 0.003, [true, false, false])).toEqual([true, false, true]);
+  });
+});
+
+describe('small helpers of a record', () => {
+  it('names the pieces of a recording by the format it was made in', () => {
+    expect([audioExt('audio/webm'), audioExt('audio/mp4'), audioExt('audio/ogg')]).toEqual(['webm', 'm4a', 'ogg']);
+    expect(audioPartName(2, 'audio/webm')).toBe('audio-002.webm');
+    expect(audioPartName(12, 'audio/mp4')).toBe('audio-012.m4a');
+  });
+  it('counts and joins', () => {
+    expect([plural(0, 'frame'), plural(1, 'frame'), plural(2, 'frame')]).toEqual(['0 frames', '1 frame', '2 frames']);
+    expect([...concatBytes([Uint8Array.of(1, 2), new Uint8Array(0), Uint8Array.of(3)])]).toEqual([1, 2, 3]);
+  });
+  it('turns RGBA pixels into gray the way frames are compared', () => {
+    const px = Uint8ClampedArray.of(255, 255, 255, 255, 0, 0, 0, 255, 255, 0, 0, 255);
+    const g = grayFromRgba(px, 3);
+    expect(g[0]).toBeGreaterThanOrEqual(254);
+    expect(g[1]).toBe(0);
+    expect(g[2]).toBe((255 * 77) >> 8);
   });
 });
 

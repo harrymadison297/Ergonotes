@@ -214,6 +214,36 @@ describe('changes made outside the app', () => {
     expect(fs.files.get('Latin.md')!.data).toEqual(new Uint8Array([0x63, 0x61, 0x66, 0xe9, 0x0a]));
   });
 
+  it('takes a .txt or .json as an attachment only inside a record folder', async () => {
+    const fs = new MemFs();
+    fs.put('Projects/package.json', '{}');
+    fs.put('Projects/todo.txt', 'x');
+    fs.put('attachments/record_20261016_092500/transcript.txt', '[0:00] hello');
+    fs.put('attachments/record_20261016_092500/record.json', '{}');
+    fs.put('attachments/scan.pdf', 'PDF');
+    const { v } = await open('A', { fs });
+    await v.createVault(PASSWORD);
+    expect((await v.listFiles()).map(f => f.name)).toEqual(['scan.pdf']); // the files of a record folder are not in the Files list
+    const rec = (await v.listRecords())[0];
+    expect(rec?.path).toBe('attachments/record_20261016_092500');
+    expect(rec?.transcript).toBe('[0:00] hello');
+    // the person's own files are left where they are, untouched
+    expect(fs.text('Projects/package.json')).toBe('{}');
+    expect(fs.text('Projects/todo.txt')).toBe('x');
+  });
+
+  it('names a file over the size limit: it stays in the folder and is not an item', async () => {
+    const fs = new MemFs();
+    fs.put('Fine.md', 'ok\n');
+    fs.dirs.add('attachments');
+    fs.files.set('attachments/lecture.mp4', { data: new Uint8Array(100 * 1024 * 1024 + 1), mtime: Date.now() - 5000 });
+    const { v } = await open('A', { fs });
+    await v.createVault(PASSWORD);
+    expect((await v.listFiles()).map(f => f.name)).not.toContain('lecture.mp4');
+    expect((await v.status()).notice).toMatch(/over 100 MB \(attachments\/lecture\.mp4\).*not synced/);
+    expect(fs.files.has('attachments/lecture.mp4')).toBe(true);
+  });
+
   it('keeps trashed notes in .trash and purges them from there', async () => {
     const { v, fs } = await open('A');
     await v.createVault(PASSWORD);

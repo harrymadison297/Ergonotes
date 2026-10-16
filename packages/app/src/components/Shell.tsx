@@ -21,7 +21,7 @@ import { RightSidebar, useAsideVisible } from './RightSidebar';
 import { IconBtn, TagLink, Toasts } from './ui';
 import { useSync } from './useSync';
 import { RecorderMini } from './RecorderPanel';
-import { useRecorder } from '../record/recorder';
+import { recorder, useRecorder } from '../record/recorder';
 import { usePrefs } from '../state/prefs';
 
 function RouteView() {
@@ -233,6 +233,20 @@ function RecordingDock() {
     // closing the window would lose the part being recorded: say so first
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
+    // the desktop app does not run beforeunload when its window is closed: it has its own close request to answer
+    let unlisten: (() => void) | undefined;
+    let gone = false;
+    if ('__TAURI_INTERNALS__' in window) {
+      void import(/* @vite-ignore */ '@tauri-apps/api/window').then(async w => {
+        const off = await w.getCurrentWindow().onCloseRequested(async e => {
+          if (!confirm('A recording is running. Stop it, save what was recorded and close the app?')) { e.preventDefault(); return; }
+          recorder.stop();
+          // the window closes when this returns: let the save finish first (a long recording takes a moment)
+          for (let i = 0; i < 600 && recorder.active; i++) await new Promise(r => setTimeout(r, 200));
+        });
+        if (gone) off(); else unlisten = off;
+      }).catch(() => undefined);
+    }
     // is the panel (or the thin bar of the list) on screen? the layout may hide the list, so it is looked at, not assumed
     const look = () => {
       const el = document.querySelector<HTMLElement>('.rec-pane, .pane-list .rec-mini');
@@ -241,7 +255,7 @@ function RecordingDock() {
     look();
     const t = setInterval(look, 600);
     window.addEventListener('resize', look);
-    return () => { window.removeEventListener('beforeunload', warn); clearInterval(t); window.removeEventListener('resize', look); };
+    return () => { gone = true; unlisten?.(); window.removeEventListener('beforeunload', warn); clearInterval(t); window.removeEventListener('resize', look); };
   }, [idle]);
   if (idle || !covered) return null;
   return <RecorderMini floating />;

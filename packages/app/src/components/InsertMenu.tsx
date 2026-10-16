@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, Star } from 'lucide-react';
 import { NodeSelection } from '@tiptap/pm/state';
-import { INSERT_GROUPS, INSERT_ITEMS, matchInsert, type InsertCtx, type InsertItem } from '../editor/insertItems';
+import { INSERT_GROUPS, offeredItems, matchInsert, type InsertCtx, type InsertItem } from '../editor/insertItems';
 import { setPrefs, usePrefs } from '../state/prefs';
 import { classNames } from '../state/util';
 
@@ -26,7 +26,7 @@ export function InsertMenu({ anchor, ctx, onClose }: { anchor: DOMRect; ctx: Ins
 
   const favs = prefs.insertFav;
   const sections = useMemo(() => {
-    const matched = matchInsert(INSERT_ITEMS, q);
+    const matched = matchInsert(offeredItems(), q);
     if (q.trim()) return [{ title: '', items: matched }];
     const pinned = favs.map(id => matched.find(i => i.id === id)).filter((i): i is InsertItem => !!i);
     return [

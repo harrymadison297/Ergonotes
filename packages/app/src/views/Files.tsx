@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AudioLines, Download, File as FileIcon, FileSpreadsheet, FileText, Image as ImageIcon, Music, Presentation, Search, Video } from 'lucide-react';
-import { fmtClock, type FileInfo, type RecordInfo } from '@ergonotes/core';
+import { fmtClock, recordFilePaths, type FileInfo, type RecordInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames } from '../state/util';
@@ -63,8 +63,7 @@ export function FilesView({ fileId }: { fileId?: string }) {
   }, [app.api, app.items, reload]);
   const removeRecord = async (r: RecordInfo) => {
     if (!confirm(`Delete this record for good? Its audio, ${r.frames.length} frame${r.frames.length === 1 ? '' : 's'} and transcript are removed${r.noteTitle ? `, and the player in “${r.noteTitle}” will say it is missing` : ''}.`)) return;
-    const paths = [...r.audio, ...r.frames.map(f => f.path), `${r.path}/record.json`, `${r.path}/transcript.txt`];
-    await app.run(app.api.removeFiles(paths));
+    await app.run(app.api.removeFiles(recordFilePaths(r)));
     setReload(n => n + 1);
   };
 

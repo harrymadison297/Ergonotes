@@ -801,13 +801,14 @@ describe('recommending frames to cut', () => {
     return { transport, seen };
   };
 
-  it('maps the numbers of each batch back to seconds and compares a batch with the last frame kept', async () => {
+  it('goes from the latest frame to the earliest, maps the numbers back to seconds and compares a batch with the last frame kept', async () => {
     const { transport, seen } = answer([[2, 3], [1]]);
     const r = await recommendCuts(transport, frames(6), { batch: 4 });
-    expect(r).toEqual({ cut: [10, 20, 40], failed: 0 });
-    expect(seen[0].images).toEqual(['img0', 'img1', 'img2', 'img3']);
-    expect(seen[1].images).toEqual(['img3', 'img4', 'img5']); // img3 was the last one kept: the second batch is compared with it
-    expect(seen[1].content).toContain('Frame 1: at 0:40');
+    expect(r).toEqual({ cut: [10, 30, 40], failed: 0 });
+    expect(seen[0].images).toEqual(['img5', 'img4', 'img3', 'img2']);
+    expect(seen[0].content).toContain('Frame 1: at 0:50');
+    expect(seen[1].images).toEqual(['img2', 'img1', 'img0']); // img2 was the last one kept: the second batch is compared with it
+    expect(seen[1].content).toContain('Frame 1: at 0:10');
   });
 
   it('keeps the frames of a batch the model did not answer clearly', async () => {

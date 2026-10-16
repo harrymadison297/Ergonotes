@@ -3,16 +3,17 @@ import { Loader2, Mic, Pause, Play, Square } from 'lucide-react';
 import { Dialog } from './ui';
 import { fmtSecs } from '../editor/blocks';
 import { classNames } from '../state/util';
+import { canShareScreen, recordingUnavailable } from '../record/run';
 
 export type RecordKind = 'voice' | 'meeting' | 'dictate';
 
 export interface Recording { blob: Blob; mime: string; seconds: number }
 
 const TITLE: Record<RecordKind, string> = { voice: 'Voice note', meeting: 'Meeting recording', dictate: 'Voice dictation' };
-const MAX_BYTES = 20 * 1024 * 1024; // a vault file may be 25 MB
+const MAX_BYTES = 20 * 1024 * 1024; // a clip is sent whole to a transcription server, which takes 25 MB
 
 /** Capturing what the computer plays (the other people on a call) goes through screen sharing with audio. */
-export const canCaptureComputerAudio = (): boolean => typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
+export const canCaptureComputerAudio = canShareScreen;
 
 export const blobToB64 = (b: Blob): Promise<string> => new Promise((resolve, reject) => {
   const r = new FileReader();
@@ -20,16 +21,6 @@ export const blobToB64 = (b: Blob): Promise<string> => new Promise((resolve, rej
   r.onerror = () => reject(r.error ?? new Error('Could not read the recording'));
   r.readAsDataURL(b);
 });
-
-/** Why recording is impossible here, or null. Browsers only allow the microphone on https and on localhost. */
-export function recordingUnavailable(): string | null {
-  if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-    return window.isSecureContext === false
-      ? 'The microphone is only available on a secure connection (https) or on localhost. Open this notebook through https to record.'
-      : 'This device or browser cannot record audio.';
-  }
-  return null;
-}
 
 /**
  * Records from the microphone. The recording itself is handed to `onFinish`, which keeps it / transcribes it and

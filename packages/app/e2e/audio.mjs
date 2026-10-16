@@ -23,8 +23,12 @@ await ctx.addInitScript(() => {
   window.__display = { calls: 0, audio: true, cancel: false, ended: null };
   const enumerate = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
   navigator.mediaDevices.enumerateDevices = async () => (window.__noMic ? [] : enumerate());
+  const gum = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+  window.__mics = [];
+  navigator.mediaDevices.getUserMedia = async c => { const st = await gum(c); window.__mics.push(st); return st; };
   navigator.mediaDevices.getDisplayMedia = async () => {
     window.__display.calls++;
+    if (window.__display.delay) await new Promise(r => setTimeout(r, window.__display.delay)); // the picker is open
     if (window.__display.cancel) throw new DOMException('cancelled', 'NotAllowedError');
     const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 360;
     const c = canvas.getContext('2d');
@@ -123,6 +127,12 @@ await page.locator('.record-card').first().waitFor({ timeout: 10000 });
 const dur = await until(async () => page.evaluate(() => { const a = document.querySelector('.record-card audio'); return a && Number.isFinite(a.duration) && a.duration > 0 ? a.duration : null; }), 10000);
 check('the player loads the audio and knows how long it is', !!dur && dur >= 1, dur);
 check('nothing was sent for transcription', transcribed.length === 0);
+const channels = await page.evaluate(async () => {
+  const a = document.querySelector('.record-card audio');
+  const d = await new AudioContext().decodeAudioData(await (await fetch(a.src)).arrayBuffer());
+  return d.numberOfChannels;
+});
+check('the audio is mono (ADR 0011)', channels === 1, channels);
 await page.screenshot({ path: `${shots}/record-recording.png` });
 
 // seeking works (the file has a length and a clock)
@@ -199,6 +209,14 @@ await page.evaluate(() => { window.__display.cancel = true; });
 await page.getByRole('button', { name: /^Start$/ }).click();
 await page.getByText(/Nothing was shared, so nothing is recorded/).waitFor({ timeout: 5000 });
 check('without the share nothing is recorded', (await page.locator('.rec-panel').count()) === 0 && (await rpc('listRecords')).length === 2);
+// while the share picker is open the dialog waits: it does not claim that another recording is running
+await page.evaluate(() => { window.__display.delay = 1500; });
+await page.getByRole('button', { name: /^Start$/ }).click();
+await page.waitForTimeout(500);
+check('while the picker is open the dialog says it is starting, not that another recording is running',
+  (await page.getByRole('button', { name: /Starting…/ }).count()) === 1 && (await page.getByText(/Another recording is running/).count()) === 0);
+await page.getByText(/Nothing was shared, so nothing is recorded/).waitFor({ timeout: 5000 });
+await page.evaluate(() => { window.__display.delay = 0; });
 await page.evaluate(() => { window.__display.cancel = false; window.__display.audio = false; });
 await page.getByRole('button', { name: /^Start$/ }).click();
 await page.getByText(/shared but not its sound/).waitFor({ timeout: 5000 });
@@ -208,7 +226,7 @@ await page.getByRole('button', { name: /^Start$/ }).click();
 await page.locator('.rec-panel .rec-dot.on').waitFor({ timeout: 10000 });
 await page.waitForTimeout(1200);
 check('the panel takes the place of the note list while recording', (await page.locator('.rec-pane').count()) === 1 && (await page.locator('.rec-panel .rec-clock').count()) === 1);
-await page.getByRole('button', { name: 'Capture' }).click(); // the person takes one
+await page.getByRole('button', { name: 'Take frame' }).click(); // the person takes one
 await page.waitForTimeout(1500);
 check('the panel shows the pictures as they are kept', (await page.locator('.rec-thumbs img').count()) >= 1);
 await page.screenshot({ path: `${shots}/record-panel.png` });
@@ -231,7 +249,7 @@ await stopAndWait(3);
 const m = await until(async () => { const r = await lastRecord(); return r.meta?.kind === 'meeting' && r.transcript ? r : null; }, 30000);
 check('the meeting keeps pictures: changes only, and the one the person took', !!m && m.frames.length >= 2 && m.frames.length <= 6 && Object.values(m.meta.frames).includes('user'), JSON.stringify(m?.meta?.frames));
 check('and a transcript, in one folder with the audio', !!m && m.transcript.startsWith('[0:00]') && m.audio.length === 1, JSON.stringify(m?.audio));
-check('the screen was asked for once per attempt', (await page.evaluate(() => window.__display.calls)) === 3, await page.evaluate(() => window.__display.calls));
+check('the screen was asked for once per attempt', (await page.evaluate(() => window.__display.calls)) === 4, await page.evaluate(() => window.__display.calls));
 await page.evaluate(id => { location.hash = '#/notes/' + id; }, note.id); // back to the note it was recorded in
 await page.locator('.record-card').nth(2).waitFor({ timeout: 15000 });
 const card = page.locator('.record-card').nth(2);
@@ -243,6 +261,17 @@ const t = await page.evaluate(() => document.querySelectorAll('.record-card')[2]
 check('a frame mark moves the audio to that time', Math.abs(t - m.frames.at(-1).second) < 1.5, `${t} vs ${m.frames.at(-1).second}`);
 await card.locator('.record-now img').waitFor({ timeout: 10000 });
 check('and shows that frame', (await card.locator('.record-now img').count()) === 1);
+// the big frame follows the playback: once one is shown, the next one that is sought to replaces it
+const bigSrc = () => card.locator('.record-now img').getAttribute('src');
+await card.locator('.record-thumb').first().click();
+const firstSrc = await until(async () => { const v = await bigSrc(); return v; }, 5000);
+await page.waitForTimeout(500);
+const firstShown = await bigSrc();
+await card.locator('.record-thumb').last().click();
+const lastShown = await until(async () => { const v = await bigSrc(); return v && v !== firstShown ? v : null; }, 5000);
+check('the big frame is replaced by the frame of the time that was sought to', !!firstSrc && !!lastShown && lastShown !== firstShown, `${firstShown?.slice(-30)} -> ${lastShown?.slice(-30)}`);
+await card.locator('.record-thumb').first().click();
+check('and by the first again', !!(await until(async () => (await bigSrc()) === firstShown, 5000)));
 await page.screenshot({ path: `${shots}/record-meeting.png` });
 const b2 = await bodyOf(note.id);
 check('the note holds only links to the records', (b2.match(/"type_record"\)/g) ?? []).length === 3 && !b2.includes('<details>'), b2);
@@ -266,14 +295,29 @@ await page.getByRole('button', { name: 'Ask the model' }).click();
 await page.getByText(/Tick the ones to delete/).waitFor({ timeout: 30000 });
 const vision = streamed.slice(vs).filter(r => r.model === 'vision');
 check('the model got the pictures, and was only asked keep or cut', vision.length >= 1 && vision[0].messages[0].images?.length >= 1 && vision.every(r => r.messages[0].content.includes('Which frames should be cut?')), JSON.stringify(vision[0]?.messages?.[0]?.content));
+const ownSec = Object.entries(m.meta.frames).find(([, v]) => v === 'user')?.[0];
+const ownClock = `${Math.floor(Number(ownSec) / 60)}:${String(Number(ownSec) % 60).padStart(2, '0')}`;
+check('the frame the person took is never sent to the model', ownSec !== undefined && !vision.some(r => new RegExp(`Frame \\d+: at ${ownClock}(\\n|$)`).test(r.messages[0].content)), ownClock);
 const tick = await page.locator('.filter-item.cut').count();
 check('its recommendation is ticked, to be confirmed', tick >= 1, tick);
 check('nothing was deleted yet', (await lastRecord()).frames.length === before);
+// the record is reloaded behind the dialog (frames arriving, a sync): what the person ticked is not lost, nothing restarts
+const cutIdx = await page.locator('.filter-item').evaluateAll(els => els.findIndex(e => e.classList.contains('cut')));
+await page.locator('.filter-item').nth(cutIdx).locator('input').uncheck();
+await page.evaluate(dir => { for (let i = 0; i < 3; i++) window.dispatchEvent(new CustomEvent('ergo-record', { detail: dir })); }, m.path);
+await page.waitForTimeout(1200);
+check('a reload of the record behind the dialog does not undo a choice or restart it',
+  (await page.getByText(/Tick the ones to delete/).count()) === 1 && (await page.locator('.filter-item.cut').count()) === tick - 1 && (await page.getByText(/Comparing frames|Asking the model/).count()) === 0,
+  `${await page.locator('.filter-item.cut').count()} ticked, wanted ${tick - 1}`);
+await page.locator('.filter-item').nth(cutIdx).locator('input').check();
+check('the choice can be changed back', (await page.locator('.filter-item.cut').count()) === tick, await page.locator('.filter-item.cut').count());
 await page.screenshot({ path: `${shots}/record-filter.png` });
 await page.getByRole('button', { name: /^Delete \d+ frame/ }).click();
 await until(async () => (await lastRecord()).frames.length === before - tick, 10000);
 check('confirming deletes exactly the ticked frames', (await lastRecord()).frames.length === before - tick, `${before} - ${tick}`);
-check('and the record keeps its list in step', Object.keys((await lastRecord()).meta.frames).length === before - tick);
+await until(async () => Object.keys((await lastRecord()).meta.frames).length === before - tick, 8000); // the list is written just after the files are removed
+const afterDel = await lastRecord();
+check('and the record keeps its list in step', Object.keys(afterDel.meta.frames).length === before - tick, `${JSON.stringify(afterDel.meta.frames)} files ${JSON.stringify(afterDel.frames.map(f => f.second))} before ${before} tick ${tick}`);
 
 // ---- errors are said, and the record is not lost
 sttFails = true;
@@ -308,6 +352,74 @@ const nm = await lastRecord();
 check('and the record has its audio', nm.audio.length === 1 && nm.meta.seconds >= 1, JSON.stringify(nm.meta));
 await page.evaluate(() => { window.__noMic = false; });
 
+// ---- the microphone stops (turned off, unplugged) while a meeting has shared sound: the meeting goes on
+await page.evaluate(() => { window.__mics.length = 0; });
+await toEnd();
+await page.keyboard.press('Enter');
+await page.getByRole('button', { name: 'Meeting', exact: true }).click();
+await page.getByRole('button', { name: /^Start$/ }).click();
+await page.locator('.rec-panel .rec-dot.on').waitFor({ timeout: 10000 });
+check('with a microphone and a share, both are recorded', (await page.getByText('Recording the microphone and the shared sound').count()) === 1, await page.locator('.rec-state').innerText());
+await page.waitForTimeout(1500);
+await page.evaluate(() => window.__mics.at(-1).getTracks().forEach(t => { t.stop(); t.dispatchEvent(new Event('ended')); }));
+await page.getByText(/The microphone stopped, so only the shared sound is recorded/).first().waitFor({ timeout: 5000 });
+const c1 = await page.locator('.rec-clock').innerText();
+await page.waitForTimeout(2200);
+const c2 = await page.locator('.rec-clock').innerText();
+check('the meeting goes on after the microphone stopped, and says it hears the shared sound only',
+  secs(c2) > secs(c1) && (await page.locator('.rec-panel .rec-dot.on').count()) === 1 && (await page.getByText('Recording the shared sound only').count()) === 1, `${c1} -> ${c2}`);
+await stopAndWait(6);
+const mm = await lastRecord();
+check('and it is saved whole, with its audio', mm.meta.kind === 'meeting' && mm.audio.length === 1 && mm.meta.seconds >= 3 && mm.meta.state === 'done', JSON.stringify(mm.meta));
+
+// a recording has nothing but its microphone: it stops, and keeps what it has
+await toEnd();
+await page.keyboard.press('Enter');
+await page.getByRole('button', { name: 'Recording', exact: true }).click();
+await page.getByRole('button', { name: /^Start$/ }).click();
+await page.locator('.rec-panel .rec-dot.on').waitFor({ timeout: 8000 });
+await page.waitForTimeout(1800);
+await page.evaluate(() => window.__mics.at(-1).getTracks().forEach(t => { t.stop(); t.dispatchEvent(new Event('ended')); }));
+await until(async () => (await page.locator('.rec-panel, .rec-mini').count()) === 0, 30000);
+await until(async () => (await rpc('listRecords')).length >= 7, 10000);
+const cut1 = await lastRecord();
+check('a recording whose microphone stopped stops, and keeps its audio', cut1.meta.kind === 'recording' && cut1.audio.length === 1 && cut1.meta.state === 'done', JSON.stringify(cut1.meta));
+
+// the note becomes private while it is being recorded: what is said is not sent for writing out
+await toEnd();
+await page.keyboard.press('Enter');
+await page.getByRole('button', { name: 'Recording', exact: true }).click();
+check('the option to write it out is on to begin with', await page.getByLabel(/Write it out as text/).isChecked());
+await page.getByRole('button', { name: /^Start$/ }).click();
+await page.locator('.rec-panel .rec-dot.on').waitFor({ timeout: 8000 });
+await page.waitForTimeout(1500);
+await rpc('setPrivate', note.id, true);
+const sentMid = transcribed.length;
+await stopAndWait(8);
+await page.waitForTimeout(1500);
+check('made private while recording: nothing is sent and no transcript is written', transcribed.length === sentMid && !(await lastRecord()).transcript, `${transcribed.length} vs ${sentMid}`);
+await rpc('setPrivate', note.id, false);
+
+// a folder still marked "recording" that nobody is recording: it was cut short
+await rpc('addFile', { name: 'record.json', mime: 'application/json', dir: 'attachments/record_20250101_101010', data: Buffer.from(JSON.stringify({ version: 1, kind: 'recording', startedAt: '2025-01-01T10:10:10.000Z', seconds: 0, mime: 'audio/webm', frames: {}, state: 'recording' })).toString('base64') });
+const cutNote = await rpc('createNote', { title: 'Cut short', body: '[Recording 2025-01-01 10:10](attachments/record_20250101_101010 "type_record")\n' });
+await page.evaluate(id => { location.hash = '#/notes/' + id; }, cutNote.id);
+await page.locator('.record-card').first().waitFor({ timeout: 15000 });
+check('a folder left as "recording" is shown as incomplete, not as being recorded', !!(await until(async () => (await page.locator('.record-card .hint').first().innerText()).includes('incomplete'), 8000)) && (await page.locator('.record-card.live').count()) === 0);
+await rpc('trash', cutNote.id); // it was only here to be looked at: the Trash check below counts the records of the note under test
+
+// where the screen cannot be shared there is no Meeting to choose
+await page.evaluate(id => { window.__gdm = navigator.mediaDevices.getDisplayMedia; navigator.mediaDevices.getDisplayMedia = undefined; location.hash = '#/notes/' + id; }, other.id);
+await page.getByLabel('Title').waitFor();
+await page.locator('.prose').waitFor();
+menu = await openInsert();
+await menu.getByPlaceholder('Search insert options…').fill('meeting');
+check('the Insert menu has no Meeting there, and the toolbar neither', (await menu.getByRole('option', { name: /^Meeting/ }).count()) === 0 && (await page.getByRole('button', { name: 'Meeting', exact: true }).count()) === 0);
+check('but a Recording is still offered', await (async () => { await menu.getByPlaceholder('Search insert options…').fill('recording'); return (await menu.getByRole('option', { name: /^Recording/ }).count()) === 1; })());
+await page.keyboard.press('Escape');
+await page.evaluate(id => { navigator.mediaDevices.getDisplayMedia = window.__gdm; location.hash = '#/notes/' + id; }, note.id);
+await page.locator('.prose').waitFor();
+
 // ---- a private note is never sent
 await rpc('setPrivate', note.id, true);
 await page.reload();
@@ -323,6 +435,13 @@ await page.locator('.record-card').nth(2).getByRole('button', { name: /Filter/ }
 await page.getByRole('dialog', { name: 'Filter frames' }).waitFor();
 await page.getByText(/Tick the ones to delete/).waitFor({ timeout: 30000 });
 check('the filter works on the device only', (await page.getByRole('button', { name: 'Ask the model' }).count()) === 0 && streamed.filter(r => r.model === 'vision').length === visionBefore && transcribed.length === sentBefore);
+// without a model the comparison starts by itself when the dialog opens: a reload of the record behind it must not start it again
+await page.locator('.filter-item:not(.cut) input').first().check();
+const ticked = await page.locator('.filter-item.cut').count();
+await page.evaluate(dir => { for (let i = 0; i < 3; i++) window.dispatchEvent(new CustomEvent('ergo-record', { detail: dir })); }, (await rpc('listRecords')).find(r => r.meta?.kind === 'meeting' && r.frames.length > 1).path);
+await page.waitForTimeout(1500);
+check('on the device alone a reload of the record behind the dialog keeps what was ticked',
+  ticked >= 1 && (await page.locator('.filter-item.cut').count()) === ticked && (await page.getByText(/Tick the ones to delete/).count()) === 1, `${await page.locator('.filter-item.cut').count()} vs ${ticked}`);
 await page.getByRole('button', { name: 'Keep everything' }).click();
 await rpc('setPrivate', note.id, false);
 

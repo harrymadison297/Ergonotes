@@ -1,15 +1,8 @@
 // What is done to a record after it was made: writing out its speech, and tidying its frames.
 import {
-  FILTER_FRACTION, GRAY_H, GRAY_W, distinctFlags, formatTranscript, fromB64, isWebm, minuteBlocks, parseWebm, recommendCuts, sliceWebm, toB64,
+  FILTER_FRACTION, GRAY_H, GRAY_W, audioExt, concatBytes, distinctFlags, grayFromRgba, formatTranscript, fromB64, isWebm, minuteBlocks, parseWebm, recommendCuts, sliceWebm, toB64,
   type AiTransport, type AudioFile, type RecordInfo, type Segment, type TimedTranscript, type VaultApi,
 } from '@ergonotes/core';
-
-const concat = (parts: Uint8Array[]): Uint8Array => {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let o = 0;
-  for (const p of parts) { out.set(p, o); o += p.length; }
-  return out;
-};
 
 /** The audio of a record as bytes: its one file, or its pieces in order. */
 export async function recordAudio(api: VaultApi, info: RecordInfo): Promise<{ bytes: Uint8Array; mime: string } | null> {
@@ -21,7 +14,7 @@ export async function recordAudio(api: VaultApi, info: RecordInfo): Promise<{ by
     mime = f.mime || mime;
     chunks.push(fromB64(f.data));
   }
-  return chunks.length ? { bytes: concat(chunks), mime } : null;
+  return chunks.length ? { bytes: concatBytes(chunks), mime } : null;
 }
 
 export interface TranscribeOptions {
@@ -70,7 +63,7 @@ export async function transcribeRecord(o: TranscribeOptions): Promise<string> {
   } else {
     if (audio.bytes.length > 24 * 1024 * 1024) throw new Error('This recording is larger than the 25 MB a transcription server accepts.');
     o.onStatus('Writing it out…');
-    const t = await ask(audio.bytes, `audio.${audio.mime.includes('mp4') ? 'm4a' : 'webm'}`, audio.mime);
+    const t = await ask(audio.bytes, `audio.${audioExt(audio.mime)}`, audio.mime);
     if (t.segments.length) segs.push(...t.segments); else if (t.text.trim()) segs.push({ start: 0, end: 0, text: t.text });
   }
   const text = formatTranscript(minuteBlocks(segs));
@@ -88,10 +81,7 @@ async function grayOf(jpeg: Uint8Array): Promise<Uint8Array> {
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(bmp, 0, 0, GRAY_W, GRAY_H);
   bmp.close();
-  const px = ctx.getImageData(0, 0, GRAY_W, GRAY_H).data;
-  const g = new Uint8Array(GRAY_W * GRAY_H);
-  for (let i = 0; i < g.length; i++) g[i] = (px[i * 4] * 77 + px[i * 4 + 1] * 150 + px[i * 4 + 2] * 29) >> 8;
-  return g;
+  return grayFromRgba(ctx.getImageData(0, 0, GRAY_W, GRAY_H).data);
 }
 
 export interface FrameProposal {
@@ -131,17 +121,16 @@ export async function proposeFrameCuts(o: FilterOptions): Promise<{ proposals: F
   const proposals: FrameProposal[] = frames.map((f, i) => ({ second: f.second, path: f.path, user: user.has(f.second), why: keep[i] ? null : 'same' }));
   let failed = 0;
   if (o.transport) {
-    const left = proposals.filter(p => p.why === null && !p.user);
-    // the person's own frames are never put to the model
-    const forModel = proposals.filter(p => p.why === null);
-    if (left.length) {
+    // the person's own frames are never put to the model, and neither are the ones the local pass already cut
+    const forModel = proposals.filter(p => p.why === null && !p.user);
+    if (forModel.length) {
       o.onStatus(`Asking the model… 0/${forModel.length}`);
       const r = await recommendCuts(o.transport, forModel.map(p => ({ second: p.second, jpeg: toB64(blobs.get(p.second) ?? new Uint8Array()) })), {
         signal: o.signal, onProgress: (d, t) => o.onStatus(`Asking the model… ${d}/${t}`),
       });
       failed = r.failed;
       const cut = new Set(r.cut);
-      for (const p of proposals) if (p.why === null && !p.user && cut.has(p.second)) p.why = 'ai';
+      for (const p of forModel) if (cut.has(p.second)) p.why = 'ai';
     }
   }
   return { proposals, failed };

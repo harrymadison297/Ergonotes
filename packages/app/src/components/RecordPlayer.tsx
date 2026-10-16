@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AudioLines, Check, FileText, Filter, Loader2, Pause, Pencil, Play, Presentation, Sparkles, Trash2 } from 'lucide-react';
-import { completeText, fmtClock, fmtMark, fromB64, joinWebm, parseTranscript, toB64, type RecordInfo } from '@ergonotes/core';
+import { completeText, fmtClock, fmtMark, fromB64, joinWebm, parseRecordMeta, parseTranscript, plural, toB64, type RecordInfo } from '@ergonotes/core';
 import { Dialog } from './ui';
 import { getApi } from '../state/appRef';
 import { getRecordHost, isNotePrivate, notifyRecord, onRecord } from '../record/host';
+import { useRecorder } from '../record/recorder';
 import { proposeFrameCuts, recordAudio, transcribeRecord, type FrameProposal } from '../record/tools';
 import { classNames } from '../state/util';
+
+/** The folder of the record being made right now by this app, or ''. */
+function useRecorderDir(): string {
+  const r = useRecorder();
+  return r.phase === 'idle' ? '' : r.dir;
+}
 
 const urls = new Map<string, string>();
 /** An image of the vault as an object URL, loaded once. */
@@ -21,14 +28,16 @@ async function fileUrl(path: string): Promise<string | null> {
 
 /** A frame is only fetched when it is on screen: a long meeting has hundreds. */
 function FrameImg({ path, alt, className }: { path: string; alt: string; className?: string }) {
-  const [src, setSrc] = useState<string | null>(urls.get(path) ?? null);
+  // the path can change under one instance (the big frame follows the playback): the picture belongs to the path it was loaded for
+  const [loaded, setLoaded] = useState<{ path: string; url: string } | null>(null);
+  const src = urls.get(path) ?? (loaded?.path === path ? loaded.url : null);
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     if (src) return;
     const el = ref.current;
     if (!el) return;
     let live = true;
-    const go = () => { void fileUrl(path).then(u => { if (live && u) setSrc(u); }); };
+    const go = () => { void fileUrl(path).then(u => { if (live && u) setLoaded({ path, url: u }); }); };
     if (typeof IntersectionObserver === 'undefined') { go(); return () => { live = false; }; }
     const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); go(); } }, { rootMargin: '200px' });
     io.observe(el);
@@ -71,7 +80,11 @@ export function RecordPlayer({ paths, label, insertAfter }: RecordPlayerProps) {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => onRecord(d => { if (!dirRef.current || d === dirRef.current) void load(); }), [load]);
   // while it is being recorded, look again now and then
-  const live = info?.meta?.state === 'recording';
+  // a folder that says `recording` is either being written by this app right now, or was cut short (the app died, the power went)
+  const recordingHere = useRecorderDir();
+  const unfinished = info?.meta?.state === 'recording';
+  const live = unfinished && recordingHere === info?.path;
+  const incomplete = unfinished && !live;
   useEffect(() => {
     if (!live) return;
     const t = setInterval(() => { void load(); }, 4000);
@@ -79,7 +92,7 @@ export function RecordPlayer({ paths, label, insertAfter }: RecordPlayerProps) {
   }, [live, load]);
 
   // the sound: one file, or the pieces of a recording that was cut short, put in order
-  const audioKey = info ? info.audio.join('|') + (live ? '#live' : '') : '';
+  const audioKey = info ? info.audio.join('|') + (unfinished ? '#unfinished' : '') : '';
   useEffect(() => {
     if (!api || !info || info.audio.length === 0) { setAudioUrl(null); return; }
     let alive = true;
@@ -88,7 +101,7 @@ export function RecordPlayer({ paths, label, insertAfter }: RecordPlayerProps) {
       const a = await recordAudio(api, info);
       if (!a || !alive) return;
       let bytes = a.bytes;
-      if ((info.audio.length > 1 || live) && a.mime.includes('webm')) bytes = joinWebm([bytes])?.data ?? bytes; // a length and a clock, so it can be sought
+      if ((info.audio.length > 1 || unfinished) && a.mime.includes('webm')) bytes = joinWebm([bytes])?.data ?? bytes; // a length and a clock, so it can be sought
       made = URL.createObjectURL(new Blob([bytes as BlobPart], { type: a.mime }));
       setAudioUrl(made);
     })();
@@ -163,8 +176,9 @@ export function RecordPlayer({ paths, label, insertAfter }: RecordPlayerProps) {
         <div className="record-title">
           <strong>{label}</strong>
           <span className="hint">
-            {kindLabel} · {fmtClock(total)}{marks.length ? ` · ${marks.length} frame${marks.length === 1 ? '' : 's'}` : ''}
+            {kindLabel} · {fmtClock(total)}{marks.length ? ` · ${plural(marks.length, 'frame')}` : ''}
             {live && ' · recording…'}
+            {incomplete && ' · incomplete: the recording was cut short'}
           </span>
         </div>
         <div className="record-actions">
@@ -258,11 +272,16 @@ export function RecordPlayer({ paths, label, insertAfter }: RecordPlayerProps) {
 }
 
 // ---------------------------------------------------------------- Filter: propose, show, delete only when confirmed
-function FrameFilterDialog({ info, onClose }: { info: RecordInfo; onClose: () => void }) {
+function FrameFilterDialog({ info: opened, onClose }: { info: RecordInfo; onClose: () => void }) {
   const api = getApi()!;
   const host = getRecordHost();
+  // the record is reloaded now and then behind the dialog (a new object each time): the dialog works on what it was opened with,
+  // so a reload does not start the comparison again and throw away what the person ticked
+  const [info] = useState(opened);
+  const started = useRef(false);
   const priv = isNotePrivate();
   const canAi = !!host?.visionReady && !priv;
+  const ownFrames = Object.values(opened.meta?.frames ?? {}).filter(v => v === 'user').length;
   const [phase, setPhase] = useState<'ask' | 'working' | 'review' | 'deleting'>(canAi ? 'ask' : 'working');
   const [status, setStatus] = useState('');
   const [props, setProps] = useState<FrameProposal[]>([]);
@@ -287,7 +306,7 @@ function FrameFilterDialog({ info, onClose }: { info: RecordInfo; onClose: () =>
       setPhase(withAi ? 'ask' : 'review');
     }
   }, [api, info, host]);
-  useEffect(() => { if (!canAi) void run(false); }, [canAi, run]);
+  useEffect(() => { if (!canAi && !started.current) { started.current = true; void run(false); } }, [canAi, run]);
 
   const remove = async () => {
     setPhase('deleting');
@@ -298,8 +317,9 @@ function FrameFilterDialog({ info, onClose }: { info: RecordInfo; onClose: () =>
       const text = await api.getFileByPath(`${info.path}/record.json`);
       if (text) {
         try {
-          const m = JSON.parse(new TextDecoder().decode(fromB64(text.data))) as { frames?: Record<string, string> };
-          for (const p of gone) delete m.frames?.[String(p.second)];
+          const m = parseRecordMeta(new TextDecoder().decode(fromB64(text.data)));
+          if (!m) throw new Error('unreadable');
+          for (const p of gone) delete m.frames[String(p.second)];
           await api.addFile({ name: 'record.json', mime: 'application/json', data: toB64(new TextEncoder().encode(JSON.stringify(m, null, 2))), dir: info.path });
         } catch { /* the folder is the truth; the list is rebuilt from it */ }
       }
@@ -315,7 +335,7 @@ function FrameFilterDialog({ info, onClose }: { info: RecordInfo; onClose: () =>
         phase === 'review' ? (
           <>
             <button className="btn" onClick={onClose}>Keep everything</button>
-            <button className="btn primary" disabled={cut.size === 0} onClick={() => void remove()}><Trash2 size={15} /> Delete {cut.size} frame{cut.size === 1 ? '' : 's'}</button>
+            <button className="btn primary" disabled={cut.size === 0} onClick={() => void remove()}><Trash2 size={15} /> Delete {plural(cut.size, 'frame')}</button>
           </>
         ) : phase === 'ask' ? (
           <>
@@ -326,8 +346,8 @@ function FrameFilterDialog({ info, onClose }: { info: RecordInfo; onClose: () =>
       }>
       {phase === 'ask' && (
         <div>
-          <p>Frames that only repeat an earlier one are found on this device. The model can also say which of the rest add nothing.</p>
-          <p className="hint">Asking the model sends up to {info.frames.length} frame{info.frames.length === 1 ? '' : 's'} (pictures of the shared screen) to <strong>{host?.visionName}</strong>. Nothing is deleted until you confirm.</p>
+          <p>Frames that only repeat a later one are found on this device. The model can also say which of the rest add nothing.</p>
+          <p className="hint">Asking the model sends up to {plural(info.frames.length - ownFrames, 'frame')} (pictures of the shared screen; the ones you took yourself stay here) to <strong>{host?.visionName}</strong>. Nothing is deleted until you confirm.</p>
         </div>
       )}
       {(phase === 'working' || phase === 'deleting') && <p role="status"><Loader2 size={14} className="spin" style={{ verticalAlign: -2 }} /> {phase === 'deleting' ? 'Deleting…' : status || 'Working…'}</p>}
@@ -335,6 +355,7 @@ function FrameFilterDialog({ info, onClose }: { info: RecordInfo; onClose: () =>
         <div>
           <p>{nProp ? `${nProp} of ${props.length} frames can go.` : `Nothing to cut among ${props.length} frames.`} Tick the ones to delete.</p>
           {priv && <p className="hint">This note is private: the frames were compared on this device only.</p>}
+          {!priv && !canAi && <p className="hint">No model that looks at pictures is set up (Settings → AI), so the frames were compared on this device only.</p>}
           {note && <p className="hint">{note}</p>}
           <div className="filter-grid">
             {props.map(p => (

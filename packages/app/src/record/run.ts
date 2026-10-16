@@ -1,14 +1,14 @@
-// One recording in progress (ADR 0011): the microphone and, for a meeting, the shared screen's sound and pictures.
+// One recording in progress (ADR 0011): the microphone and, for a meeting, the shared screen's sound and frames.
 // Everything is written to the Vault as it is complete, so a crash loses at most the part being recorded.
 import {
-  AUTO_DROP_FRACTION, GRAY_H, GRAY_W, changedFraction, frameFileName, joinWebm, newRecordMeta, partFileName, recordDirName, toB64,
+  AUTO_DROP_FRACTION, GRAY_H, GRAY_W, audioExt, audioPartName, changedFraction, concatBytes, frameFileName, grayFromRgba, joinWebm, newRecordMeta, recordDirName, recordFilePaths, toB64,
   type RecordKind, type RecordMeta, type VaultApi,
 } from '@ergonotes/core';
 
 export const PART_SECONDS = 10 * 60;
 const FRAME_LONG_EDGE = 1280;
 
-export interface SessionOptions {
+export interface RunOptions {
   api: VaultApi;
   kind: RecordKind;
   /** meeting only: take pictures of the shared screen */
@@ -17,24 +17,27 @@ export interface SessionOptions {
   every: number;
   /** called when the folder exists and the note should get its link */
   onStarted: (dir: string) => void;
-  /** a picture was kept (the panel shows the latest ones) */
+  /** a frame was kept (the panel shows the latest ones) */
   onFrame?: (second: number, picture: Blob, byPerson: boolean) => void;
-  onChange: (s: SessionState) => void;
+  onChange: (s: RunState) => void;
   /** part length, seconds (tests use a short one) */
   partSeconds?: number;
 }
 
-export interface SessionState {
+/** What the recording hears: the microphone, the shared sound, or both. */
+export type Heard = 'mic' | 'both' | 'shared';
+
+export interface RunState {
   phase: 'recording' | 'paused' | 'stopping' | 'done';
   seconds: number;
   level: number;
   frames: number;
-  heard: 'mic' | 'both' | 'shared';
+  heard: Heard;
   /** what happened that the person should know (the share ended, a write failed) */
   notice: string;
 }
 
-export interface SessionResult { dir: string; seconds: number; frames: number; mime: string; audioPath: string | null; notice: string }
+export interface RunResult { dir: string; seconds: number; frames: number; mime: string; audioPath: string | null; notice: string }
 
 export const canShareScreen = (): boolean => typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
 
@@ -42,17 +45,15 @@ export const canShareScreen = (): boolean => typeof navigator !== 'undefined' &&
 export function recordingUnavailable(): string | null {
   if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
     return typeof window !== 'undefined' && window.isSecureContext === false
-      ? 'The microphone is only available on a secure connection (https) or on localhost. Open this notebook through https to record.'
+      ? 'The microphone is only available on a secure connection (https) or on localhost. Open the app through https to record.'
       : 'This device or browser cannot record audio.';
   }
   return null;
 }
 
-const extOfMime = (m: string) => (m.includes('mp4') ? 'm4a' : m.includes('ogg') ? 'ogg' : 'webm');
-
-export class RecordSession {
+export class RecordRun {
   readonly dir: string;
-  private o: SessionOptions;
+  private o: RunOptions;
   private meta: RecordMeta;
   private streams: MediaStream[] = [];
   private ctx: AudioContext | null = null;
@@ -73,12 +74,12 @@ export class RecordSession {
   private raf = 0;
   private lastGray: Uint8Array | null = null;
   private queue: Promise<unknown> = Promise.resolve();
-  private state: SessionState = { phase: 'recording', seconds: 0, level: 0, frames: 0, heard: 'mic', notice: '' };
-  private finish: ((r: SessionResult) => void) | null = null;
+  private state: RunState = { phase: 'recording', seconds: 0, level: 0, frames: 0, heard: 'mic', notice: '' };
+  private finish: ((r: RunResult) => void) | null = null;
   private discarded = false;
   private capturing = false;
 
-  constructor(o: SessionOptions, now = new Date()) {
+  constructor(o: RunOptions, now = new Date()) {
     this.o = o;
     this.dir = `attachments/${recordDirName(now)}`;
     this.meta = newRecordMeta(o.kind, now, 'audio/webm');
@@ -88,7 +89,7 @@ export class RecordSession {
     return this.carried + (this.resumedAt ? (Date.now() - this.resumedAt) / 1000 : 0);
   }
 
-  private emit(p: Partial<SessionState> = {}) {
+  private emit(p: Partial<RunState> = {}) {
     this.state = { ...this.state, ...p, seconds: Math.floor(this.seconds) };
     this.o.onChange(this.state);
   }
@@ -142,6 +143,9 @@ export class RecordSession {
       void ac.resume();
       this.ctx = ac;
       const mix = ac.createMediaStreamDestination();
+      mix.channelCount = 1; // ADR 0011: mono; a call or a lecture gains nothing from two channels
+      mix.channelCountMode = 'explicit';
+      mix.channelInterpretation = 'speakers';
       const an = ac.createAnalyser();
       an.fftSize = 256;
       this.analyser = an;
@@ -176,7 +180,14 @@ export class RecordSession {
         }
         display.getAudioTracks()[0]?.addEventListener('ended', () => this.interrupted('The shared sound ended. The recording was stopped and what was captured is kept.'));
       }
-      mic?.getAudioTracks()[0]?.addEventListener('ended', () => this.interrupted('The microphone stopped. The recording was stopped and what was captured is kept.'));
+      mic?.getAudioTracks()[0]?.addEventListener('ended', () => {
+        // a meeting does not need the microphone (the call's sound is the point): the shared sound goes on alone
+        if (display) {
+          if (this.state.phase !== 'stopping' && this.state.phase !== 'done') this.emit({ heard: 'shared', notice: 'The microphone stopped, so only the shared sound is recorded.' });
+          return;
+        }
+        this.interrupted('The microphone stopped. The recording was stopped and what was captured is kept.');
+      });
 
       r.ondataavailable = e => {
         if (e.data.size) this.chunks.push(e.data);
@@ -244,10 +255,10 @@ export class RecordSession {
   }
   private async paths(): Promise<string[]> {
     const r = await this.o.api.getRecord(this.dir).catch(() => null);
-    return r ? [...r.audio, ...r.frames.map(f => f.path), `${this.dir}/record.json`, `${this.dir}/transcript.txt`] : [];
+    return r ? recordFilePaths(r) : [];
   }
 
-  /** A picture now. `byPerson`: taken by the button, so it is always kept. */
+  /** A frame now. `byPerson`: taken by the button, so it is always kept. */
   async capture(byPerson: boolean): Promise<boolean> {
     const v = this.video;
     if (!v || this.capturing || (this.state.phase !== 'recording' && !byPerson) || v.videoWidth === 0) return false;
@@ -263,8 +274,7 @@ export class RecordSession {
       const sc = this.small.getContext('2d', { willReadFrequently: true })!;
       sc.drawImage(this.canvas, 0, 0, GRAY_W, GRAY_H);
       const px = sc.getImageData(0, 0, GRAY_W, GRAY_H).data;
-      const gray = new Uint8Array(GRAY_W * GRAY_H);
-      for (let i = 0; i < gray.length; i++) gray[i] = (px[i * 4] * 77 + px[i * 4 + 1] * 150 + px[i * 4 + 2] * 29) >> 8;
+      const gray = grayFromRgba(px);
       // while recording, a frame that is practically the last one kept is not worth a file
       if (!byPerson && this.lastGray && changedFraction(this.lastGray, gray) < AUTO_DROP_FRACTION) return false;
       const sec = Math.floor(this.seconds);
@@ -275,6 +285,7 @@ export class RecordSession {
       this.o.onFrame?.(sec, blob, byPerson);
       this.state.frames = Object.keys(this.meta.frames).length;
       void this.write(frameFileName(sec), 'image/jpeg', new Uint8Array(await blob.arrayBuffer()), 'frames');
+      void this.writeMeta(); // the list of frames is on disk as it grows, so a crash keeps who took each one
       this.emit();
       return true;
     } finally {
@@ -289,7 +300,7 @@ export class RecordSession {
     this.partStartAt = this.seconds;
     this.parts.push(bytes);
     this.partNo++;
-    void this.write(partFileName(this.partNo).replace(/\.webm$/, `.${extOfMime(this.mime)}`), this.mime, bytes);
+    void this.write(audioPartName(this.partNo, this.mime), this.mime, bytes);
     void this.writeMeta();
   }
 
@@ -300,23 +311,29 @@ export class RecordSession {
     await this.flushPart();
     await this.queue;
     let audioPath: string | null = null;
-    const ext = extOfMime(this.mime);
+    const ext = audioExt(this.mime);
     const total = this.parts.reduce((n, p) => n + p.length, 0);
     if (total > 0) {
-      // the pieces become one file: the same packets, with a length and a clock; anything else is just joined
-      let data: Uint8Array;
-      let secs = seconds;
+      // the pieces become one file: the same packets, with a length and a clock. When a WebM cannot be joined the pieces
+      // stay as they are and are played in order (ADR 0011); another format is just put end to end
       const joined = this.mime === 'audio/webm' ? joinWebm(this.parts) : null;
-      if (joined) { data = joined.data; secs = Math.round(joined.seconds); }
-      else { data = new Uint8Array(total); let o = 0; for (const p of this.parts) { data.set(p, o); o += p.length; } }
-      this.meta.seconds = Math.max(secs, 0);
-      await this.write(`audio.${ext}`, this.mime, data);
-      await this.queue;
-      const written = await this.o.api.getRecord(this.dir).catch(() => null);
-      if (written && written.audio.some(p => p.endsWith(`/audio.${ext}`))) {
-        audioPath = `${this.dir}/audio.${ext}`;
-        const pieces = Array.from({ length: this.partNo }, (_, i) => `${this.dir}/${partFileName(i + 1).replace(/\.webm$/, `.${ext}`)}`);
-        await this.o.api.removeFiles(pieces).catch(() => 0);
+      const together = joined ? joined.data : this.mime === 'audio/webm' ? null : concatBytes(this.parts);
+      if (joined) this.meta.seconds = Math.max(Math.round(joined.seconds), 0);
+      else this.meta.seconds = Math.max(seconds, 0);
+      if (together) {
+        await this.write(`audio.${ext}`, this.mime, together);
+        await this.queue;
+        const written = await this.o.api.getRecord(this.dir).catch(() => null);
+        if (written && written.audio.some(p => p.endsWith(`/audio.${ext}`))) {
+          audioPath = `${this.dir}/audio.${ext}`;
+          const pieces = Array.from({ length: this.partNo }, (_, i) => `${this.dir}/${audioPartName(i + 1, this.mime)}`);
+          await this.o.api.removeFiles(pieces).catch(() => 0);
+        }
+      }
+      if (!audioPath) {
+        // nothing joined: the first piece stands for the sound (the player and the transcript read them all, in order)
+        audioPath = `${this.dir}/${audioPartName(1, this.mime)}`;
+        this.state.notice ||= 'The audio could not be joined into one file, so it is kept in pieces and played in order.';
       }
     }
     this.meta.state = 'done';
@@ -329,7 +346,7 @@ export class RecordSession {
   }
 
   /** Resolves when the recording has been stopped and everything is saved. */
-  done(): Promise<SessionResult> {
+  done(): Promise<RunResult> {
     return new Promise(res => { this.finish = res; });
   }
 

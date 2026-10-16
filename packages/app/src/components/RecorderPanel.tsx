@@ -2,11 +2,12 @@ import { Camera, Loader2, Mic, Pause, Play, Presentation, Square, Trash2, Volume
 import { fmtClock, fmtMark } from '@ergonotes/core';
 import type { ReactNode } from 'react';
 import { useApp } from '../state/app';
-import { recorder, useRecorder } from '../record/recorder';
+import { isBusy, recorder, useRecorder } from '../record/recorder';
+import type { Heard } from '../record/run';
 import { classNames } from '../state/util';
 import { Resizer } from './Resizer';
 
-const heardText = (h: 'mic' | 'both' | 'shared') =>
+const heardText = (h: Heard) =>
   h === 'both' ? 'the microphone and the shared sound' : h === 'shared' ? 'the shared sound only' : 'the microphone';
 
 function Meter({ level, on }: { level: number; on: boolean }) {
@@ -14,17 +15,17 @@ function Meter({ level, on }: { level: number; on: boolean }) {
 }
 
 const discard = () => {
-  if (recorder.get().seconds > 5 && !confirm('Throw this recording away? Its audio and pictures are deleted.')) return;
+  if (recorder.get().seconds > 5 && !confirm('Throw this recording away? Its audio and frames are deleted.')) return;
   void recorder.discard();
 };
 
 function Controls({ compact, withDiscard = true }: { compact?: boolean; withDiscard?: boolean }) {
   const r = useRecorder();
-  const busy = r.phase === 'saving' || r.phase === 'transcribing' || r.phase === 'starting';
+  const busy = isBusy(r);
   return (
     <div className={classNames('rec-controls', compact && 'compact')}>
       {r.takesFrames && !busy && (
-        <button className="btn" onClick={() => void recorder.capture()} title="Take a picture now" disabled={r.phase === 'paused'}><Camera size={15} /> {compact ? '' : 'Capture'}</button>
+        <button className="btn" onClick={() => void recorder.capture()} title="Take frame now" disabled={r.phase === 'paused'}><Camera size={15} /> {compact ? '' : 'Take frame'}</button>
       )}
       {!busy && (
         <button className="btn" onClick={() => (r.phase === 'paused' ? recorder.resume() : recorder.pause())}>
@@ -41,7 +42,7 @@ function Controls({ compact, withDiscard = true }: { compact?: boolean; withDisc
 export function RecorderPanel() {
   const r = useRecorder();
   const app = useApp();
-  const busy = r.phase === 'saving' || r.phase === 'transcribing' || r.phase === 'starting';
+  const busy = isBusy(r);
   const live = r.phase === 'running';
   return (
     <section className="rec-panel" aria-label="Recording">
@@ -75,14 +76,14 @@ export function RecorderPanel() {
 
       {r.takesFrames && (
         <div className="rec-frames">
-          <div className="rec-frames-head"><span>Pictures</span><strong>{r.frames}</strong></div>
+          <div className="rec-frames-head"><span>Frames</span><strong>{r.frames}</strong></div>
           {r.recent.length === 0
-            ? <p className="hint">The first picture comes in a moment. A picture that repeats the last one is not kept.</p>
+            ? <p className="hint">The first frame comes in a moment. A frame that repeats the last one is not kept.</p>
             : (
               <div className="rec-thumbs">
                 {[...r.recent].reverse().map(f => (
                   <figure key={f.second} className={classNames(f.user && 'user')}>
-                    <img src={f.url} alt={`Picture at ${fmtMark(f.second)}`} />
+                    <img src={f.url} alt={`Frame at ${fmtMark(f.second)}`} />
                     <figcaption>{fmtMark(f.second)}{f.user ? ' · yours' : ''}</figcaption>
                   </figure>
                 ))}
@@ -97,7 +98,7 @@ export function RecorderPanel() {
 /** A thin bar for when the note list is shown instead of the panel, and for views that have no list. */
 export function RecorderMini({ floating }: { floating?: boolean }) {
   const r = useRecorder();
-  const busy = r.phase === 'saving' || r.phase === 'transcribing' || r.phase === 'starting';
+  const busy = isBusy(r);
   return (
     <div className={classNames('rec-mini', floating && 'floating')} role="region" aria-label="Recording">
       <span className={classNames('rec-dot', r.phase === 'running' && 'on')} aria-hidden />

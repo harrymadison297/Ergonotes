@@ -12,10 +12,10 @@ export interface FrameJudgement {
 export interface JudgeOptions { batch?: number; signal?: AbortSignal; onProgress?: (done: number, total: number) => void }
 
 const SYSTEM = [
-  'You help someone tidy the screenshots of a recorded lecture or meeting. Each one was taken from the shared screen at the time given.',
-  'Keep a frame that shows content the earlier ones did not: a new slide, a new part of a slide, a diagram, a demo step, a document.',
-  'Cut a frame that repeats the content of an earlier one (only a cursor, a scroll bar, a notification or a blink changed), a blank or loading screen, or one so blurred or cut off that it cannot be read.',
-  'When two frames show the same slide, keep the one that shows it most completely.',
+  'You help someone tidy the frames of a recorded lecture or meeting. Each one is a picture of the shared screen, taken at the time given.',
+  'The frames come from the latest to the earliest, so "after" below means a frame with a later time.',
+  'Cut a frame when a frame after it shows the same content as completely (a slide or a board only fills up, so the later one is the one to keep; only a cursor, a scroll bar, a notification or a blink differ), a blank or loading screen, or one so blurred or cut off that it cannot be read.',
+  'Keep a frame that shows content the frames after it do not: an earlier slide, a diagram or board before it was erased, a demo step, a document.',
   'Reply with only JSON of this shape: {"cut":[3,5]} where the numbers are the frame numbers to cut. {"cut":[]} cuts nothing.',
 ].join(' ');
 
@@ -36,13 +36,15 @@ export async function recommendCuts(transport: AiTransport, frames: FrameToJudge
   const size = Math.max(2, o.batch ?? 8);
   const cut: number[] = [];
   let failed = 0;
-  let reference: FrameToJudge | null = null; // the last frame kept so far: what the next batch is compared with
-  for (let i = 0; i < frames.length; i += size) {
+  let reference: FrameToJudge | null = null; // the last frame kept so far (the earliest): what the next batch is compared with
+  // from the latest frame to the earliest, so that of frames that repeat each other the latest is the one that stays
+  const ordered = [...frames].reverse();
+  for (let i = 0; i < ordered.length; i += size) {
     if (o.signal?.aborted) break;
-    const batch = frames.slice(i, i + size);
+    const batch = ordered.slice(i, i + size);
     const images = [...(reference ? [reference.jpeg] : []), ...batch.map(f => f.jpeg)];
     const lines = [
-      ...(reference ? [`The first picture is a frame kept earlier (at ${clock(reference.second)}). It is only for comparing: do not number it.`] : []),
+      ...(reference ? [`The first image is a frame kept already (at ${clock(reference.second)}), later than these. It is only for comparing: do not number it.`] : []),
       ...batch.map((f, n) => `Frame ${n + 1}: at ${clock(f.second)}`),
       'Which frames should be cut?',
     ];
@@ -61,7 +63,7 @@ export async function recommendCuts(transport: AiTransport, frames: FrameToJudge
       failed += batch.length;
       reference = batch[batch.length - 1];
     }
-    o.onProgress?.(Math.min(frames.length, i + size), frames.length);
+    o.onProgress?.(Math.min(ordered.length, i + size), ordered.length);
   }
   return { cut: cut.sort((a, b) => a - b), failed };
 }

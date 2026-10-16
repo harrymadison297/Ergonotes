@@ -77,19 +77,19 @@ await page.locator('.prose > p:last-child').click();
 await page.keyboard.press('Control+End');
 
 await page.getByRole('button', { name: 'Meeting', exact: true }).click();
-await page.getByRole('dialog', { name: 'Meeting' }).waitFor();
-await page.getByLabel('Seconds between pictures').selectOption('2');
-await page.getByRole('button', { name: /^Start the meeting record/ }).click();
-const started = await page.locator('.rec-bar .rec-dot.on').waitFor({ timeout: 20000 }).then(() => true, () => false);
+await page.getByRole('dialog', { name: 'Record a meeting' }).waitFor();
+await page.getByRole('button', { name: '2 s', exact: true }).click();
+await page.getByRole('button', { name: /^Start$/ }).click();
+const started = await page.locator('.rec-panel .rec-dot.on').waitFor({ timeout: 20000 }).then(() => true, () => false);
 check('the meeting record starts on the real shared tab', started, errors.slice(0, 2).join(' | '));
 if (!started) { await page.screenshot({ path: `${shots}/meet-start-failed.png` }); await browser.close(); process.exit(1); }
 const midway = Math.floor(seconds / 2);
 await page.waitForTimeout(midway * 1000);
-await page.getByRole('button', { name: 'Capture' }).click();
+await page.getByRole('button', { name: 'Take frame' }).click();
 await page.screenshot({ path: `${shots}/meet-recording.png` });
 await page.waitForTimeout((seconds - midway) * 1000);
 await page.getByRole('region', { name: 'Recording' }).getByRole('button', { name: /Stop/ }).click();
-await until(async () => (await page.locator('.rec-bar').count()) === 0, 60000);
+await until(async () => (await page.locator('.rec-panel, .rec-mini').count()) === 0, 60000);
 const rec = await until(async () => { const r = (await rpc('listRecords'))[0]; return r?.meta?.state === 'done' && r.transcript ? r : null; }, 60000);
 check('the record is saved and written out', !!rec, JSON.stringify(rec?.meta));
 if (!rec) { await browser.close(); process.exit(1); }

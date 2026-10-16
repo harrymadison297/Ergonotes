@@ -57,6 +57,27 @@ export const frameFileName = (second: number): string => `${String(Math.max(0, M
 /** The second a frame file name stands for, or null when it is not a frame. */
 export const frameSecond = (name: string): number | null => { const m = /^(\d{1,9})\.jpe?g$/i.exec(name.slice(name.lastIndexOf('/') + 1)); return m ? Number(m[1]) : null; };
 export const partFileName = (n: number): string => `audio-${String(n).padStart(3, '0')}.webm`;
+/** The file extension a recorder's mime type is kept under. */
+export const audioExt = (mime: string): string => (mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm');
+/** The name of part `n` of a recording made as `mime`. */
+export const audioPartName = (n: number, mime: string): string => partFileName(n).replace(/\.webm$/, `.${audioExt(mime)}`);
+/** Every file of a record folder that the app keeps (what deleting the record removes). */
+export const recordFilePaths = (r: { path: string; audio: string[]; frames: { path: string }[] }): string[] =>
+  [...r.audio, ...r.frames.map(f => f.path), `${r.path}/record.json`, `${r.path}/transcript.txt`];
+/** `1` -> `1 frame`, `3` -> `3 frames`. */
+export const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+export const concatBytes = (parts: Uint8Array[]): Uint8Array => {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
+};
+/** RGBA pixels (what a canvas gives) as the gray picture frames are compared by. */
+export function grayFromRgba(px: ArrayLike<number>, pixels = GRAY_W * GRAY_H): Uint8Array {
+  const g = new Uint8Array(pixels);
+  for (let i = 0; i < pixels; i++) g[i] = (px[i * 4] * 77 + px[i * 4 + 1] * 150 + px[i * 4 + 2] * 29) >> 8;
+  return g;
+}
 export const isPartName = (name: string): boolean => /^audio-\d{3,}\.[a-z0-9]+$/i.test(name.slice(name.lastIndexOf('/') + 1));
 
 /** `65` -> `1:05`, `3725` -> `62:05` (minutes keep counting: the transcript's marks do). */
@@ -120,15 +141,18 @@ export function changedFraction(a: Uint8Array, b: Uint8Array, delta = 24): numbe
   return n / a.length;
 }
 
-/** The frames worth keeping: the first, then every one that differs enough from the last one kept. */
+/**
+ * The frames worth keeping: the last one, then every earlier one that differs enough from the next one kept. Of a run of
+ * frames that look the same the last is kept, because a slide or a board only fills up. The person's own (`locked`) stay.
+ */
 export function distinctFlags(grays: Uint8Array[], fraction: number, locked: boolean[] = []): boolean[] {
-  const keep: boolean[] = [];
-  let last: Uint8Array | null = null;
-  grays.forEach((g, i) => {
-    const k = !last || locked[i] === true || changedFraction(last, g) >= fraction;
-    keep.push(k);
-    if (k) last = g;
-  });
+  const keep: boolean[] = new Array(grays.length).fill(false);
+  let next: Uint8Array | null = null;
+  for (let i = grays.length - 1; i >= 0; i--) {
+    const k = !next || locked[i] === true || changedFraction(next, grays[i]) >= fraction;
+    keep[i] = k;
+    if (k) next = grays[i];
+  }
   return keep;
 }
 

@@ -22,7 +22,8 @@ import { linkTo, setNoteDir } from '../state/noteCtx';
 import { RecordBlock } from '../editor/recordBlock';
 import { setNotePrivate } from '../record/host';
 import { RecordDialog } from './RecordDialog';
-import { INSERT_ITEMS, type InsertCtx } from '../editor/insertItems';
+import { offeredItems, type InsertCtx } from '../editor/insertItems';
+import { canShareScreen } from '../record/run';
 import { InsertMenu } from './InsertMenu';
 import { DateDialog, EventDialog, LinkedNoteDialog } from './InsertDialogs';
 import { blobToB64, RecorderDialog, TranscribeDialog, type Recording } from './Recorder';
@@ -134,7 +135,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
       }),
       LinkSuggest.configure({ api }),
       SlashCommands.configure({
-        items: () => slashItems(() => INSERT_ITEMS.map(i => ({
+        items: () => slashItems(() => offeredItems().map(i => ({
           id: i.id, label: i.label, hint: i.hint, keywords: i.keywords,
           off: !!(ctxRef.current && i.unavailable?.(ctxRef.current)),
           run: () => { if (ctxRef.current) i.run(ctxRef.current); },
@@ -559,7 +560,7 @@ export function NoteEditor({ id, onBack, readOnly }: { id: string; onBack?: () =
 
       <div className="toolbar" role="toolbar" aria-label="Formatting">
         <button type="button" className="tb-btn accent" disabled={locked} onClick={e => setInsertAt(e.currentTarget.getBoundingClientRect())}><span className="insert-dot"><Plus size={12} /></span> Insert <ChevronDown size={14} /></button>
-        <TB locked={locked} label="Meeting" onClick={() => insertCtx.record('meeting')}><AudioLines size={18} /></TB>
+        {canShareScreen() && <TB locked={locked} label="Meeting" onClick={() => insertCtx.record('meeting')}><AudioLines size={18} /></TB>}
         <TB locked={locked} label="Recording" onClick={() => insertCtx.record('recording')}><Mic size={18} /></TB>
         <TB locked={locked} label="Checklist" on={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={18} /></TB>
         <TB locked={locked} label={tokens.inTask ? 'Due date' : 'Due date (place the cursor in a task)'} on={!!tokens.due} disabled={!tokens.inTask} onClick={() => setDateDialog('due')}><CalendarDays size={18} /></TB>
