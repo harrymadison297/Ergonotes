@@ -13,14 +13,16 @@ export function Resizer({ pane, edge, label }: { pane: keyof typeof WIDTHS; edge
   const reset = () => setPrefs({ [pane]: null } as Partial<Prefs>);
   const widthOf = (el: HTMLElement) => el.parentElement?.getBoundingClientRect().width ?? min;
   const sign = edge === 'right' ? 1 : -1;
+  // while the edge is held, the panes follow the pointer at once instead of easing towards it
+  const hold = (on: boolean) => document.documentElement.classList.toggle('resizing', on);
   return (
     <div className={`resizer ${edge}`} role="separator" aria-orientation="vertical" tabIndex={0}
       aria-label={label} aria-valuemin={min} aria-valuemax={max} aria-valuenow={prefs[pane] ?? undefined}
       title={`${label}. Double-click to reset.`}
-      onPointerDown={e => { drag.current = { x: e.clientX, w: widthOf(e.currentTarget) }; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); }}
+      onPointerDown={e => { drag.current = { x: e.clientX, w: widthOf(e.currentTarget) }; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); hold(true); }}
       onPointerMove={e => { if (drag.current) set(drag.current.w + sign * (e.clientX - drag.current.x)); }}
-      onPointerUp={() => { drag.current = null; }}
-      onPointerCancel={() => { drag.current = null; }}
+      onPointerUp={() => { drag.current = null; hold(false); }}
+      onPointerCancel={() => { drag.current = null; hold(false); }}
       onDoubleClick={reset}
       onKeyDown={e => {
         const step = e.shiftKey ? 48 : 16;

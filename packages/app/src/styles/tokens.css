@@ -78,6 +78,7 @@
   --t-fast: 120ms;
   --t-base: 180ms;
   --t-slow: 280ms;
+  --t-pane: 200ms;   /* a pane or a tree branch opening or closing: the one place layout is animated */
 
   /* type scale */
   --fs-2xs: 11px;

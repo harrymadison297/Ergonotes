@@ -66,7 +66,7 @@ await page.waitForTimeout(1200);
 check('note saved', await page.getByText('All changes saved').isVisible());
 check('table of contents lists the heading', (await page.locator('.toc .toc-item', { hasText: '5347 Silver Lake Dr.' }).count()) === 1);
 await page.getByRole('button', { name: 'Hide table of contents' }).click();
-check('table of contents can be hidden', (await page.locator('.toc').count()) === 0);
+check('table of contents can be hidden', await page.locator('.toc').waitFor({ state: 'detached', timeout: 3000 }).then(() => true, () => false));
 await page.getByRole('button', { name: 'Show table of contents' }).click();
 check('and shown again', (await page.locator('.toc').count()) === 1);
 const tagInput = page.getByLabel('Add tag');
@@ -251,6 +251,7 @@ await page.mouse.up();
 const sbW1 = (await page.locator('.sidebar').boundingBox()).width;
 check('sidebar can be resized by dragging its edge', sbW1 > sbW0 + 60, `${Math.round(sbW0)} -> ${Math.round(sbW1)}`);
 await page.getByRole('separator', { name: 'Resize sidebar' }).dblclick();
+await page.waitForTimeout(400); // the sidebar eases back
 check('double-click resets the width', Math.abs((await page.locator('.sidebar').boundingBox()).width - sbW0) < 2);
 
 // type scale: every rendered text size comes from the reference scale

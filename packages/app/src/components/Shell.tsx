@@ -265,7 +265,8 @@ function RecordingDock() {
     // is the panel (or the thin bar of the list) on screen? the layout may hide the list, so it is looked at, not assumed
     const look = () => {
       const el = document.querySelector<HTMLElement>('.rec-pane, .pane-list .rec-mini');
-      setCovered(!el || el.offsetParent === null);
+      // a list that is hidden, or has narrowed to nothing while it closes, shows nothing of the recording
+      setCovered(!el || el.offsetParent === null || getComputedStyle(el).visibility === 'hidden' || el.getBoundingClientRect().width < 60);
     };
     look();
     const t = setInterval(look, 600);

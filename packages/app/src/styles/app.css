@@ -67,27 +67,36 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .tag-dot { display: inline-block; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--c, var(--text-3)); }
 .tag-dots { display: inline-flex; align-items: center; gap: 4px; }
 .tag-dots small { color: var(--text-2); font-size: var(--fs-xs); line-height: 1; }
-.tag-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--c, var(--text-3)) var(--tag-alpha), transparent); color: var(--text-strong); font-size: var(--fs-xs); line-height: 20px; white-space: nowrap; max-width: 100%; text-decoration: none; }
-.tag-pill > button { display: inline-flex; padding: 4px; margin: -4px -7px -4px -2px; border-radius: 50%; color: var(--text-2); }
+.tag-pill, .tag-ghost { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--c, var(--text-3)) var(--tag-alpha), transparent); color: var(--text-strong); font-size: var(--fs-xs); line-height: 20px; white-space: nowrap; max-width: 100%; text-decoration: none; }
+.tag-pill > button, .tag-ghost > button { display: inline-flex; padding: 4px; margin: -4px -7px -4px -2px; border-radius: 50%; color: var(--text-2); }
 @media (hover: hover) { .tag-pill > button:hover { color: var(--text-strong); } }
 
 /* ---------- app layout ---------- */
-.app { display: grid; grid-template-columns: min(var(--sidebar-w), 50vw) minmax(0, 1fr); height: 100%; }
-.app.rail { grid-template-columns: var(--rail-w) minmax(0, 1fr); }
-.sidebar { position: relative; background: var(--bg-sidebar); display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 10px 8px 8px; }
+/* Three columns, always: sidebar, page, right sidebar. A pane that is closed is a column of 0 (its content stays at its own
+   width and is clipped), so opening and closing is one change of a width that can be animated. */
+.app { --sb-col: min(var(--sidebar-w), 50vw); --aside-col: 0px; display: grid; grid-template-columns: var(--sb-col) minmax(0, 1fr) var(--aside-col); height: 100%;
+  transition: grid-template-columns var(--t-pane) var(--ease); }
+.app.rail { --sb-col: var(--rail-w); }
+.app.has-aside { --aside-col: calc(min(var(--aside-w), 45vw) + 8px); }
+/* the note on its own: the sidebar and the list step aside as well (nothing is stored, leaving brings it back) */
+.app.focus { --sb-col: 0px; --aside-col: 0px; }
+.sidebar { position: relative; background: var(--bg-sidebar); display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 10px 8px 8px; overflow: hidden; }
+.sidebar:not(.rail) > :not(.resizer) { min-width: calc(min(var(--sidebar-w), 50vw) - 16px); } /* at its full width even while the column is still growing */
+.sidebar > .resizer.right { right: 0; width: 6px; }
+.sidebar.switching > :not(.resizer) { animation: fade-in var(--t-pane) var(--ease); }
+.app.focus .sidebar, .app:not(.has-aside) .aside-wrap, .split.list-hidden .pane-list { visibility: hidden; transition: visibility 0s linear var(--t-pane); }
 .main { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
-.split.list-hidden { grid-template-columns: minmax(0, 1fr); }
-.split.list-hidden .pane-list { display: none; }
-.split.list-hidden .pane-body { margin-left: 8px; }
-.app.focus { grid-template-columns: minmax(0, 1fr); }
-.app.focus .sidebar { display: none; }
-/* the note on its own: the list steps aside as well (nothing is stored, leaving brings it back) */
-.app.focus .split { grid-template-columns: minmax(0, 1fr); }
-.app.focus .pane-list { display: none; }
-.app.focus .pane-body { margin-left: 8px; }
-.split { display: grid; grid-template-columns: min(var(--list-w), 50vw) minmax(0, 1fr); height: 100%; min-height: 0; background: var(--bg-sidebar); }
-.pane-list { position: relative; background: transparent; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.pane-body { min-width: 0; min-height: 0; display: flex; flex-direction: column; margin: 8px 8px 8px 0; background: var(--bg); border: 1px solid var(--border-card); border-radius: var(--radius-lg); overflow: hidden; }
+.split { --list-col: min(var(--list-w), 50vw); display: grid; grid-template-columns: var(--list-col) minmax(0, 1fr); height: 100%; min-height: 0; background: var(--bg-sidebar);
+  transition: grid-template-columns var(--t-pane) var(--ease); }
+.split.list-hidden, .app.focus .split { --list-col: 0px; }
+.pane-list { position: relative; background: transparent; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+.pane-list > :not(.resizer) { min-width: min(var(--list-w), 50vw); } /* at its own width while the column opens or closes */
+.pane-list > .resizer.right { right: 0; width: 6px; }
+.pane-body { min-width: 0; min-height: 0; display: flex; flex-direction: column; margin: 8px 8px 8px 0; background: var(--bg); border: 1px solid var(--border-card); border-radius: var(--radius-lg); overflow: hidden;
+  transition: margin-left var(--t-pane) var(--ease); }
+.split.list-hidden .pane-body, .app.focus .pane-body { margin-left: 8px; }
+/* dragging a pane's edge follows the pointer at once */
+html.resizing .app, html.resizing .split, html.resizing .pane-body { transition: none !important; }
 
 /* ---------- sidebar ---------- */
 .quick { display: flex; align-items: center; gap: 6px; padding: 0 4px 10px; }
@@ -111,6 +120,13 @@ a.nav-item { padding: 0 6px 0 0; }
 .nav-item svg { flex: none; color: var(--text-2); }
 .nav-item.active svg { color: var(--text-strong); }
 .nav-item .tag-dot { margin: 0 4px; }
+.chev { transition: transform var(--t-pane) var(--ease); }
+.chev.open { transform: rotate(90deg); }
+/* a section that grows and shrinks (the one place height is animated: brand guide §7) */
+.collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--t-pane) var(--ease); }
+.collapse.open { grid-template-rows: 1fr; }
+.collapse-in { min-height: 0; overflow: hidden; }
+.sidebar.rail .collapse { display: none; }
 .nav-chevron { width: 26px; align-self: stretch; display: inline-grid; place-items: center; color: var(--text-2); flex: none; border-radius: var(--radius); }
 @media (hover: hover) { .nav-chevron:hover { background: var(--bg-active); } }
 @media (hover: hover) { .nav-chevron.blank:hover { background: none; } }
@@ -592,13 +608,10 @@ html.kbd .resizer:focus-visible { outline: none; }
 .private-flag { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; color: var(--text-2); }
 
 /* ---- right sidebar: contents and assistant (one panel beside every page) ---- */
-.app.has-aside { grid-template-columns: min(var(--sidebar-w), 50vw) minmax(0, 1fr) auto; }
-.app.has-aside.rail { grid-template-columns: var(--rail-w) minmax(0, 1fr) auto; }
-.app.focus .aside-wrap { display: none; }
-.aside-wrap { display: flex; min-height: 0; background: var(--bg-sidebar); padding: 8px 8px 8px 0; }
-.aside { position: relative; display: flex; flex-direction: column; width: min(var(--aside-w), 45vw); min-height: 0; background: var(--bg); border: 1px solid var(--border-card); border-radius: var(--radius-lg); overflow: hidden; }
-.aside-wrap.mobile { position: fixed; inset: 0; z-index: 60; padding: 0; background: var(--bg); }
-.aside-wrap.mobile .aside { width: 100%; border: 0; border-radius: 0; padding-top: env(safe-area-inset-top); }
+.aside-wrap { display: flex; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg-sidebar); }
+.aside { position: relative; display: flex; flex: none; flex-direction: column; width: min(var(--aside-w), 45vw); min-height: 0; margin: 8px 8px 8px 0; background: var(--bg); border: 1px solid var(--border-card); border-radius: var(--radius-lg); overflow: hidden; }
+.aside-wrap.mobile { position: fixed; inset: 0; z-index: 60; background: var(--bg); overflow: visible; }
+.aside-wrap.mobile .aside { width: 100%; margin: 0; border: 0; border-radius: 0; padding-top: env(safe-area-inset-top); }
 .aside-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 10px; border-bottom: 1px solid var(--border); position: relative; }
 .aside-head .grow { flex: 1; }
 .aside-tabs { display: flex; gap: 2px; }
@@ -785,7 +798,6 @@ html.kbd .resizer:focus-visible { outline: none; }
 .dialog { animation: dialog-in var(--t-slow) var(--ease); }
 .palette { animation: pop-in var(--t-base) var(--ease); transform-origin: top center; }
 .toast { animation: toast-in var(--t-slow) var(--ease-spring); }
-.aside { animation: slide-in-right var(--t-slow) var(--ease); }
 .home, .m-cards, .ex-body, .list-scroll { animation: view-in var(--t-slow) var(--ease); }
 .note-row.active::before { transform-origin: top; animation: bar-in var(--t-base) var(--ease); }
 .fab { animation: fab-in var(--t-slow) var(--ease-spring); }
@@ -969,14 +981,14 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 /* Not enough room for the sidebar, the list, the note and the side panel: while the side panel is open and a note is
    open, the note list steps aside, so the note keeps the width to be read (close the panel to see the list again). */
 @media (max-width: 1439px) {
-  .app.has-aside:not(.rail) .split:has(.pane-body .editor) { grid-template-columns: minmax(0, 1fr); }
-  .app.has-aside:not(.rail) .split:has(.pane-body .editor) .pane-list { display: none; }
+  .app.has-aside:not(.rail) .split:has(.pane-body .editor) { --list-col: 0px; }
   .app.has-aside:not(.rail) .split:has(.pane-body .editor) .pane-body { margin-left: 8px; }
+  .app.has-aside:not(.rail) .split:has(.pane-body .editor) .pane-list { visibility: hidden; transition: visibility 0s linear var(--t-pane); }
 }
 @media (max-width: 1299px) {
-  .app.has-aside.rail .split:has(.pane-body .editor) { grid-template-columns: minmax(0, 1fr); }
-  .app.has-aside.rail .split:has(.pane-body .editor) .pane-list { display: none; }
+  .app.has-aside.rail .split:has(.pane-body .editor) { --list-col: 0px; }
   .app.has-aside.rail .split:has(.pane-body .editor) .pane-body { margin-left: 8px; }
+  .app.has-aside.rail .split:has(.pane-body .editor) .pane-list { visibility: hidden; transition: visibility 0s linear var(--t-pane); }
 }
 @media (max-width: 1023px) { :root { --sidebar-w: 190px; --list-w: 248px; --aside-w: 270px; } }
 

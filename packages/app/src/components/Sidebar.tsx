@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, CalendarDays, ChevronDown, ChevronRight, FileText, Folder as FolderIcon, FolderPlus, Home, Keyboard, LayoutTemplate,
+  AlertTriangle, CalendarDays, FileText, Folder as FolderIcon, FolderPlus, Home, Keyboard, LayoutTemplate,
   MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Search, Settings as SettingsIcon, Star, Tag as TagIcon, Trash2,
   CheckCircle2, FilePlus2, Sparkles, Upload,
 } from 'lucide-react';
@@ -14,7 +14,7 @@ import { useItemMenu } from '../state/itemMenu';
 import { useItemClip, useItemOps } from '../state/itemClipboard';
 import { useCommands } from '../state/commands';
 import { chordOf } from '../state/keymap';
-import { IconBtn, useMenu, type MenuEntry } from './ui';
+import { Chevron, Collapse, IconBtn, useMenu, type MenuEntry } from './ui';
 import { setPrefs, usePrefs } from '../state/prefs';
 import { Resizer } from './Resizer';
 import { useSync } from './useSync';
@@ -63,6 +63,16 @@ export function Sidebar() {
   const cmds = useCommands();
   const clip = useItemClip();
   const noteMenu = useMenu();
+  // the labels fade in or out as the sidebar widens or narrows; not on the first paint
+  const [switching, setSwitching] = useState(false);
+  const lastRail = useRef(rail);
+  useEffect(() => {
+    if (lastRail.current === rail) return;
+    lastRail.current = rail;
+    setSwitching(true);
+    const t = setTimeout(() => setSwitching(false), 260);
+    return () => clearTimeout(t);
+  }, [rail]);
 
   const folders = useMemo(() => items.filter(i => i.type === 'folder' && !i.inTrash), [items]);
   const childrenOf = useMemo(() => {
@@ -117,7 +127,7 @@ export function Sidebar() {
           }}
           onContextMenu={e => { e.preventDefault(); folderMenu.open({ currentTarget: e.currentTarget }, itemEntries(f)); }}>
           <button className="nav-chevron" aria-label={open ? 'Collapse' : 'Expand'} onClick={() => toggleFolder(f.id)} style={{ visibility: kids.length ? 'visible' : 'hidden' }}>
-            {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <Chevron open={open} />
           </button>
           <a className="nav-link" href={href({ name: 'notes', folder: f.id })} draggable={false}>
             <FolderIcon size={18} /><span className="label">{f.title}</span>
@@ -125,7 +135,7 @@ export function Sidebar() {
           <span className="count">{f.childCount || ''}</span>
           <button className="nav-more" aria-label={`Actions for ${f.title}`} onClick={e => folderMenu.open(e, itemEntries(f), 'right')}><MoreHorizontal size={16} /></button>
         </div>
-        {open && kids.map(k => folderNode(k, depth + 1))}
+        <Collapse open={open && kids.length > 0}>{kids.map(k => folderNode(k, depth + 1))}</Collapse>
       </div>
     );
   };
@@ -163,7 +173,7 @@ export function Sidebar() {
   );
 
   return (
-    <aside className={classNames('sidebar', rail && 'rail')} aria-label="Sidebar">
+    <aside className={classNames('sidebar', rail && 'rail', switching && 'switching')} aria-label="Sidebar">
       <div className="quick">
         <button className="new-pill" onClick={() => void app.newNote()} title="New note (Ctrl+N)" aria-label="New note (Ctrl+N)">
           <FilePlus2 size={20} /><span className="new-pill-label">New note</span>
@@ -184,10 +194,10 @@ export function Sidebar() {
           {...dropZone('pinned', drop, pinIt, notesOnly)}
           onClick={e => { if (rail) pinnedMenu.open(e, pinnedEntries(), 'left'); else setPinnedOpen(o => !o); }}
           onKeyDown={e => activateKeys(() => { if (rail) pinnedMenu.open({ currentTarget: e.currentTarget }, pinnedEntries(), 'left'); else setPinnedOpen(o => !o); })(e)}>
-          <span className="nav-chevron">{pinnedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+          <span className="nav-chevron"><Chevron open={pinnedOpen} /></span>
           <Star size={18} /><span className="label">Pinned</span>
         </div>
-        {pinnedOpen && (
+        <Collapse open={pinnedOpen}>
           <div className="nav-children">
             {pinned.length === 0 && <div className="nav-hint">Pin a note, or drop one here</div>}
             {pinned.map(p => (
@@ -198,7 +208,7 @@ export function Sidebar() {
               </a>
             ))}
           </div>
-        )}
+        </Collapse>
         <div className="nav-sep" />
         {link(href({ name: 'notes' }), <FileText size={18} />, 'Notes', route.name === 'notes' && !route.folder && !route.tag)}
         {link(href({ name: 'tasks' }), <CheckCircle2 size={18} />, 'Tasks', isActive('tasks'))}
@@ -209,19 +219,19 @@ export function Sidebar() {
         <div className={classNames('nav-item', route.name === 'folders' && 'active', hover === 'root' && 'drop-over')} title="Folders"
           {...dropZone('root', drop, moveInto(null), canMove(null), importInto(null))}
           onClick={rowClick(() => go({ name: 'folders' }))}>
-          <button className="nav-chevron" aria-label="Toggle folders" onClick={() => setFoldersOpen(o => !o)}>{foldersOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
+          <button className="nav-chevron" aria-label="Toggle folders" onClick={() => setFoldersOpen(o => !o)}><Chevron open={foldersOpen} /></button>
           <a className="nav-link" href={href({ name: 'folders' })}><FolderIcon size={18} /><span className="label">Folders</span></a>
         </div>
-        {foldersOpen && <div className="nav-children" style={{ marginLeft: 6 }}>{(childrenOf.get(null) ?? []).map(f => folderNode(f, 0))}</div>}
+        <Collapse open={foldersOpen}><div className="nav-children" style={{ marginLeft: 6 }}>{(childrenOf.get(null) ?? []).map(f => folderNode(f, 0))}</div></Collapse>
 
         <div className="nav-item" role="button" tabIndex={0} title="Tags"
           aria-expanded={rail ? undefined : tagsOpen} aria-haspopup={rail ? 'menu' : undefined}
           onClick={e => { if (rail) tagMenu.open(e, tagsMenuEntries(), 'left'); else setTagsOpen(o => !o); }}
           onKeyDown={e => activateKeys(() => { if (rail) tagMenu.open({ currentTarget: e.currentTarget }, tagsMenuEntries(), 'left'); else setTagsOpen(o => !o); })(e)}>
-          <span className="nav-chevron">{tagsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+          <span className="nav-chevron"><Chevron open={tagsOpen} /></span>
           <TagIcon size={18} /><span className="label">Tags</span>
         </div>
-        {tagsOpen && (
+        <Collapse open={tagsOpen}>
           <div className="nav-children">
             {tagTree.names.length === 0 && <div className="nav-hint">No tags yet</div>}
             {tagTree.names.filter(n => { const p = n.split('/'); return p.length === 1 || openTags.has(p.slice(0, -1).join('/')); }).map(n => {
@@ -234,7 +244,7 @@ export function Sidebar() {
                   {...dropZone(key, drop, tagIt(n), notesOnly)}
                   onClick={rowClick(() => go({ name: 'notes', tag: n }))}
                   onContextMenu={e => { e.preventDefault(); tagMenu.open({ currentTarget: e.currentTarget }, [{ label: 'Rename tag…', onClick: rename }]); }}>
-                  <button className="nav-chevron" style={{ visibility: hasKids ? 'visible' : 'hidden' }} aria-label="Toggle" onClick={() => toggleTag(n)}>{openTags.has(n) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
+                  <button className="nav-chevron" style={{ visibility: hasKids ? 'visible' : 'hidden' }} aria-label="Toggle" onClick={() => toggleTag(n)}><Chevron open={openTags.has(n)} /></button>
                   <a className="nav-link" href={href({ name: 'notes', tag: n })}>
                     <i className="tag-dot" style={tagStyle(n)} /><span className="label">{n.split('/').pop()}</span>
                   </a>
@@ -244,7 +254,7 @@ export function Sidebar() {
               );
             })}
           </div>
-        )}
+        </Collapse>
         <div className="nav-sep" />
         {conflicts.length > 0 && link(href({ name: 'conflicts' }), <AlertTriangle size={18} className="warn-icon" />, 'Conflicts', isActive('conflicts'),
           <><span className="badge">{conflicts.length}</span><i className="alert-dot" /></>)}

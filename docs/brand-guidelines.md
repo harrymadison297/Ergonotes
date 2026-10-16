@@ -1,8 +1,8 @@
-# Ergonotes Brand Guidelines v1.5
+# Ergonotes Brand Guidelines v1.6
 
 > Source of truth for the look and voice of Ergonotes. The CSS tokens in
 > `packages/app/src/styles/tokens.css` implement this document; change both together.
-> Last updated: 2026-10-15 (v1.5)
+> Last updated: 2026-10-16 (v1.6)
 
 ## Quick reference
 
@@ -14,7 +14,7 @@
 | Neutrals | `#4e4d4c` · `#696564` · `#dad9d8` · `#e7e6e5` · canvas `#f6f5f4` · paper `#ffffff` |
 | Typeface | Inter (variable), system fallback |
 | Shape | 8 px controls, 12 px cards, 16 px dialogs, fully round icon buttons |
-| Motion | 120–280 ms, ease-out, transform and opacity only; a press squeezes to 96 % |
+| Motion | 120–280 ms, ease-out, transform and opacity only (panes and tree branches may animate their size, 200 ms); a press squeezes to 96 % |
 | Voice | Calm, plain, brief. Never nags, never jokes at a person's expense |
 
 ## 1. Positioning
@@ -363,13 +363,17 @@ template action; **Move to trash**, **Empty trash** (the place itself is "Trash"
 ## 9. Motion and touch
 
 Motion explains what changed; it never decorates. Only `transform` and `opacity` move (colours fade),
-so nothing re-lays out. `prefers-reduced-motion: reduce` turns all of it off.
+so nothing re-lays out. The one exception is a pane or a tree branch opening or closing: a sidebar, the note
+list or the right sidebar changing width (the column is animated, the pane's content keeps its own width and is
+clipped, so nothing inside reflows), and a folder's branch changing height, both in `--t-pane`. Dragging a pane's
+edge is never eased: it follows the pointer. `prefers-reduced-motion: reduce` turns all of it off.
 
 | Token | Value | Use |
 |---|---|---|
 | `--t-fast` | 120 ms | Hover, press, colour changes |
 | `--t-base` | 180 ms | Menus, popovers, the search popup, shadows |
-| `--t-slow` | 280 ms | Dialogs, side panel, bottom sheets, toasts |
+| `--t-slow` | 280 ms | Dialogs, bottom sheets, toasts |
+| `--t-pane` | 200 ms | A pane or a tree branch opening or closing (width or height) |
 | `--ease` | `cubic-bezier(.2,.7,.2,1)` | Everything that enters or changes |
 | `--ease-spring` | `cubic-bezier(.34,1.45,.64,1)` | Toasts and the floating action button only |
 
@@ -380,7 +384,9 @@ so nothing re-lays out. `prefers-reduced-motion: reduce` turns all of it off.
 | Menus, popovers, model picker | Fade and scale from .97, 180 ms, from the corner they hang from |
 | Dialogs | Fade, rise 10 px and scale from .98, 280 ms; bottom sheet on phones |
 | Search popup | As a menu, from the top centre |
-| Side panel (Contents / Assistant) | Fades in from 20 px to the right |
+| Sidebar, note list, right sidebar (Contents / Assistant), full screen | The column slides to its new width; the sidebar's labels fade in or out as it widens or narrows |
+| Folder, Pinned, Tags in the sidebar | The branch grows or shrinks; its arrow turns a quarter |
+| Tags that do not fit the note's footer | Pills become dots; pointing at the dots opens a panel above them (fade, 4 px rise) |
 | Open note on a phone | Slides up from the bottom |
 | Toasts | Rise 12 px with a light spring |
 | Selected note row | The indigo marker grows from the top |
@@ -399,6 +405,7 @@ Assistant open as bottom sheets; a note opens full screen.
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-10-14 | Initial guidelines; palette fixed to green + cool-grey scale |
+| 1.6 | 2026-10-16 | Panes and tree branches animate their size (`--t-pane`, 200 ms), the one exception to transform-and-opacity; collapsed sidebar 60 px with 36 px controls on a 4 / 20 px rhythm; tags become dots with a panel when they do not fit |
 | 1.5 | 2026-10-15 | Warm stone neutrals and canvas `#f6f5f4` (replaces the cool slate scale); primary fill `#008629`; indigo for selection, purple for tasks, orange for events; tag slots 4–5 become magenta and lime; field border `#878382`; warm dark theme; radii 8/12/16; canvas-and-cards (no sidebar divider); motion and touch rules; phone bottom sheets |
 | 1.4 | 2026-10-14 | Even-size rule removed; sizes taken from the reference as measured (13 px body, 15 px editor, 22 px headings, 30 px title); icon rail as default, Create menu, new Home, Files page, collapse-list and full-screen; features not yet built listed in docs/issues/11 |
 | 1.3 | 2026-10-14 | Matched to the Evernote web reference: note list as cards with a View options switch, rounded white note panel on the grey frame, 22/30 px headings, "Edited" line, thinner icon strokes |

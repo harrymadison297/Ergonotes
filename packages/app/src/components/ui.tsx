@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, Check, Star, X } from 'lucide-react';
+import { Bell, Check, ChevronRight, Star, X } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { classNames, dueLabel, firstSentence, relTime } from '../state/util';
 import { tagStyle } from '../state/tags';
@@ -126,6 +126,35 @@ export function IconBtn({ label, icon, onClick, variant, size, active, disabled,
   );
 }
 
+// ---------------------------------------------------------------- opening and closing
+/** A disclosure arrow: one icon that turns a quarter when its section opens. */
+export function Chevron({ open, size = 14 }: { open: boolean; size?: number }) {
+  return <ChevronRight size={size} className={classNames('chev', open && 'open')} />;
+}
+
+/**
+ * A section that opens and closes by growing and shrinking. The content stays mounted while it closes and is gone
+ * afterwards, so a closed branch costs nothing and cannot be tabbed into.
+ */
+export function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
+  const [mounted, setMounted] = useState(open);
+  const [shown, setShown] = useState(open);
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      // one frame closed, so there is something to grow from
+      let b = 0;
+      const a = requestAnimationFrame(() => { b = requestAnimationFrame(() => setShown(true)); });
+      return () => { cancelAnimationFrame(a); cancelAnimationFrame(b); };
+    }
+    setShown(false);
+    const t = setTimeout(() => setMounted(false), 220);
+    return () => clearTimeout(t);
+  }, [open]);
+  if (!mounted) return null;
+  return <div className={classNames('collapse', shown && 'open')}><div className="collapse-in">{children}</div></div>;
+}
+
 // ---------------------------------------------------------------- note presentation
 /** Coloured dots for tags, for compact views. Names are in the tooltip and the accessible label. */
 export function TagDots({ tags, max = 4 }: { tags: string[]; max?: number }) {
@@ -180,7 +209,9 @@ export function TagBar({ tags, onRemove, children }: { tags: string[]; onRemove?
   const shown = dots && tags.length > 0;
   return (
     <div className="tag-bar" ref={bar}>
-      <span className="tag-measure" ref={measure} aria-hidden>{tags.map(t => <TagPill key={t} tag={t} onRemove={onRemove && (() => undefined)} />)}</span>
+      <span className="tag-measure" ref={measure} aria-hidden>
+        {tags.map(t => <span key={t} className="tag-ghost" style={tagStyle(t)}><i className="tag-dot" />{t}{onRemove && <button type="button" tabIndex={-1}><X size={12} /></button>}</span>)}
+      </span>
       {shown ? (
         <span className="tag-cluster" tabIndex={0} role="group" aria-label={`Tags: ${tags.join(', ')}`}>
           <span className="tag-dots">{tags.map(t => <i key={t} className="tag-dot" style={tagStyle(t)} />)}</span>

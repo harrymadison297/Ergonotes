@@ -1,4 +1,5 @@
 import { Sparkles, TableOfContents, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useApp } from '../state/app';
 import { editorBridge, useOutline } from '../state/editorBridge';
 import { setPrefs, usePrefs } from '../state/prefs';
@@ -35,6 +36,17 @@ export function useAsideVisible(): boolean {
   return prefs.asideTab === 'ai' || !!outline || ('note' in app.route && !!app.route.note);
 }
 
+/** True while `on`, and for `ms` after it turns off: a pane that is closing has to stay on screen until it has gone. */
+function useLingering(on: boolean, ms: number): boolean {
+  const [lingering, setLingering] = useState(on);
+  useEffect(() => {
+    if (on) { setLingering(true); return; }
+    const t = setTimeout(() => setLingering(false), ms);
+    return () => clearTimeout(t);
+  }, [on, ms]);
+  return on || lingering;
+}
+
 /**
  * The right sidebar: the note's contents and the AI assistant, as two tabs of one panel that sits beside every page.
  * On a phone only the assistant exists, and it covers the screen.
@@ -42,7 +54,9 @@ export function useAsideVisible(): boolean {
 export function RightSidebar() {
   const app = useApp();
   const prefs = usePrefs();
-  const visible = useAsideVisible();
+  const wanted = useAsideVisible();
+  const lingering = useLingering(wanted, 220);
+  const visible = app.isMobile ? wanted : lingering; // a phone's sheet has its own way out
   if (!visible) return null;
   if (app.isMobile && prefs.asideTab !== 'ai') return null;
   const tab = app.isMobile ? 'ai' : prefs.asideTab;

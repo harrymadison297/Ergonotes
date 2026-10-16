@@ -90,6 +90,106 @@ await page.keyboard.press('Enter');
 await settle();
 check('the command "Show or hide the note list" shows it again', (await width('.pane-list')) === before.list && (await prefs()).listHidden === false, JSON.stringify(await prefs()));
 
+// ---- opening and closing is a movement, not a jump
+{
+  await page.goto(`${base}/#/notes/${note.id}`);
+  await page.locator('.editor-top').waitFor();
+  await page.setViewportSize({ width: 1700, height: 900 });
+  await settle();
+  // click something, then watch one measure every frame for half a second
+  const watch = (clickSel, measure) => page.evaluate(async ({ clickSel, measure }) => {
+    const get = new Function(`return (${measure})()`);
+    const seen = [get()];
+    document.querySelector(clickSel).click();
+    const t0 = performance.now();
+    await new Promise(done => { const tick = () => { seen.push(get()); if (performance.now() - t0 < 500) requestAnimationFrame(tick); else done(); }; requestAnimationFrame(tick); });
+    return seen;
+  }, { clickSel, measure });
+  const moves = (seen, from, to) => {
+    const mid = seen.filter(v => Math.abs(v - from) > 6 && Math.abs(v - to) > 6);
+    const dir = Math.sign(to - from);
+    const steady = seen.every((v, i) => !i || (v - seen[i - 1]) * dir >= -1);
+    return mid.length >= 4 && steady && Math.abs(seen.at(-1) - to) <= 1;
+  };
+  const w = sel => `() => Math.round(document.querySelector('${sel}')?.getBoundingClientRect().width ?? 0)`;
+
+  let seen = await watch('[aria-label="Collapse sidebar"]', w('.sidebar'));
+  check('collapsing the sidebar slides it narrower over several frames', moves(seen, 264, 60), seen.map(Math.round).join(' '));
+  seen = await watch('[aria-label="Expand sidebar"]', w('.sidebar'));
+  check('and expanding slides it wider', moves(seen, 60, 264), seen.map(Math.round).join(' '));
+  await page.evaluate(() => document.querySelector('[aria-label="Collapse sidebar"]').click());
+  await page.waitForTimeout(70);
+  check('while it changes its content fades in, and that ends with it', await page.evaluate(() => document.querySelector('.sidebar').classList.contains('switching')));
+  await page.screenshot({ path: `${shots}/sidebar-collapsing.png`, clip: { x: 0, y: 0, width: 500, height: 500 } });
+  await page.waitForTimeout(400);
+  check('(it is not left on)', !(await page.evaluate(() => document.querySelector('.sidebar').classList.contains('switching'))));
+  await page.evaluate(() => document.querySelector('[aria-label="Expand sidebar"]').click());
+  await page.waitForTimeout(70);
+  await page.screenshot({ path: `${shots}/sidebar-expanding.png`, clip: { x: 0, y: 0, width: 500, height: 500 } });
+  await settle();
+
+  seen = await watch('.list-head [aria-label="Hide the note list"]', w('.pane-list'));
+  check('hiding the note list slides it away', moves(seen, 370, 0), seen.map(Math.round).join(' '));
+  seen = await watch('.editor-top [aria-label="Show the note list"]', w('.pane-list'));
+  check('and showing it slides it back', moves(seen, 0, 370), seen.map(Math.round).join(' '));
+
+  seen = await watch('[aria-label="Close sidebar"]', w('.aside-wrap'));
+  check('closing the right sidebar slides it away', moves(seen, 368, 0), seen.map(Math.round).join(' '));
+  check('and it is gone from the page afterwards', (await page.locator('.aside-wrap').count()) === 0);
+  seen = await watch('[aria-label="Table of contents"], .toc-toggle', w('.pane-body'));
+  check('the note makes room for it', seen.length > 4);
+  await settle();
+  check('opening it again brings it back', (await width('.aside')) > 300);
+
+  seen = await watch('[aria-label="Full screen"]', w('.pane-body'));
+  check('full screen widens the note over several frames', moves(seen, seen[0], seen.at(-1)) && seen.at(-1) > 1500, seen.map(Math.round).join(' '));
+  await page.keyboard.press('Escape');
+  await settle();
+
+  // a folder opens and closes by growing and shrinking
+  const F = await rpc('createFolder', { title: 'Branch' });
+  for (const t of ['One', 'Two', 'Three']) await rpc('createFolder', { title: t, parent: F.id });
+  await page.reload();
+  await page.locator('.sidebar').waitFor();
+  await settle();
+  const branch = page.locator('.nav-item', { hasText: 'Branch' }).first();
+  const kidsH = () => page.evaluate(() => { const c = [...document.querySelectorAll('.nav-item')].find(e => e.textContent.includes('Branch'))?.nextElementSibling; return c?.classList.contains('collapse') ? Math.round(c.getBoundingClientRect().height) : 0; });
+  check('a folder with folders in it starts closed', (await kidsH()) === 0 && (await page.locator('.nav-item', { hasText: /^One/ }).count()) === 0);
+  await branch.locator('.nav-chevron').click();
+  const grow = [];
+  for (let i = 0; i < 12; i++) { grow.push(await kidsH()); await page.waitForTimeout(25); }
+  check('opening a folder grows its branch over several frames', grow[grow.length - 1] >= 90 && grow.filter(h => h > 5 && h < grow[grow.length - 1] - 5).length >= 2, grow.join(' '));
+  await branch.locator('.nav-chevron').click();
+  const shrink = [];
+  for (let i = 0; i < 12; i++) { shrink.push(await kidsH()); await page.waitForTimeout(25); }
+  check('closing it shrinks the branch, and it is gone afterwards', shrink[0] > 5 && shrink.at(-1) === 0 && (await page.locator('.nav-item', { hasText: /^One/ }).count()) === 0, shrink.join(' '));
+  await branch.locator('.nav-chevron').click();
+  await settle();
+  check('a branch that is open can be reached with the keyboard, a closed one not', (await page.locator('.nav-item', { hasText: /^One/ }).count()) === 1);
+  await branch.locator('.nav-chevron').click();
+  await settle();
+
+  // dragging the edge of a pane follows the pointer at once
+  const edge = await page.locator('.sidebar .resizer').boundingBox();
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2 + 60, edge.y + 200, { steps: 3 });
+  const dragged = await page.evaluate(() => Math.round(document.querySelector('.sidebar').getBoundingClientRect().width));
+  await page.mouse.up();
+  check('dragging a pane edge does not lag behind the pointer', dragged >= 320, dragged);
+  check('and letting go ends that', !(await page.evaluate(() => document.documentElement.classList.contains('resizing'))));
+  await page.locator('.sidebar .resizer').dblclick();
+  await settle();
+
+  // somebody who asked for less motion gets the end state at once
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  seen = await watch('[aria-label="Collapse sidebar"]', w('.sidebar'));
+  check('with reduced motion the sidebar jumps', seen.filter(v => Math.abs(v - 264) > 6 && Math.abs(v - 60) > 6).length === 0 && Math.abs(seen.at(-1) - 60) <= 1, seen.map(Math.round).join(' '));
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.locator('[aria-label="Expand sidebar"]').click();
+  await settle();
+}
+
 // ---- tags in the editor footer: pills with names while they fit, dots with a panel when they would not
 {
   const tagged = await rpc('createNote', { title: 'Tagged', body: 'x', tags: ['projects/alpha-release', 'reading-list', 'meeting-notes', 'ideas', 'later'] });
@@ -103,8 +203,8 @@ check('the command "Show or hide the note list" shows it again', (await width('.
   check('with room the tags show their names, five pills in one line', (await mode()) === 'pills' && (await page.evaluate(() => { const t = [...document.querySelectorAll('.editor-foot .tag-bar > .tag-pill')].map(e => Math.round(e.getBoundingClientRect().top)); return new Set(t).size === 1 && t.length === 5; })));
   // sweep the width down and up again: the mode changes once each way and never flaps
   const trail = [];
-  for (let w = 1800; w >= 500; w -= 20) { await page.setViewportSize({ width: w, height: 900 }); await page.waitForTimeout(40); trail.push(await mode()); }
-  for (let w = 500; w <= 1800; w += 20) { await page.setViewportSize({ width: w, height: 900 }); await page.waitForTimeout(40); trail.push(await mode()); }
+  for (let w = 1800; w >= 800; w -= 20) { await page.setViewportSize({ width: w, height: 900 }); await page.waitForTimeout(40); trail.push(await mode()); }
+  for (let w = 800; w <= 1800; w += 20) { await page.setViewportSize({ width: w, height: 900 }); await page.waitForTimeout(40); trail.push(await mode()); }
   const flips = trail.filter((m, i) => i && m !== trail[i - 1]).length;
   check('narrowing the window turns the pills into dots once, widening turns them back once', flips === 2 && trail[0] === 'pills' && trail.includes('dots'), `${flips} flips: ${trail.join(',').replace(/(pills,)+/g, 'pills…').replace(/(dots,)+/g, 'dots…')}`);
   check('the footer stays one line tall while it happens', await page.evaluate(() => document.querySelector('.editor-foot').getBoundingClientRect().height < 60));
