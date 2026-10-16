@@ -68,6 +68,28 @@ await page.keyboard.press('Escape');
 await settle();
 check('and the next Esc leaves full screen', (await prefs()).focus === false);
 
+// ---- the note list: a button in its own header hides it, the one in the editor shows it again
+check('the list header has a Hide button beside an open note', (await page.locator('.list-head').getByRole('button', { name: 'Hide the note list' }).count()) === 1);
+await page.locator('.list-head').getByRole('button', { name: 'Hide the note list' }).click();
+await settle();
+check('it hides the list and the note takes the room', (await width('.pane-list')) === 0 && (await prefs()).listHidden === true);
+await page.getByRole('button', { name: 'Show the note list' }).click();
+await settle();
+check('the editor button brings it back', (await width('.pane-list')) === before.list && (await prefs()).listHidden === false);
+await page.getByRole('button', { name: 'Hide the note list' }).first().click();
+await settle();
+await page.goto(`${base}/#/notes`);
+await settle();
+check('with no note open the list stays, so the folder view is never alone with a hidden list', (await width('.pane-list')) > 200);
+await page.goto(`${base}/#/notes/${note.id}`);
+await settle();
+check('and it is still hidden when a note is opened again', (await width('.pane-list')) === 0);
+await page.keyboard.press('Control+k');
+await page.keyboard.type('>note list');
+await page.keyboard.press('Enter');
+await settle();
+check('the command "Show or hide the note list" shows it again', (await width('.pane-list')) === before.list && (await prefs()).listHidden === false, JSON.stringify(await prefs()));
+
 check('no console errors', errors.filter(e => !/Failed to load resource|status of 400/.test(e)).length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 console.log(failures ? `${failures} check(s) failed` : 'all checks passed');

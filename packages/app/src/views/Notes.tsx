@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownUp, FileText, FilePlus2, FolderPlus, ListFilter, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { ArrowDownUp, ChevronsLeft, FileText, FilePlus2, FolderPlus, ListFilter, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
@@ -95,6 +95,7 @@ export function NotesView({ noteId }: { noteId?: string }) {
             { label: 'Cards', checked: prefs.listView === 'cards', onClick: () => setPrefs({ listView: 'cards' }) },
             { label: 'List', checked: prefs.listView === 'list', onClick: () => setPrefs({ listView: 'list' }) },
           ], 'right')} />
+          {noteId && <IconBtn label="Hide the note list" icon={<ChevronsLeft size={18} />} onClick={() => setPrefs({ listHidden: true })} />}
         </div>
       </div>
       {sortMenu.node}{viewMenu.node}
@@ -131,7 +132,7 @@ export function NotesView({ noteId }: { noteId?: string }) {
     );
   }
   return (
-    <div className={classNames('split', prefs.listHidden && 'list-hidden')}>
+    <div className={classNames('split', prefs.listHidden && !!noteId && 'list-hidden')}>
       {listPane}
       <div className="pane-body">
         {noteId ? <NoteEditor key={noteId} id={noteId} /> : explorer}
