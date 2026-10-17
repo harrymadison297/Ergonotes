@@ -27,7 +27,10 @@ and a transcript, kept in one folder and played with the pictures marked on the 
 <tr><td><img src="docs/media/habits.png" alt="Habits"></td><td><img src="docs/media/calendar.png" alt="Calendar"></td></tr>
 <tr><td><img src="docs/media/scratchpad.png" alt="Scratchpad"></td><td><img src="docs/media/export.png" alt="Export to Word"></td></tr>
 <tr><td><img src="docs/media/vscode.png" alt="VS Code"></td><td><img src="docs/media/tabs.png" alt="Tabs and Open with"></td></tr>
+<tr><td colspan="2"><img src="docs/media/start.png" alt="Start at once, with a curve loader"></td></tr>
 </table>
+
+The raw screenshots (real Windows and Android apps, light and dark) are in [docs/media/screens](docs/media/screens).
 
 ![Habit check-ins](docs/media/habit-flow.gif)
 
