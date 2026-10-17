@@ -7,7 +7,7 @@ A personal, offline-first note system for one person across several devices. Not
 ### Content
 
 **Vault**:
-A folder on a device that holds one person's notes as Markdown files, in the folders they are in, plus a hidden `.ergonotes/` with what Markdown cannot hold (history, assistant conversations, AI settings, sync state), sealed by one password. Putting Markdown files in the folder is enough for them to be notes.
+A folder on a device that holds one person's notes as Markdown files, in the folders they are in, plus a hidden `.ergonotes/` with what Markdown cannot hold (history, assistant conversations, AI settings, sync state), sealed by one password, or by a blank one when the person has not set a password. Putting Markdown files in the folder is enough for them to be notes.
 _Avoid_: Workspace, notebook, library, database
 
 **Item**:
@@ -108,9 +108,41 @@ _Avoid_: Boilerplate, snippet
 A Note named for a calendar date, created from a Template when that day is opened.
 _Avoid_: Journal entry, diary
 
+**Habit**:
+A Note in the `Habits/` Folder, marked `habit: true`, that a person wants to do repeatedly. Its **Target** is "n times in D days" (D is 1, 3, 5 or 7), counted over a window that ends today and reaches D−1 days back. A Habit has no time of day. Its Markdown holds only what the person did; every figure about it (streak, misses, rate) is computed when it is shown.
+_Avoid_: Routine, recurring task, goal
+
+**Check-in**:
+One line under `## Log` of a Habit that records one time the person did it and when: `- [x] @done(2026-10-17T07:42) comment`. A backdated one has a date and no time. A day's remark that is not a Check-in is a plain bullet, `- 2026-10-16: reason`. A day that is due and has no Check-in has no line at all.
+_Avoid_: Completion, log entry, tick
+
+**Habit day**:
+A calendar day judged against a Habit's Target: *met* when its window holds at least n Check-ins, *behind* when fewer (only for days already past; today still reads "k to go"), *exempt* before `start:` and for the D−1 days after it unless met. **Missed N days** is N behind days in a row ending yesterday; a **Streak** is the met days in a row ending today. The Tasks a Habit shows on Home, the Calendar and the Tasks page are *virtual*: computed from the Target, they become a Check-in line only when the person ticks one.
+_Avoid_: Miss as a stored state
+
+**Nudge**:
+The fixed sentence the app shows about a Habit: praise when today's Target is met or a Streak reaches 3, 7, 14, 30, 60 or 100 days, and gentler or firmer words after 1, 2, 3 to 6, and 7 or more missed days. Shown as a card on Home and on the Habit, and as one toast when the app opens; never as an operating-system notification.
+_Avoid_: Reminder (that belongs to a Task), alert
+
+**Scratchpad**:
+The light-blue note on Home that is open before anything is written. It uses the same editor as a Note, but is not a Note: its draft is kept on the Device, outside the Vault, and becomes a Note in the Inbox only when sent. Files and pictures dropped on it join the draft and reach `attachments/` only when it is sent.
+_Avoid_: Quick note, sticky, draft note
+
+**Tab**:
+An open Item in the strip above the content area. Clicking opens in the current Tab, Ctrl+click or middle click in a new one, and the last 20 closed Tabs can be reopened. Pages such as Home, Calendar and Tasks are not Tabs. Not shown on phones.
+_Avoid_: Window, pane, page
+
+**External file**:
+A Markdown or text file opened from outside the Vault ("Open with Ergonotes"). It opens in a Tab with the same editor and is saved straight back to where it is; it gets no `id:` or other frontmatter, no Commits, no history, no Sync and no link rewriting. It can be copied into the Vault as a Note.
+_Avoid_: Imported file, linked file
+
 **Task**:
-A checkbox Block inside a Note, optionally with a due date and reminder. A Task does not exist outside its Note.
-_Avoid_: Todo, reminder, action item
+A checkbox Block inside a Note, optionally with a due date and a Reminder. A Task does not exist outside its Note (the virtual Tasks of a Habit are not Tasks until ticked; see Habit day).
+_Avoid_: Todo, action item
+
+**Reminder**:
+The moment a Task tells the person about itself (`@remind(...)`). It belongs to one Task and is not a separate thing; the Calendar counts the Tasks that have a Reminder on a day.
+_Avoid_: Alarm, notification (that is how a Reminder reaches the person, not what it is)
 
 **Command**:
 A named action of the app ("Toggle sidebar", "New note", "Open Settings") that the search palette lists and runs. A Command is not a menu entry of one Item; those are *item actions* (Open, Rename, Move, Duplicate…).
