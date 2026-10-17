@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { mergeText, preserveBlocks, recordLinkMarkdown, toB64, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
-import { classNames, debounce, download, isoDay } from '../state/util';
+import { classNames, debounce, download, downloadBlob, isoDay } from '../state/util';
 import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MentionSuggest, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, TrailingParagraph } from '../editor/extensions';
 import { RawBlock, RawInline, Wikilink } from '../editor/raw';
 import { AudioClip, CodeWithDiagrams, DateMention, InlineCheckbox, MathBlock, MathInline, PageBreak, Toggle } from '../editor/blocks';
@@ -476,6 +476,14 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
   const exportEntries = (): MenuEntry[] => [
     { label: 'Markdown (.md)', icon: <FileText size={16} />, onClick: async () => { await flushNow(); const r = await app.run(api.exportNote(id, 'md')); if (r) download(r.filename, r.mime, r.content); } },
     ...(outside ? [] : [{ label: 'Web page (.html)', icon: <FileText size={16} />, onClick: async () => { await flushNow(); const r = await app.run(api.exportNote(id, 'html')); if (r) download(r.filename, r.mime, r.content); } }]),
+    { label: 'Word (.docx)', icon: <FileText size={16} />, onClick: async () => {
+      await flushNow();
+      const { noteToDocx } = await import('../state/exportDocx');
+      try {
+        const blob = await noteToDocx({ title: title || doc.title, tags: doc.tags, body: editor.view.dom as HTMLElement });
+        downloadBlob(`${(title || doc.title || 'Note').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Note'}.docx`, blob);
+      } catch (e) { app.toast(`Could not make the Word file: ${e instanceof Error ? e.message : String(e)}`, 'error'); }
+    } },
     ...(canPrint() ? [{ label: 'PDF…', icon: <Download size={16} />, onClick: async () => {
       await flushNow();
       await printNote({ title: title || doc.title, tags: doc.tags, body: editor.view.dom as HTMLElement });
