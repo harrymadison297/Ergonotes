@@ -19,6 +19,7 @@ import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, Se
 import { Sidebar } from './Sidebar';
 import { RightSidebar, useAsideVisible } from './RightSidebar';
 import { IconBtn, TagLink, Toasts } from './ui';
+import { CurveLoader } from './CurveLoader';
 import { useSync } from './useSync';
 import { RecorderMini } from './RecorderPanel';
 import { recorder, useRecorder } from '../record/recorder';
@@ -263,6 +264,19 @@ function RecordingDock() {
   return <RecorderMini floating />;
 }
 
+/** While the vault folder is first read after opening: the app is already usable, this says why the lists are still filling. */
+function ScanPill() {
+  const { status } = useApp();
+  const scan = status.scan;
+  if (!scan) return null;
+  return (
+    <div className="scan-pill" role="status" aria-live="polite">
+      <CurveLoader size={28} label="Reading your notes" />
+      <span>{scan.total > 0 ? `Reading your notes · ${scan.done.toLocaleString('en')} of ${scan.total.toLocaleString('en')} files` : 'Reading your notes…'}</span>
+    </div>
+  );
+}
+
 export function Shell() {
   const app = useApp();
   const prefs = usePrefs();
@@ -273,7 +287,7 @@ export function Shell() {
   const focus = prefs.focus && app.route.name === 'notes' && !!app.route.note;
   useLeaveFocusOnEscape(focus);
   if (app.isMobile) {
-    return <><MobileShell /><RightSidebar /><RecordingDock /><DialogHost /><Toasts toasts={app.toasts} /></>;
+    return <><MobileShell /><RightSidebar /><RecordingDock /><DialogHost /><ScanPill /><Toasts toasts={app.toasts} /></>;
   }
   return (
     <>
@@ -284,6 +298,7 @@ export function Shell() {
       </div>
       <RecordingDock />
       <DialogHost />
+      <ScanPill />
       <Toasts toasts={app.toasts} />
     </>
   );

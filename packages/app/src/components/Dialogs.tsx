@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Check, Copy, FileDown, FileUp, Plus, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { Bot, Check, Copy, FileDown, FileUp, Link2, Plus, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { applyHunks, canPlaceInto, completeText, PROVIDER_LABEL, THINKING_LEVELS, ERGONOTES_SKILL_MD, joinDoc, lineDiff, splitDoc, type AiConnectionInfo, type AiProvider, type ThinkingLevel, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, download, relTime } from '../state/util';
@@ -7,6 +7,8 @@ import { Dialog, IconBtn } from './ui';
 import { ModelPicker } from './ModelPicker';
 import { KeyboardSettings } from './KeyboardSettings';
 import { setPrefs, usePrefs } from '../state/prefs';
+import { setWantsToJoin } from '../state/firstRun';
+import { warnNoPassword } from '../state/noPassword';
 import { StoreForm, formFromStore, storeFromForm, type StoreFormState } from './StoreForm';
 
 // ---------------------------------------------------------------- conflicted revision
@@ -268,6 +270,8 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
   const [msg, setMsg] = useState<string | null>(null);
   const [oldPw, setOldPw] = useState('');
   const [newPw, setNewPw] = useState('');
+  const [newPw2, setNewPw2] = useState('');
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const folders = app.items.filter(i => i.type === 'folder' && !i.inTrash);
   const remote = app.mode === 'remote';
 
@@ -279,6 +283,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
       await app.api.setStore(storeFromForm(store) as StoreConfig);
       await app.refresh();
       setMsg('Connected. Your notes are syncing.');
+      warnNoPassword(app, 'store');
     } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); }
     setBusy(false);
   };
@@ -335,6 +340,17 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
             {app.status.store && <button className="btn" onClick={async () => { const r = await app.run(app.api.sync({ full: true })); await app.refresh(); app.toast(r?.error ?? 'Full sync finished', r?.error ? 'error' : 'info'); }}>Sync now (full check)</button>}
             {app.status.store && <button className="btn danger" onClick={async () => { await app.run(app.api.setStore(null)); await app.refresh(); }}>Disconnect</button>}
           </div>
+          {!app.status.hasPassword && app.status.passwordOptional && !app.status.store && (
+            <div className="field" style={{ marginTop: 24 }}>
+              <label>Already have a vault on another device?</label>
+              <span className="hint">Join it instead of connecting this one. The notes in this folder stay and are added to that vault; this device’s history and assistant conversations are dropped.</span>
+              <div><button className="btn" style={{ marginTop: 8 }} onClick={async () => {
+                if (!confirm('Join an existing vault? This empty vault is left behind; your notes stay in the folder.')) return;
+                setWantsToJoin(true);
+                try { await app.run(app.api.leaveVault()); location.reload(); } catch (e) { setWantsToJoin(false); setMsg(e instanceof Error ? e.message : String(e)); }
+              }}><Link2 size={16} /> Join an existing vault…</button></div>
+            </div>
+          )}
         </div>
       )}
       {tab === 'ai' && <AiSettings />}
@@ -342,17 +358,49 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
       {tab === 'agents' && remote && <AgentsPanel />}
       {tab === 'security' && (
         <div style={{ maxWidth: 480 }}>
-          <h3 style={{ marginTop: 0 }}>Change vault password</h3>
-          <div className="field"><label htmlFor="pw-old">Current password</label><input id="pw-old" type="password" className="input" autoComplete="current-password" value={oldPw} onChange={e => setOldPw(e.target.value)} /></div>
-          <div className="field"><label htmlFor="pw-new">New password</label><input id="pw-new" type="password" className="input" autoComplete="new-password" value={newPw} onChange={e => setNewPw(e.target.value)} />
-            <span className="hint">At least 12 characters. Only the key wrapper changes; your notes are not re-encrypted. Other devices pick up the new password the next time they are unlocked while online.</span></div>
-          {msg && <p role="status" className={msg === 'Password changed' ? undefined : 'error-text'}>{msg}</p>}
-          <button className="btn primary" disabled={!oldPw || !newPw} onClick={async () => {
-            try { await app.api.changePassword(oldPw, newPw); setMsg('Password changed'); setOldPw(''); setNewPw(''); } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); }
-          }}>Change password</button>
+          {!app.status.hasPassword ? (
+            <>
+              <h3 style={{ marginTop: 0 }}>This vault has no password</h3>
+              <p className="muted">It opens on this device without asking. Your notes are plain files in the vault folder either way. A password matters once the vault is on storage you share with a provider, or on another device.</p>
+              <div className="field"><label htmlFor="pw-new">New password</label><input id="pw-new" type="password" className="input" autoComplete="new-password" value={newPw} onChange={e => setNewPw(e.target.value)} />
+                <span className="hint">At least 12 characters; a passphrase of several words is ideal. If you forget it your notes can’t be recovered from the storage. This device stays unlocked.</span></div>
+              <div className="field"><label htmlFor="pw-new2">Repeat password</label><input id="pw-new2" type="password" className="input" autoComplete="new-password" value={newPw2} onChange={e => setNewPw2(e.target.value)} /></div>
+              {msg && <p role="status" className={msg === 'Password set' ? undefined : 'error-text'}>{msg}</p>}
+              <button className="btn primary" disabled={!newPw} onClick={async () => {
+                if (newPw !== newPw2) return setMsg('The two passwords do not match.');
+                try { await app.api.changePassword('', newPw); await app.refresh(); setMsg('Password set'); setNewPw(''); setNewPw2(''); } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); }
+              }}>Set password</button>
+            </>
+          ) : (
+            <>
+              <h3 style={{ marginTop: 0 }}>Change vault password</h3>
+              <div className="field"><label htmlFor="pw-old">Current password</label><input id="pw-old" type="password" className="input" autoComplete="current-password" value={oldPw} onChange={e => setOldPw(e.target.value)} /></div>
+              <div className="field"><label htmlFor="pw-new">New password</label><input id="pw-new" type="password" className="input" autoComplete="new-password" value={newPw} onChange={e => setNewPw(e.target.value)} />
+                <span className="hint">At least 12 characters. Only the key wrapper changes; your notes are not re-encrypted. Other devices pick up the new password the next time they are unlocked while online.</span></div>
+              {msg && <p role="status" className={msg === 'Password changed' || msg === 'Password removed' ? undefined : 'error-text'}>{msg}</p>}
+              <button className="btn primary" disabled={!oldPw || !newPw} onClick={async () => {
+                try { await app.api.changePassword(oldPw, newPw); setMsg('Password changed'); setOldPw(''); setNewPw(''); } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); }
+              }}>Change password</button>
+              {app.status.passwordOptional && (
+                <div style={{ marginTop: 24 }}>
+                  <h3>Remove the password</h3>
+                  <p className="muted">The vault opens without asking. {app.status.store ? 'It is connected to storage, which will then hold everything protected by a blank password.' : 'Anything you later put on a storage is then not secret.'}</p>
+                  {!confirmRemove
+                    ? <button className="btn" disabled={!oldPw} onClick={() => setConfirmRemove(true)}>Remove password…</button>
+                    : <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn danger" onClick={async () => {
+                        try { await app.api.removePassword(oldPw); await app.refresh(); setOldPw(''); setMsg('Password removed'); } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); }
+                        setConfirmRemove(false);
+                      }}>Yes, remove it</button>
+                      <button className="btn" onClick={() => setConfirmRemove(false)}>Keep it</button></div>}
+                  {!oldPw && <span className="hint">Type the current password above to enable this.</span>}
+                </div>
+              )}
+            </>
+          )}
           <hr style={{ margin: '24px 0', border: 0, borderTop: '1px solid var(--border)' }} />
           <button className="btn" onClick={async () => { await app.run(app.api.lock()); location.reload(); }}><LogOut size={16} /> {app.mode === 'remote' ? 'Sign out' : 'Lock now'}</button>
-          <p className="hint">Forgetting the password means your notes can't be recovered; there is no reset.</p>
+          {app.status.hasPassword && <p className="hint">Forgetting the password means your notes can't be recovered from the storage; there is no reset.</p>}
         </div>
       )}
       {tab === 'data' && (
@@ -428,6 +476,7 @@ function AiSettings() {
       await app.refresh();
       setForm(null);
       app.toast(form.isNew ? 'Connection added' : 'Connection saved');
+      if (form.key.trim()) warnNoPassword(app, 'ai');
     } catch (e) { setFormErr(e instanceof Error ? e.message : String(e)); }
   };
   const check = (id: string, checked: boolean, on: (v: boolean) => void, label: string, hint?: string) => (

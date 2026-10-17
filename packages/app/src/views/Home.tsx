@@ -5,6 +5,7 @@ import { href, noteHref } from '../state/router';
 import { isoDay } from '../state/util';
 import { IconBtn, NoteCard, TagLink } from '../components/ui';
 import { TaskRow } from './Tasks';
+import { FirstRunBanner } from '../components/FirstRunBanner';
 
 export function MiniCalendar({ onPick }: { onPick?: (day: string) => void }) {
   const app = useApp();
@@ -62,6 +63,7 @@ export function Home() {
   return (
     <div className="home">
       <h1>Home</h1>
+      <FirstRunBanner />
 
       <div className="home-row">
         <section className="widget w-notes" aria-labelledby="w-notes">

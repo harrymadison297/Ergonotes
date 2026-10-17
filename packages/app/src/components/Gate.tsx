@@ -4,6 +4,7 @@ import { MIN_PASSWORD_LENGTH, type StoreConfig, type VaultStatus } from '@ergono
 import type { Backend } from '../backend';
 import { classNames } from '../state/util';
 import { StoreForm, emptyStore, storeFromForm, type StoreFormState } from './StoreForm';
+import { setWantsToJoin, wantsToJoin } from '../state/firstRun';
 
 function strength(pw: string): number {
   let s = Math.min(pw.length / 20, 1) * 60;
@@ -16,7 +17,7 @@ function strength(pw: string): number {
 
 export function Gate({ backend, status, onReady }: { backend: Backend; status: VaultStatus; onReady: () => void }) {
   const api = backend.api;
-  const [mode, setMode] = useState<'create' | 'join'>('create');
+  const [mode, setMode] = useState<'create' | 'join'>(wantsToJoin() ? 'join' : 'create');
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
   // the key is kept on the device only by the installed apps; a browser never stores it (ADR 0004)
@@ -39,6 +40,7 @@ export function Gate({ backend, status, onReady }: { backend: Backend; status: V
       if (!noVault) await api.unlock(pw, { remember: canRemember && remember });
       else if (mode === 'create') await api.createVault(pw, { ...(remote ? {} : { deviceName }), remember: canRemember && remember, ...(remote && setupToken ? { setupToken } : {}) });
       else await api.joinVault(storeFromForm(store) as StoreConfig, pw, { ...(remote ? {} : { deviceName }), remember: canRemember && remember, ...(remote && setupToken ? { setupToken } : {}) });
+      setWantsToJoin(false);
       onReady();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

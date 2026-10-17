@@ -472,6 +472,16 @@ html.kbd .tag-cluster:focus-visible { outline: 2px solid var(--focus); outline-o
 /* ---------- onboarding ---------- */
 .gate { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; padding: 20px; background: var(--bg-sidebar); overflow: auto; }
 .gate-card { width: min(440px, 100%); min-width: 0; background: var(--bg); border: 1px solid var(--border-card); border-radius: var(--radius-lg); padding: 28px; }
+.curve-loader { display: block; color: var(--green-mark); }
+.loading-screen { place-items: center; }
+.loading-box { display: grid; justify-items: center; gap: 14px; }
+.loading-text { margin: 0; color: var(--text-2); }
+.loading-detail { margin: 0; color: var(--text-3); font-size: var(--fs-small, 13px); }
+.scan-pill { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 10px; padding: 6px 16px 6px 10px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border-card); box-shadow: var(--shadow-lift); color: var(--text-2); font-size: 13px; animation: toast-in .2s ease-out; }
+.first-run { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 0 0 16px; padding: 12px 16px; border-radius: var(--radius-lg); background: var(--green-tint); border: 1px solid var(--border-card); color: var(--text); }
+.first-run-text { flex: 1 1 320px; min-width: 0; }
+.first-run-text code { overflow-wrap: anywhere; }
+.first-run-actions { display: flex; gap: 8px; align-items: center; }
 .gate-card h1 { margin: 12px 0 4px; font-size: var(--fs-h); color: var(--text-strong); }
 .gate-card p { color: var(--text-2); margin: 0 0 18px; }
 .strength { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }

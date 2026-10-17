@@ -170,7 +170,8 @@ export async function createBackend(): Promise<Backend> {
   if (inTauri) {
     // an installed app: the vault is a folder on this device (ADR 0010)
     const { fs, folder, meta } = await tauriFolder();
-    const vault = await Vault.open({ fs, persist: new FsPersist(fs, { local: meta }), fetchImpl, defaultDeviceName: guessDeviceName() });
+    // no password needed (ADR 0012), and the folder is read while the app is already showing
+    const vault = await Vault.open({ fs, persist: new FsPersist(fs, { local: meta }), fetchImpl, defaultDeviceName: guessDeviceName(), passwordOptional: true, backgroundScan: true });
     return new LocalBackend(vault, fetchImpl, folder);
   }
   // a browser with no server: the vault lives in this browser (IndexedDB) and its folder is only in memory

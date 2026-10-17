@@ -9,9 +9,17 @@
     <link rel="icon" href="./favicon.ico" sizes="48x48" />
     <link rel="apple-touch-icon" href="./apple-touch-icon-180.png" />
     <title>Ergonotes</title>
+    <style>
+      /* shown from the first paint until the app takes #root over; the same canvas colours as the app (tokens.css) */
+      html, body { margin: 0; height: 100%; background: #f6f5f4; }
+      .splash { height: 100%; display: grid; place-items: center; color: #2dbe60; }
+      .splash canvas { width: 96px; height: 96px; }
+      @media (prefers-color-scheme: dark) { html, body { background: #171615; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="splash" role="status" aria-label="Loading"><canvas id="splash-canvas" width="192" height="192"></canvas></div></div>
+    <script src="./splash.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

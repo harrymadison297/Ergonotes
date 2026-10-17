@@ -15,7 +15,8 @@
         "minWidth": 360,
         "minHeight": 480,
         "resizable": true,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "backgroundColor": "#f6f5f4"
       }
     ],
     "security": {
