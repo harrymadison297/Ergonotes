@@ -52,9 +52,23 @@ export function isoDay(d = new Date()): string {
  * Resolves to where it was written when that is known.
  */
 export async function downloadBlob(filename: string, blob: Blob): Promise<string | null> {
-  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window && !(window as unknown as { ErgoVault?: unknown }).ErgoVault) {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window && !window.ErgoVault) {
     const { invoke } = await import('@tauri-apps/api/core');
     return invoke<string | null>('save_download', new Uint8Array(await blob.arrayBuffer()), { headers: { 'x-name': encodeURIComponent(filename) } });
+  }
+  const android = typeof window !== 'undefined' ? window.ErgoVault : undefined;
+  if (android?.save) {
+    // Android's webview cannot save a blob either: the chooser of the system is asked, and says how it went
+    const b = new Uint8Array(await blob.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode(...b.subarray(i, i + 0x8000));
+    return new Promise<string | null>((ok, fail) => {
+      window.addEventListener('ergo-file-saved', e => {
+        const d = (e as CustomEvent<{ ok: boolean; cancelled: boolean }>).detail;
+        if (d.ok) ok(filename); else if (d.cancelled) ok(null); else fail(new Error('The file could not be saved.'));
+      }, { once: true });
+      android.save!(filename, btoa(bin));
+    });
   }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

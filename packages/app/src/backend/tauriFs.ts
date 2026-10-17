@@ -37,6 +37,8 @@ export const deviceMetaFor = (key?: string): LocalMeta => ({
 interface ErgoVaultBridge {
   root(): string; defaultDir(): string; pick(): void; list(dir: string): string; stat(path: string): string | null; read(path: string): string | null;
   write(path: string, b64: string): string; mkdir(path: string): string; remove(path: string): string; rename(from: string, to: string): string;
+  /** keep a file the person asked for: the system's "save as" chooser; answers with the `ergo-file-saved` event */
+  save?(name: string, b64: string): void;
 }
 declare global { interface Window { ErgoVault?: ErgoVaultBridge } }
 

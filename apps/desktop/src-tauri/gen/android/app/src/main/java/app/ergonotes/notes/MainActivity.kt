@@ -3,6 +3,7 @@ package app.ergonotes.notes
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
@@ -21,6 +22,18 @@ class MainActivity : TauriActivity() {
       vault.setTree(uri)
     }
     web?.post { web?.evaluateJavascript("window.dispatchEvent(new CustomEvent('ergo-vault-picked', { detail: { ok: ${uri != null} } }))", null) }
+  }
+
+  // a file the person asked to keep (an export): written where the system's "save as" chooser says
+  private var saving: ByteArray? = null
+  private val createDocument = registerForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri: Uri? ->
+    var ok = false
+    val data = saving
+    saving = null
+    if (uri != null && data != null) {
+      ok = try { contentResolver.openOutputStream(uri)?.use { it.write(data) } != null } catch (e: Exception) { false }
+    }
+    web?.post { web?.evaluateJavascript("window.dispatchEvent(new CustomEvent('ergo-file-saved', { detail: { ok: $ok, cancelled: ${uri == null} } }))", null) }
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,6 +65,7 @@ class MainActivity : TauriActivity() {
       // the app's own folder on shared storage: reachable from a file manager or a USB cable, no permission needed
       @JavascriptInterface fun defaultDir(): String = (getExternalFilesDir(null) ?: filesDir).absolutePath + "/Ergonotes"
       @JavascriptInterface fun pick() { runOnUiThread { pickFolder.launch(null) } }
+      @JavascriptInterface fun save(name: String, b64: String) { saving = Base64.decode(b64, Base64.DEFAULT); runOnUiThread { createDocument.launch(name) } }
       @JavascriptInterface fun list(dir: String): String = vault.list(dir)
       @JavascriptInterface fun stat(path: String): String? = vault.stat(path)
       @JavascriptInterface fun read(path: String): String? = vault.read(path)
