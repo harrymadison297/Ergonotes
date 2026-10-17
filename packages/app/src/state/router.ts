@@ -6,6 +6,7 @@ export type Route =
   | { name: 'tasks'; note?: string; task?: number }
   | { name: 'calendar'; note?: string; day?: string }
   | { name: 'files'; file?: string }
+  | { name: 'habits' }
   | { name: 'folders' }
   | { name: 'trash'; note?: string }
   | { name: 'conflicts'; note?: string }
@@ -22,6 +23,7 @@ export function parseHash(hash: string): Route {
     case 'tasks': return { name: 'tasks', note: seg[1], task: seg[2] !== undefined && /^\d+$/.test(seg[2]) ? Number(seg[2]) : undefined };
     case 'calendar': return { name: 'calendar', note: seg[1], day: p.get('day') ?? undefined };
     case 'files': return { name: 'files', file: seg[1] };
+    case 'habits': return { name: 'habits' };
     case 'folders': return { name: 'folders' };
     case 'trash': return { name: 'trash', note: seg[1] };
     case 'conflicts': return { name: 'conflicts', note: seg[1] };
@@ -45,6 +47,7 @@ export function href(r: Route): string {
       if (r.day) q.set('day', r.day);
       return `#/calendar${r.note ? '/' + r.note : ''}${q.size ? '?' + q.toString() : ''}`;
     case 'files': return `#/files${r.file ? '/' + r.file : ''}`;
+    case 'habits': return '#/habits';
     case 'folders': return '#/folders';
     case 'trash': return `#/trash${r.note ? '/' + r.note : ''}`;
     case 'conflicts': return `#/conflicts${r.note ? '/' + r.note : ''}`;

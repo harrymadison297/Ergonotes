@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { AiSettings, AiTransport, AudioFile, ModelInfo, TimedTranscript, ItemSummary, Settings, TaskEntry, VaultApi, VaultStatus } from '@ergonotes/core';
+import type { AiSettings, AiTransport, AudioFile, HabitInfo, ModelInfo, TimedTranscript, ItemSummary, Settings, TaskEntry, VaultApi, VaultStatus } from '@ergonotes/core';
 import type { Backend } from '../backend';
 import { debounce, isoDay } from './util';
 import { useRoute, type Route } from './router';
 import { setRecordHost } from '../record/host';
 import { setApiRef } from './appRef';
 
-export interface Toast { id: number; msg: string; kind: 'info' | 'error'; action?: { label: string; run: () => void } }
+export interface Toast { id: number; msg: string; kind: 'info' | 'error'; action?: { label: string; run: () => void }; key?: string }
 
 export interface AppCtx {
   api: VaultApi;
@@ -17,6 +17,10 @@ export interface AppCtx {
   items: ItemSummary[];
   byId: Map<string, ItemSummary>;
   tasks: TaskEntry[];
+  /** the Habits and how each stands today (CONTEXT.md, Habit) */
+  habits: HabitInfo[];
+  /** the person's own day, `YYYY-MM-DD`; changes at midnight */
+  today: string;
   tags: { tag: string; count: number }[];
   conflicts: { id: string; title: string; heads: number }[];
   settings: Settings;
@@ -30,7 +34,8 @@ export interface AppCtx {
   go: (r: Route, replace?: boolean) => void;
   refresh: () => Promise<void>;
   refreshStatus: () => Promise<void>;
-  toast: (msg: string, kind?: 'info' | 'error', action?: Toast['action']) => void;
+  /** `key`: a toast with the same key that is still showing is replaced, not stacked (a row of ticks makes one toast) */
+  toast: (msg: string, kind?: 'info' | 'error', action?: Toast['action'], key?: string) => void;
   /** move a note or folder to the Trash, with an Undo in the toast */
   trashItem: (id: string) => Promise<void>;
   toasts: Toast[];
@@ -96,6 +101,8 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
   const [status, setStatus] = useState(initial);
   const [items, setItems] = useState<ItemSummary[]>([]);
   const [tasks, setTasks] = useState<TaskEntry[]>([]);
+  const [habits, setHabits] = useState<HabitInfo[]>([]);
+  const [today, setToday] = useState(() => isoDay());
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([]);
   const [conflicts, setConflicts] = useState<{ id: string; title: string; heads: number }[]>([]);
   const [settings, setSettings] = useState<Settings>(EMPTY_SETTINGS);
@@ -111,9 +118,9 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
     return !r;
   }), []);
 
-  const toast = useCallback((msg: string, kind: 'info' | 'error' = 'info', action?: Toast['action']) => {
+  const toast = useCallback((msg: string, kind: 'info' | 'error' = 'info', action?: Toast['action'], key?: string) => {
     const id = ++seq.current;
-    setToasts(t => [...t, { id, msg, kind, action }]);
+    setToasts(t => [...(key ? t.filter(x => x.key !== key) : t), { id, msg, kind, action, key }]);
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), kind === 'error' || action ? 7000 : 3000);
   }, []);
 
@@ -123,8 +130,9 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
 
   const refresh = useCallback(async () => {
     try {
-      const [st, it, tk, tg, cf, se, aiS] = await Promise.all([api.status(), api.listItems(), api.tasks(), api.tags(), api.conflicts(), api.getSettings(), api.getAiSettings()]);
-      setStatus(st); setItems(it); setTasks(tk); setTags(tg); setConflicts(cf); setSettings(se); setAi(aiS);
+      const day = isoDay();
+      const [st, it, tk, tg, cf, se, aiS, hb] = await Promise.all([api.status(), api.listItems(), api.tasks(), api.tags(), api.conflicts(), api.getSettings(), api.getAiSettings(), api.habits(day)]);
+      setStatus(st); setItems(it); setTasks(tk); setTags(tg); setConflicts(cf); setSettings(se); setAi(aiS); setHabits(hb); setToday(day);
     } catch (e) {
       if ((e as { status?: number }).status !== 401) console.warn('refresh failed', e);
     }
@@ -144,6 +152,14 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
     const t = setInterval(() => void refreshStatus(), 15_000);
     return () => clearInterval(t);
   }, [refreshStatus]);
+
+  // a new day began: the Habits are judged for it, and the lists that depend on today are read again
+  useEffect(() => {
+    const t = setInterval(() => { if (isoDay() !== today) void refresh(); }, 30_000);
+    const onShow = () => { if (document.visibilityState === 'visible' && isoDay() !== today) void refresh(); };
+    document.addEventListener('visibilitychange', onShow);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onShow); };
+  }, [today, refresh]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -181,6 +197,6 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
     transcribe: backend.aiTranscribeTimed, transport: backend.aiTransport, toast,
     openNote: id => go({ name: 'notes', note: id }),
   });
-  const value: AppCtx = { api, mode: backend.mode, folder: backend.folder, status, items, byId, tasks, tags, conflicts, settings, ai, aiTransport: backend.aiTransport, aiModels: backend.aiModels, aiTranscribe: backend.aiTranscribe, aiTranscribeTimed: backend.aiTranscribeTimed, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
+  const value: AppCtx = { api, mode: backend.mode, folder: backend.folder, status, items, byId, tasks, habits, today, tags, conflicts, settings, ai, aiTransport: backend.aiTransport, aiModels: backend.aiModels, aiTranscribe: backend.aiTranscribe, aiTranscribeTimed: backend.aiTranscribeTimed, route, go, refresh, refreshStatus, toast, trashItem, toasts, isMobile, rail, toggleRail, run, dialog, setDialog, newNote, openDaily };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

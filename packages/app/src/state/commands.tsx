@@ -2,7 +2,7 @@
 import type { ReactNode } from 'react';
 import {
   AlignHorizontalSpaceAround, CalendarDays, Clipboard, Copy, FilePlus2, FileText, Folder, Home, Keyboard, ListChecks, PanelLeft, PanelRight, Paperclip, RefreshCw,
-  Scissors, Search, Settings as SettingsIcon, ZoomIn, ZoomOut, Maximize2, Trash2, CalendarCheck, X, RotateCcw,
+  Scissors, Search, Settings as SettingsIcon, ZoomIn, ZoomOut, Maximize2, Trash2, CalendarCheck, X, RotateCcw, Repeat,
 } from 'lucide-react';
 import { usePrefs, setPrefs, ZOOM_STEP, clampZoom, type Prefs } from './prefs';
 import { useApp, type AppCtx } from './app';
@@ -44,6 +44,7 @@ export const COMMANDS: Command[] = [
   nav('home', 'Home', <Home size={S} />, { name: 'home' }, ['g h']),
   nav('notes', 'Notes', <FileText size={S} />, { name: 'notes' }, ['g n']),
   nav('tasks', 'Tasks', <ListChecks size={S} />, { name: 'tasks' }, ['g t']),
+  nav('habits', 'Habits', <Repeat size={S} />, { name: 'habits' }, ['g b']),
   nav('calendar', 'Calendar', <CalendarDays size={S} />, { name: 'calendar' }, ['g c']),
   nav('files', 'Files', <Paperclip size={S} />, { name: 'files' }, ['g f']),
   nav('folders', 'Folders', <Folder size={S} />, { name: 'folders' }),

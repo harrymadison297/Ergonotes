@@ -5,6 +5,9 @@ import { href, noteHref } from '../state/router';
 import { isoDay } from '../state/util';
 import { IconBtn, NoteCard, TagLink } from '../components/ui';
 import { TaskRow } from './Tasks';
+import { HabitTaskRow, NudgeCard } from '../components/Habit';
+import { nudgeDismissed, nudgeId, openToday } from '../state/habits';
+import { classNames } from '../state/util';
 import { FirstRunBanner } from '../components/FirstRunBanner';
 import { ScratchPad } from '../components/ScratchPad';
 
@@ -48,9 +51,16 @@ export function Home() {
   const inboxId = app.settings.captureFolder ?? app.items.find(i => i.role === 'inbox')?.id;
   const inbox = useMemo(() => notes.filter(n => n.parent === inboxId).sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, 10), [notes, inboxId]);
   const pinned = notes.filter(n => n.pinned).slice(0, 6);
-  // what is due first, then everything else that is open
-  const open = useMemo(() => app.tasks.filter(t => !t.done)
-    .sort((a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999')).slice(0, 6), [app.tasks]);
+  // today: what is open and due now or overdue, what is to remind today, and what a Habit still wants
+  const today = app.today;
+  const dueTasks = useMemo(() => app.tasks.filter(t => !t.done && t.due && t.due.slice(0, 10) <= today)
+    .sort((a, b) => (a.due ?? '').localeCompare(b.due ?? '')), [app.tasks, today]);
+  const reminders = useMemo(() => app.tasks.filter(t => !t.done && t.remind && t.remind.slice(0, 10) === today)
+    .sort((a, b) => (a.remind ?? '').localeCompare(b.remind ?? '')), [app.tasks, today]);
+  const habitsLeft = useMemo(() => openToday(app.habits), [app.habits]);
+  const [list, setList] = useState<'tasks' | 'reminders' | 'habits'>('tasks');
+  const nudges = app.habits.filter(h => h.nudge && !h.archived && !nudgeDismissed(today, nudgeId(h, h.nudge))).slice(0, 2);
+  const counts = { tasks: dueTasks.length, reminders: reminders.length, habits: habitsLeft.length };
   const shown = tab === 'recent' ? recent : inbox;
   const folderName = (n: { parent: string | null }) => (n.parent ? app.byId.get(n.parent)?.title : undefined);
 
@@ -59,6 +69,15 @@ export function Home() {
     <div className="home">
       <h1>Home</h1>
       <FirstRunBanner />
+      <div className="today-line" role="group" aria-label="Today">
+        <span className="today-label">Today</span>
+        {([['tasks', 'task', 'tasks'], ['reminders', 'reminder', 'reminders'], ['habits', 'habit', 'habits left']] as const).map(([k, one, many]) => (
+          <button key={k} type="button" className={classNames('today-count', list === k && 'on', counts[k] === 0 && 'zero')} aria-pressed={list === k} onClick={() => setList(k)}>
+            <b>{counts[k]}</b> {k === 'habits' ? (counts[k] === 1 ? 'habit left' : 'habits left') : counts[k] === 1 ? one : many}
+          </button>
+        ))}
+      </div>
+      {nudges.length > 0 && <div className="nudges">{nudges.map(h => <NudgeCard key={h.id} habit={h} nudge={h.nudge!} showName />)}</div>}
 
       <div className="home-row">
         <section className="widget w-notes" aria-labelledby="w-notes">
@@ -103,9 +122,10 @@ export function Home() {
 
         <aside className="home-side" aria-label="Calendar and tasks">
           <section className="widget w-tasks" aria-labelledby="w-tasks">
-            <h2 id="w-tasks">Tasks<span className="grow" /><a href={href({ name: 'tasks' })} className="icon-btn" title="All tasks" aria-label="All tasks"><ArrowRight size={18} /></a></h2>
-            {open.length === 0 ? <div className="empty" style={{ padding: 16 }}>No open tasks. Add a checklist to any note.</div>
-              : open.map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} compact />)}
+            <h2 id="w-tasks">{list === 'tasks' ? 'Tasks due' : list === 'reminders' ? 'Reminders today' : 'Habits today'}<span className="grow" /><a href={href({ name: list === 'habits' ? 'habits' : 'tasks' })} className="icon-btn" title={list === 'habits' ? 'All habits' : 'All tasks'} aria-label={list === 'habits' ? 'All habits' : 'All tasks'}><ArrowRight size={18} /></a></h2>
+            {list === 'tasks' && (dueTasks.length === 0 ? <div className="empty" style={{ padding: 16 }}>Nothing due. Add a due date to a task in any note.</div> : dueTasks.slice(0, 8).map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} compact />))}
+            {list === 'reminders' && (reminders.length === 0 ? <div className="empty" style={{ padding: 16 }}>No reminders today. Set one on a task with the bell.</div> : reminders.slice(0, 8).map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} compact />))}
+            {list === 'habits' && (habitsLeft.length === 0 ? <div className="empty" style={{ padding: 16 }}>{app.habits.some(h => !h.archived) ? 'Every habit is met for today.' : 'No habits yet.'}</div> : habitsLeft.map(h => <HabitTaskRow key={h.id} h={h} compact />))}
           </section>
           <section className="widget w-cal" aria-labelledby="w-cal">
             <h2 id="w-cal">Calendar</h2>

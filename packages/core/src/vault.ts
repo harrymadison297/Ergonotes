@@ -4,7 +4,7 @@
 import MarkdownIt from 'markdown-it';
 import MiniSearch from 'minisearch';
 import type {
-  CalendarData, ChatRecord, ChatSummary, ConflictChoice, ConflictDetail, EventEntry, ExportResult, FileBlob, FileInfo, HeadInfo, ImportFile, ImportResult, ItemSummary, NoteDoc, RecordInfo, SearchHit,
+  CalendarData, ChatRecord, ChatSummary, ConflictChoice, ConflictDetail, EventEntry, ExportResult, FileBlob, FileInfo, HabitDayEntry, HabitDetail, HabitInfo, HeadInfo, ImportFile, ImportResult, ItemSummary, NoteDoc, RecordInfo, SearchHit,
   Settings, StoreConfig, SyncReport, TaskEntry, VaultApi, VaultState, VaultStatus, VersionInfo,
 } from './api.ts';
 import {
@@ -20,6 +20,9 @@ import {
   firstImage, joinDoc, parseEvents, parseTasks, plainSnippet, setTaskDone,
   type Frontmatter, type NoteEvent, type Task,
 } from './markdown.ts';
+import {
+  HABIT_FOLDER, PERIODS, addCheckIn, dayStates, habitDef, habitStatus, nudgeFor, parseLog, setRemark,
+} from './habit.ts';
 import { applyAiPatch, defaultAiConfig, normalizeAiConfig, toSettings, type AiConfig, type AiSettings, type AiSettingsPatch } from './ai/types.ts';
 import { baseText, unionText } from './merge.ts';
 import { fmtMark, frameSecond, isPartName, isRecordDir, parseRecordMeta, parseTranscript, recordDirOf, type RecordMeta } from './record.ts';
@@ -1068,6 +1071,8 @@ export class Vault implements VaultApi {
   /** Create a note file. `parent` is a folder id or a vault path. */
   private async createNoteRaw(i: {
     parent: string | null; title?: string; body?: string; tags?: string[]; template?: boolean; daily?: boolean | string;
+    /** other properties of the note's frontmatter */
+    fm?: Record<string, unknown>;
   }): Promise<ItemSummary> {
     const r = this.ready();
     const id = newId();
@@ -1077,6 +1082,7 @@ export class Vault implements VaultApi {
     const file = editFm(i.body ?? '', {
       id, tags, template: i.template ? true : undefined,
       daily: typeof i.daily === 'string' ? i.daily : i.daily ? true : undefined,
+      ...(i.fm ?? {}),
     }, { top: ['id'] });
     await r.commit(id, toItemText(file, { path }), this.now());
     this.refresh([id]);
@@ -1557,13 +1563,13 @@ export class Vault implements VaultApi {
     await this.update(noteId, { body: setTaskDone(v.body, index, done) });
   }
 
-  async calendar(fromIso: string, toIso: string): Promise<CalendarData> {
+  async calendar(fromIso: string, toIso: string, today?: string): Promise<CalendarData> {
     this.ready();
     const c = this.counts();
     const from = fromIso.slice(0, 10), to = toIso.slice(0, 10);
     const inRange = (s: string | undefined | null) => !!s && s.slice(0, 10) >= from && s.slice(0, 10) <= to;
     const localDay = (iso: string) => (iso ? isoDate(new Date(iso)) : '');
-    const tasks = (await this.tasks()).filter(t => inRange(t.due) || inRange(t.remind));
+    const tasks = (await this.tasks()).filter(t => inRange(t.due) || inRange(t.remind) || inRange(t.doneAt));
     const notes: ItemSummary[] = [];
     const daily: ItemSummary[] = [];
     for (const v of this.views.values()) {
@@ -1577,7 +1583,113 @@ export class Vault implements VaultApi {
       for (const e of v.events) if (inRange(e.date)) events.push({ ...e, noteId: v.id, noteTitle: v.title, text: e.text || v.title });
     }
     events.sort((a, b) => a.date.localeCompare(b.date) || (a.start ?? '').localeCompare(b.start ?? ''));
-    return { tasks, notes, daily, events };
+    // the Habits: how each stood on the days of the range that have been judged (and today while it is open)
+    const day = today && /^\d{4}-\d{2}-\d{2}$/.test(today) ? today : isoDate(new Date(this.now()));
+    const habits: HabitDayEntry[] = [];
+    if (from <= day) {
+      for (const v of this.habitNotes()) {
+        const def = habitDef(v.fm)!;
+        if (def.archived) continue;
+        for (const d of dayStates(def, parseLog(v.body).checkIns, day, from, to < day ? to : day)) {
+          if (d.state === 'met' || d.state === 'behind' || d.state === 'pending') habits.push({ noteId: v.id, title: v.title, date: d.date, state: d.state });
+        }
+      }
+    }
+    return { tasks, notes, daily, events, habits };
+  }
+
+  // ---------- habits (ADR 0013) ----------
+  private habitNotes(): View[] {
+    return [...this.views.values()].filter(v => v.type === 'note' && !this.inTrash(v) && !v.template && habitDef(v.fm) !== null)
+      .sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true }));
+  }
+
+  private habitInfo(v: View, today: string, span: number): HabitInfo {
+    const def = habitDef(v.fm)!;
+    const status = habitStatus(def, parseLog(v.body).checkIns, today, span);
+    return { ...def, id: v.id, title: v.title, filePath: v.path, status, nudge: def.archived ? null : nudgeFor(status) };
+  }
+
+  private habitView(id: string): View {
+    const v = this.views.get(id);
+    if (!v || v.type !== 'note' || !habitDef(v.fm)) throw new Error('That note is not a habit');
+    return v;
+  }
+
+  private checkDay(day: string): string {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error('A day is written 2026-10-17');
+    return day;
+  }
+
+  async habits(today: string): Promise<HabitInfo[]> {
+    this.ready();
+    this.checkDay(today);
+    return this.habitNotes().map(v => this.habitInfo(v, today, 7));
+  }
+
+  async habit(id: string, today: string): Promise<HabitDetail | null> {
+    this.ready();
+    this.checkDay(today);
+    const v = this.views.get(id);
+    if (!v || v.type !== 'note' || !habitDef(v.fm)) return null;
+    const log = parseLog(v.body);
+    return { ...this.habitInfo(v, today, 84), checkIns: log.checkIns, remarks: log.remarks };
+  }
+
+  async createHabit(input: { title: string; target: number; per: number; start?: string; description?: string }): Promise<ItemSummary> {
+    this.ready();
+    const target = Math.round(Number(input.target));
+    if (!(target >= 1 && target <= 99)) throw new Error('How many times: between 1 and 99');
+    if (!(PERIODS as readonly number[]).includes(input.per)) throw new Error('Choose 1, 3, 5 or 7 days');
+    if (input.start !== undefined) this.checkDay(input.start);
+    let folder = [...this.views.values()].find(v => v.type === 'folder' && v.path.toLowerCase() === HABIT_FOLDER.toLowerCase() && !this.inTrash(v));
+    if (!folder) folder = await this.makeDir(null, HABIT_FOLDER);
+    const text = input.description?.trim();
+    return this.createNoteRaw({
+      parent: folder.id, title: input.title, body: `${text ? text + '\n\n' : ''}## Log\n`,
+      fm: { habit: true, target, per: input.per, ...(input.start ? { start: input.start } : {}) },
+    });
+  }
+
+  async updateHabit(id: string, patch: { target?: number; per?: number; start?: string | null; archived?: boolean }): Promise<void> {
+    this.habitView(id);
+    const fm: Record<string, unknown> = {};
+    if (patch.target !== undefined) {
+      const t = Math.round(Number(patch.target));
+      if (!(t >= 1 && t <= 99)) throw new Error('How many times: between 1 and 99');
+      fm.target = t;
+    }
+    if (patch.per !== undefined) {
+      if (!(PERIODS as readonly number[]).includes(patch.per)) throw new Error('Choose 1, 3, 5 or 7 days');
+      fm.per = patch.per;
+    }
+    if (patch.start !== undefined) fm.start = patch.start === null ? undefined : this.checkDay(patch.start);
+    if (patch.archived !== undefined) fm.archived = patch.archived ? true : undefined;
+    if (Object.keys(fm).length) await this.update(id, { fm });
+  }
+
+  async checkInHabit(id: string, input: { date: string; time?: string; text?: string }): Promise<void> {
+    const v = this.habitView(id);
+    this.checkDay(input.date);
+    if (input.time !== undefined && !/^\d{2}:\d{2}$/.test(input.time)) throw new Error('A time is written 07:42');
+    await this.update(id, { body: addCheckIn(v.body, input) });
+  }
+
+  async undoCheckIn(id: string, date: string): Promise<void> {
+    const v = this.habitView(id);
+    this.checkDay(date);
+    const last = parseLog(v.body).checkIns.filter(c => c.date === date).sort((a, b) => a.line - b.line).at(-1);
+    if (!last) return;
+    const lines = v.body.split('\n');
+    lines.splice(last.line, 1);
+    await this.update(id, { body: lines.join('\n') });
+  }
+
+  async setHabitRemark(id: string, date: string, text: string): Promise<void> {
+    const v = this.habitView(id);
+    this.checkDay(date);
+    const body = setRemark(v.body, date, text);
+    if (body !== v.body) await this.update(id, { body });
   }
 
   // ---------- templates & daily notes ----------

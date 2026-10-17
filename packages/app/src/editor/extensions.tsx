@@ -92,7 +92,7 @@ export const StoredImage = Image.extend({
 });
 
 // ---------------------------------------------------------------- @due(..) / @remind(..) / @flag chips and callouts
-const TOKEN_RE = /@(due|remind)\(([^)]+)\)|@flag\b|@event\([^)]*\)/g;
+const TOKEN_RE = /@(due|remind)\(([^)]+)\)|@done\([^)]*\)|@flag\b|@event\([^)]*\)/g;
 export const InlineDecorations = Extension.create({
   name: 'inlineDecorations',
   addProseMirrorPlugins() {
@@ -163,6 +163,38 @@ export const LinkSuggest = Extension.create<{ api: VaultApi | null }>({
         editor.chain().focus().insertContentAt(range, [{ type: 'text', text: props.label, marks: [{ type: 'link', attrs: { href } }] }, { type: 'text', text: ' ' }]).run();
       },
       render: popupRenderer<LinkItem>(),
+    })];
+  },
+});
+
+export interface MentionItem extends PopupItem { path: string }
+/**
+ * `@` + a few letters: pick a Habit (first) or a note. What is written is the same standard Markdown link as `[[` makes, so a
+ * mention is also a Backlink; a link to a Habit is drawn as a chip with its streak. `@due(`, `@event(` and the like find nothing.
+ */
+export const MentionSuggest = Extension.create<{ api: VaultApi | null; habits: () => { id: string; title: string; filePath: string; archived: boolean }[] }>({
+  name: 'mentionSuggest',
+  addOptions() { return { api: null, habits: () => [] }; },
+  addProseMirrorPlugins() {
+    const { api, habits } = this.options;
+    return [Suggestion<MentionItem>({
+      editor: this.editor,
+      pluginKey: new PluginKey('mentionSuggest'),
+      char: '@',
+      allowSpaces: false,
+      items: async ({ query }) => {
+        const q = query.toLowerCase();
+        if (/[()]/.test(query)) return [];
+        const hs: MentionItem[] = habits().filter(h => !h.archived && (!q || h.title.toLowerCase().includes(q)))
+          .map(h => ({ id: h.id, label: h.title, hint: 'Habit', path: h.filePath }));
+        if (!q || !api) return hs.slice(0, 8);
+        const notes = (await api.linkTargets(query)).filter(n => !hs.some(h => h.id === n.id)).map(n => ({ id: n.id, label: n.title, hint: 'Note', path: n.path }));
+        return [...hs, ...notes].slice(0, 8);
+      },
+      command: ({ editor, range, props }) => {
+        editor.chain().focus().insertContentAt(range, [{ type: 'text', text: props.label, marks: [{ type: 'link', attrs: { href: linkTo(props.path) } }] }, { type: 'text', text: ' ' }]).run();
+      },
+      render: popupRenderer<MentionItem>({ hideEmpty: true }),
     })];
   },
 });

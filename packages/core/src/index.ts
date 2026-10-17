@@ -1,5 +1,6 @@
 export * from './util.ts';
 export * from './markdown.ts';
+export * from './habit.ts';
 export * from './folder.ts';
 export * from './vaultfs.ts';
 export * from './graph.ts';

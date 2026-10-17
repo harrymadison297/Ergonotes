@@ -5,6 +5,7 @@ import type { WebDavConfig } from './store-webdav.ts';
 import type { NoteEvent, Task } from './markdown.ts';
 import type { AiSettings, AiSettingsPatch } from './ai/types.ts';
 import type { RecordMeta } from './record.ts';
+import type { CheckIn, Nudge, Remark, HabitStatus, HabitDef, DayState } from './habit.ts';
 
 export interface FolderStoreConfig { type: 'folder'; path: string }
 export type StoreConfig = S3Config | WebDavConfig | FolderStoreConfig;
@@ -125,12 +126,28 @@ export interface EventEntry extends NoteEvent {
   noteTitle: string;
 }
 
+/** How one Habit stood on one day (days that were judged, and today while it is open). */
+export interface HabitDayEntry { noteId: string; title: string; date: string; state: Extract<DayState, 'met' | 'behind' | 'pending'> }
+
 export interface CalendarData {
   tasks: TaskEntry[];
   events: EventEntry[];
   notes: ItemSummary[];
   daily: ItemSummary[];
+  habits: HabitDayEntry[];
 }
+
+/** A Habit with its state today (CONTEXT.md, Habit). Everything but the definition is computed, never stored. */
+export interface HabitInfo extends HabitDef {
+  id: string;
+  title: string;
+  /** where its file is, relative to the vault folder */
+  filePath: string;
+  status: HabitStatus;
+  /** what to say about it now; none for an archived Habit */
+  nudge: Nudge | null;
+}
+export interface HabitDetail extends HabitInfo { checkIns: CheckIn[]; remarks: Remark[] }
 
 export interface FileBlob { name: string; mime: string; data: string }
 /** A file to take into the Vault: Markdown by its text, anything else by its bytes (base64). `path` is relative to where it lands. */
@@ -218,7 +235,20 @@ export interface VaultApi {
   tags(): Promise<{ tag: string; count: number }[]>;
   tasks(): Promise<TaskEntry[]>;
   toggleTask(noteId: string, index: number, done: boolean): Promise<void>;
-  calendar(fromIso: string, toIso: string): Promise<CalendarData>;
+  /** `today`: the person's own day (`YYYY-MM-DD`); the Habits of the days up to it are judged. */
+  calendar(fromIso: string, toIso: string, today?: string): Promise<CalendarData>;
+  /** Every Habit and how it stands on `today` (the person's own day). Archived ones are included. */
+  habits(today: string): Promise<HabitInfo[]>;
+  /** One Habit with its last 12 weeks, its Check-ins and the remarks on its days. */
+  habit(id: string, today: string): Promise<HabitDetail | null>;
+  createHabit(input: { title: string; target: number; per: number; start?: string; description?: string }): Promise<ItemSummary>;
+  updateHabit(id: string, patch: { target?: number; per?: number; start?: string | null; archived?: boolean }): Promise<void>;
+  /** Write one Check-in: what the person did and when. `time` is left out for one that is written afterwards. */
+  checkInHabit(id: string, input: { date: string; time?: string; text?: string }): Promise<void>;
+  /** Take back the last Check-in of a day (a tick by mistake). */
+  undoCheckIn(id: string, date: string): Promise<void>;
+  /** The remark on a day (why it was missed, how it went); empty text removes it. */
+  setHabitRemark(id: string, date: string, text: string): Promise<void>;
   templates(): Promise<ItemSummary[]>;
   createFromTemplate(templateId: string, opts?: { parent?: string | null; title?: string }): Promise<ItemSummary>;
   setTemplate(id: string, isTemplate: boolean): Promise<void>;
@@ -271,7 +301,7 @@ export const VAULT_METHODS = [
   'status', 'createVault', 'joinVault', 'unlock', 'lock', 'changePassword', 'removePassword', 'leaveVault', 'setDeviceName',
   'listItems', 'getNote', 'createNote', 'saveNote', 'createFolder', 'capture', 'rename', 'duplicate', 'copy', 'move', 'setTags',
   'renameTag', 'setPinned', 'setPrivate', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'searchHits', 'linkTargets', 'tags', 'tasks', 'toggleTask',
-  'calendar', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
+  'calendar', 'habits', 'habit', 'createHabit', 'updateHabit', 'checkInHabit', 'undoCheckIn', 'setHabitRemark', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
   'resolveConflict', 'history', 'versionText', 'restoreVersion', 'listChats', 'getChat', 'saveChat', 'deleteChat', 'getSettings', 'setSettings', 'getAiSettings', 'setAiSettings', 'setStore',
   'sync', 'flush', 'addFile', 'removeFiles', 'listFiles', 'listRecords', 'getRecord', 'getFile', 'getFileByPath', 'importMarkdown', 'importFiles', 'exportNote',
 ] as const satisfies readonly (keyof VaultApi)[];

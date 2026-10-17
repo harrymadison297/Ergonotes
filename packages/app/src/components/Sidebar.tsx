@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, FileText, Folder as FolderIcon, FolderPlus, Home, Keyboard, LayoutTemplate,
   MoreHorizontal, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Search, Settings as SettingsIcon, Star, Tag as TagIcon, Trash2,
-  CheckCircle2, FilePlus2, Sparkles, Upload,
+  CheckCircle2, FilePlus2, Repeat, Sparkles, Upload,
 } from 'lucide-react';
 import type { ItemSummary } from '@ergonotes/core';
 import { useApp } from '../state/app';
@@ -211,6 +211,7 @@ export function Sidebar() {
         <div className="nav-sep" />
         {link(href({ name: 'notes' }), <FileText size={18} />, 'Notes', route.name === 'notes' && !route.folder && !route.tag)}
         {link(href({ name: 'tasks' }), <CheckCircle2 size={18} />, 'Tasks', isActive('tasks'))}
+        {link(href({ name: 'habits' }), <Repeat size={18} />, 'Habits', isActive('habits'))}
         {link(href({ name: 'files' }), <Paperclip size={18} />, 'Files', isActive('files'))}
         {link(href({ name: 'calendar' }), <CalendarDays size={18} />, 'Calendar', isActive('calendar'))}
         <div className="nav-sep" />

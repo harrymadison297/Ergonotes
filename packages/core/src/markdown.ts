@@ -61,11 +61,14 @@ export interface Task {
   text: string;
   due?: string;
   remind?: string;
+  /** when it was done, for a line that records a Check-in of a Habit (`@done(2026-10-17T07:42)`) */
+  doneAt?: string;
   flag: boolean;
 }
 const TASK_RE = /^(\s*)([-*+]) \[( |x|X)\] (.*)$/;
 const DUE_RE = /\s*@due\(([^)]+)\)/;
 const REMIND_RE = /\s*@remind\(([^)]+)\)/;
+const DONE_RE = /\s*@done\(([^)]+)\)/;
 const FLAG_RE = /\s*@flag\b/;
 
 export function parseTasks(body: string): Task[] {
@@ -80,9 +83,10 @@ export function parseTasks(body: string): Task[] {
     let text = m[4];
     const due = DUE_RE.exec(text)?.[1];
     const remind = REMIND_RE.exec(text)?.[1];
+    const doneAt = DONE_RE.exec(text)?.[1];
     const flag = FLAG_RE.test(text);
-    text = text.replace(DUE_RE, '').replace(REMIND_RE, '').replace(FLAG_RE, '').trim();
-    out.push({ index: out.length, line: i, done: m[3] !== ' ', text, due, remind, flag });
+    text = text.replace(DUE_RE, '').replace(REMIND_RE, '').replace(DONE_RE, '').replace(FLAG_RE, '').trim();
+    out.push({ index: out.length, line: i, done: m[3] !== ' ', text, due, remind, doneAt, flag });
   }
   return out;
 }

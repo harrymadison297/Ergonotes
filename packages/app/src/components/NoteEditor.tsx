@@ -15,10 +15,12 @@ import {
 import { mergeText, preserveBlocks, recordLinkMarkdown, toB64, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, debounce, download, isoDay } from '../state/util';
-import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, TrailingParagraph } from '../editor/extensions';
+import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MentionSuggest, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, TrailingParagraph } from '../editor/extensions';
 import { RawBlock, RawInline, Wikilink } from '../editor/raw';
 import { AudioClip, CodeWithDiagrams, DateMention, InlineCheckbox, MathBlock, MathInline, PageBreak, Toggle } from '../editor/blocks';
-import { linkTo, setNoteDir } from '../state/noteCtx';
+import { linkTo, setNoteDir, vaultPathsOf } from '../state/noteCtx';
+import { habitChip } from '../state/habits';
+import { HabitPanel } from './Habit';
 import { RecordBlock } from '../editor/recordBlock';
 import { setNotePrivate } from '../record/host';
 import { RecordDialog } from './RecordDialog';
@@ -89,6 +91,8 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
   const prefs = usePrefs();
   const titleRef = useRef('');
   titleRef.current = title;
+  const habitsRef = useRef(app.habits);
+  habitsRef.current = app.habits;
   const ghostRef = useRef({ on: false, delay: 400, transport: app.aiTransport });
   ghostRef.current = { on: app.ai.suggest && app.ai.suggestReady && !app.byId.get(id)?.private, delay: app.ai.suggestDelay, transport: app.aiTransport };
   const [ghostState, setGhostState] = useState<{ busy: boolean; error: string | null; empty: boolean }>({ busy: false, error: null, empty: false });
@@ -144,6 +148,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
         },
       }),
       LinkSuggest.configure({ api }),
+      MentionSuggest.configure({ api, habits: () => habitsRef.current }),
       SlashCommands.configure({
         items: () => slashItems(() => offeredItems().map(i => ({
           id: i.id, label: i.label, hint: i.hint, keywords: i.keywords,
@@ -300,6 +305,23 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
       else editor?.chain().focus().insertContent({ type: 'text', text: f.name, marks: [{ type: 'link', attrs: { href: rel } }] }).insertContent(' ').run();
     }
   };
+
+  // a link to a Habit is drawn as a chip with its streak and today's state (the Markdown stays a plain link)
+  useEffect(() => {
+    if (!editor) return;
+    const byPath = new Map(app.habits.map(h => [h.filePath.toLowerCase(), h]));
+    const mark = () => {
+      editor.view.dom.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(a => {
+        const href = a.getAttribute('href') ?? '';
+        const h = /^(https?:|ergo-file:|mailto:|#)/i.test(href) ? undefined : vaultPathsOf(href).map(p => byPath.get(p.toLowerCase())).find(Boolean);
+        if (h) { const c = habitChip(h); a.classList.add('habit-chip'); a.classList.toggle('met', c.met); a.dataset.habit = c.text; }
+        else if (a.classList.contains('habit-chip')) { a.classList.remove('habit-chip', 'met'); delete a.dataset.habit; }
+      });
+    };
+    mark();
+    editor.on('transaction', mark);
+    return () => { editor.off('transaction', mark); };
+  }, [editor, app.habits, doc?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // paste / drop images
   useEffect(() => {
@@ -675,6 +697,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
           {!scratch && <input className="title-input" aria-label="Title" placeholder="Title" value={title} readOnly={locked || !!outside}
             onChange={e => { setTitle(e.target.value); setSaveState('saving'); saveTitle(id, e.target.value); }}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); editor.commands.focus('start'); } }} />}
+          {!scratch && !outside && app.habits.some(h => h.id === id) && <HabitPanel id={id} updated={doc.updated} />}
           <EditorContent editor={editor} />
           {!scratch && doc.backlinks.length > 0 && (
             <section aria-label="Backlinks" style={{ marginTop: 40, paddingTop: 16, borderTop: '1px solid var(--border)' }}>

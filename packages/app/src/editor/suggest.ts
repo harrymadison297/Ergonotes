@@ -3,7 +3,8 @@ import type { SuggestionOptions } from '@tiptap/suggestion';
 
 export interface PopupItem { id: string; label: string; hint?: string }
 
-export function popupRenderer<T extends PopupItem>(): SuggestionOptions<T>['render'] {
+/** `hideEmpty`: nothing is shown while there is nothing to pick (a picker opened by a character that is also used for something else) */
+export function popupRenderer<T extends PopupItem>(o: { hideEmpty?: boolean } = {}): SuggestionOptions<T>['render'] {
   return () => {
     let el: HTMLDivElement | null = null;
     let items: T[] = [];
@@ -13,6 +14,7 @@ export function popupRenderer<T extends PopupItem>(): SuggestionOptions<T>['rend
     const draw = () => {
       if (!el) return;
       el.innerHTML = '';
+      el.style.display = items.length === 0 && o.hideEmpty ? 'none' : '';
       if (items.length === 0) {
         const e = document.createElement('div');
         e.className = 'menu-title';

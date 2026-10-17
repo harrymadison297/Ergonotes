@@ -11,6 +11,7 @@ import { ConflictsView } from '../views/Conflicts';
 import { FilesView } from '../views/Files';
 import { FoldersView } from '../views/Folders';
 import { Home } from '../views/Home';
+import { HabitsView } from '../views/Habits';
 import { NotesView, TrashView } from '../views/Notes';
 import { TasksView } from '../views/Tasks';
 import { FilePreviewDialog } from './FilePreview';
@@ -26,6 +27,7 @@ import { openInNewTabNext, tabFor } from '../state/tabs';
 import { parseHash } from '../state/router';
 import { canOpenExternal, onOpenWith, openWithTake } from '../backend/external';
 import { vaultRelative } from '../state/externalApi';
+import { nudgeDismissed, nudgeId, topNudge } from '../state/habits';
 import { useSync } from './useSync';
 import { RecorderMini } from './RecorderPanel';
 import { recorder, useRecorder } from '../record/recorder';
@@ -40,6 +42,7 @@ function RouteView() {
     case 'external': return <ExternalView path={route.path} />;
     case 'home': return <Home />;
     case 'notes': return <NotesView noteId={route.note} />;
+    case 'habits': return <HabitsView />;
     case 'tasks': return <TasksView noteId={route.note} taskIndex={route.task} />;
     case 'calendar': return <CalendarView noteId={route.note} />;
     case 'files': return <FilesView fileId={route.file} />;
@@ -313,6 +316,18 @@ function useOpenWith() {
   }, []);
 }
 
+/** When the app opens: one toast about the Habit whose message matters most (ADR 0013), unless it was put away for today. */
+function useHabitToast() {
+  const app = useApp();
+  const said = useRef(false);
+  useEffect(() => {
+    if (said.current || app.items.length === 0) return;
+    said.current = true;
+    const top = topNudge(app.habits.filter(h => !nudgeDismissed(app.today, nudgeId(h, h.nudge ?? { key: '', tone: 'good', text: '' }))));
+    if (top) app.toast(`${top.habit.title}: ${top.nudge.text}`, 'info', { label: 'Open', run: () => app.go({ name: 'notes', note: top.habit.id }) });
+  }, [app.items.length, app.habits]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 /** Ctrl+click and middle click on a link to a note open it in a new tab. */
 function useNewTabClicks() {
   useEffect(() => {
@@ -339,6 +354,7 @@ export function Shell() {
   useGlobalShortcuts();
   useTabsFollowRoute();
   useNewTabClicks();
+  useHabitToast();
   useOpenWith();
   useReminders();
   useShareIntent();
