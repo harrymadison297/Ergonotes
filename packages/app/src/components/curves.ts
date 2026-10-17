@@ -32,3 +32,33 @@ export function curvePoint(kind: CurveKind, t: number): [number, number] {
 
 /** One full turn of the curve's parameter. */
 export const CURVE_PERIOD = TAU;
+
+const STEPS = 720;
+const lengths = new Map<CurveKind, number[]>();
+
+/** Cumulative length along the curve at STEPS + 1 points of its parameter, scaled to end at 1. */
+function table(kind: CurveKind): number[] {
+  let t = lengths.get(kind);
+  if (t) return t;
+  t = [0];
+  let [px, py] = curvePoint(kind, 0);
+  for (let i = 1; i <= STEPS; i++) {
+    const [x, y] = curvePoint(kind, (i / STEPS) * TAU);
+    t.push(t[i - 1] + Math.hypot(x - px, y - py));
+    px = x; py = y;
+  }
+  const total = t[STEPS] || 1;
+  t = t.map(v => v / total);
+  lengths.set(kind, t);
+  return t;
+}
+
+/** The point a fraction `f` of the way along the curve (by length, so a head moves at a steady pace); `f` wraps round. */
+export function curveAt(kind: CurveKind, f: number): [number, number] {
+  const g = ((f % 1) + 1) % 1;
+  const t = table(kind);
+  let lo = 0, hi = STEPS;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (t[mid] <= g) lo = mid; else hi = mid; }
+  const span = t[hi] - t[lo] || 1;
+  return curvePoint(kind, ((lo + (g - t[lo]) / span) / STEPS) * TAU);
+}

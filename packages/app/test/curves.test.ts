@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CURVE_KINDS, CURVE_PERIOD, curvePoint } from '../src/components/curves';
+import { CURVE_KINDS, CURVE_PERIOD, curveAt, curvePoint } from '../src/components/curves';
 
 describe('the loader curves', () => {
   for (const kind of CURVE_KINDS) {
@@ -23,6 +23,21 @@ describe('the loader curves', () => {
       let max = -Infinity;
       for (let i = 0; i <= 720; i++) { const [x] = curvePoint(kind, (i / 720) * CURVE_PERIOD); min = Math.min(min, x); max = Math.max(max, x); }
       expect(max - min).toBeGreaterThan(1);
+    });
+  }
+
+  for (const kind of CURVE_KINDS) {
+    it(`${kind} is walked at a steady pace by curveAt`, () => {
+      // equal steps of the fraction are about equal steps of distance
+      const d: number[] = [];
+      let [px, py] = curveAt(kind, 0);
+      for (let i = 1; i <= 100; i++) { const [x, y] = curveAt(kind, i / 100); d.push(Math.hypot(x - px, y - py)); px = x; py = y; }
+      const mean = d.reduce((a, b) => a + b, 0) / d.length;
+      expect(Math.max(...d)).toBeLessThan(mean * 1.6);
+      expect(Math.min(...d)).toBeGreaterThan(mean * 0.4);
+      const [a, b] = [curveAt(kind, 0), curveAt(kind, 1)];
+      expect(Math.hypot(a[0] - b[0], a[1] - b[1])).toBeLessThan(1e-6);
+      expect(curveAt(kind, -0.25)).toEqual(curveAt(kind, 0.75));
     });
   }
 });

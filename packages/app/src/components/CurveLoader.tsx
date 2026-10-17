@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { CURVE_KINDS, CURVE_PERIOD, curvePoint, type CurveKind } from './curves';
+import { CURVE_KINDS, curveAt, type CurveKind } from './curves';
 
 const TRAIL = 40;
 /** where on the curve the trail's tail is, per particle (a fraction of one turn) */
@@ -38,7 +38,7 @@ export function CurveLoader({ kind, size = 64, turn = 4.2, label = 'Loading', cl
     const pad = size * 0.14;
     const half = size / 2 - pad;
     const at = (turnFraction: number): [number, number] => {
-      const [x, y] = curvePoint(curve, turnFraction * CURVE_PERIOD);
+      const [x, y] = curveAt(curve, turnFraction);
       return [size / 2 + x * half, size / 2 - y * half];
     };
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
