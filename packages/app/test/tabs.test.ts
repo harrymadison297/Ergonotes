@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { closeTab, dropMissingNotes, followRoute, moveTab, neighbourTab, openInNewTabNext, reopenTab, resetTabs, tabFor, tabsState } from '../src/state/tabs';
+import { closeTab, dropMissingNotes, followRoute, moveTab, neighbourTab, showsTabBar, openInNewTabNext, reopenTab, resetTabs, tabFor, tabsState } from '../src/state/tabs';
 
 const note = (id: string) => ({ name: 'notes' as const, note: id });
 const keys = () => tabsState().tabs.map(t => t.key);
@@ -122,5 +122,19 @@ describe('moving between tabs and keeping them tidy', () => {
     expect(keys()).toEqual(['note:c', 'note:a', 'note:b']);
     moveTab('note:c', null);
     expect(keys()).toEqual(['note:a', 'note:b', 'note:c']);
+  });
+});
+
+describe('when the strip is shown', () => {
+  it('only from two open tabs on, and again after the second is closed', () => {
+    expect(showsTabBar(tabsState().tabs)).toBe(false);
+    followRoute(note('a'));
+    expect(showsTabBar(tabsState().tabs)).toBe(false);
+    openInNewTabNext();
+    followRoute(note('b'));
+    expect(showsTabBar(tabsState().tabs)).toBe(true);
+    closeTab('note:b');
+    expect(showsTabBar(tabsState().tabs)).toBe(false);
+    expect(keys()).toEqual(['note:a']);
   });
 });

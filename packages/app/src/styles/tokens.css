@@ -58,8 +58,8 @@
   --on-danger: #ffffff;
   --scrim: rgba(20, 18, 17, 0.42);
   --danger-bg: #fde8eb;
-  --scratch: #e6f1fb;               /* the Scratchpad: light blue */
-  --scratch-edge: #bcd6ee;
+  --scratch: #f3f8fd;               /* the Scratchpad: very pale blue */
+  --scratch-edge: #d6e5f3;
   --sticky: #f8efc8;
   --toast-bg: #343332;
   --tag-alpha: 14%;
@@ -137,8 +137,8 @@
   --event-ink: #f08a5d;
   --danger: #ff7b8a;
   --danger-bg: #3d1f25;
-  --scratch: #1d2b39;
-  --scratch-edge: #34506b;
+  --scratch: #1a2531;
+  --scratch-edge: #2c4258;
   --sticky: #3a3519;
   --toast-bg: #2f2e2d;
   --on-danger: #1f1e1d;
@@ -176,8 +176,8 @@
     --event-ink: #f08a5d;
     --danger: #ff7b8a;
     --danger-bg: #3d1f25;
-    --scratch: #1d2b39;
-    --scratch-edge: #34506b;
+    --scratch: #1a2531;
+    --scratch-edge: #2c4258;
     --sticky: #3a3519;
     --toast-bg: #2f2e2d;
     --on-danger: #1f1e1d;

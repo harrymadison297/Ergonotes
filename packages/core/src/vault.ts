@@ -111,6 +111,17 @@ const MAX_NOTE_BYTES = 8 * 1024 * 1024;
 const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true });
 const TRASH_DIR = '.trash';
 const ATTACH_DIR = 'attachments';
+
+/** A title for a captured text: its first line of words, with Markdown reduced to what it says (a picture or a file has none: its name does). */
+export function captureTitle(text: string): string {
+  const words = (l: string) => l
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, (_, label: string) => label)
+    .replace(/^\s*(?:[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+|#{1,6}\s+|>\s*)/, '')
+    .replace(/\s+/g, ' ').trim();
+  const first = text.split('\n').map(words).find(l => l) ?? '';
+  return (first.length > 60 ? first.slice(0, 57) + '…' : first) || 'Quick note';
+}
 const ATTACH_EXT = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.avif', '.heic', '.ico', '.pdf', '.mp3', '.m4a', '.wav', '.ogg', '.oga', '.opus', '.flac',
   '.webm', '.mp4', '.m4v', '.mov', '.mkv', '.docx', '.xlsx', '.pptx', '.odt', '.ods', '.odp', '.csv', '.zip', '.txt', '.json', '.epub',
@@ -1163,8 +1174,7 @@ export class Vault implements VaultApi {
   }
 
   async capture(input: { text: string; title?: string }): Promise<ItemSummary> {
-    const first = input.text.split('\n').find(l => l.trim()) ?? '';
-    const title = input.title?.trim() || (first.length > 60 ? first.slice(0, 57) + '…' : first) || 'Quick note';
+    const title = input.title?.trim() || captureTitle(input.text);
     return this.createNoteRaw({ parent: await this.captureFolder(), title, body: input.text });
   }
 

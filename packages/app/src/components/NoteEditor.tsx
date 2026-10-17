@@ -35,6 +35,7 @@ import { suggestionRequest, cleanSuggestion, completeText } from '@ergonotes/cor
 import { canPrint, printNote } from '../state/printNote';
 import { Dialog, IconBtn, TagBar, useMenu, type MenuEntry } from './ui';
 import { href } from '../state/router';
+import { pastedFiles } from '../state/paste';
 import { ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, clampZoom, setPrefs, usePrefs, usePrefsNow } from '../state/prefs';
 
 type SaveState = 'saved' | 'saving' | 'error';
@@ -323,12 +324,12 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
     return () => { editor.off('transaction', mark); };
   }, [editor, app.habits, doc?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // paste / drop images
+  // paste / drop pictures and files
   useEffect(() => {
     if (!editor) return;
     const dom = editor.view.dom;
     const onPaste = (e: ClipboardEvent) => {
-      const files = Array.from(e.clipboardData?.files ?? []).filter(f => f.type.startsWith('image/'));
+      const files = pastedFiles(e.clipboardData);
       if (files.length) { e.preventDefault(); void attach(files); }
     };
     const onDrop = (e: DragEvent) => {
@@ -676,12 +677,11 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
         <button type="button" className="tb-btn accent" disabled={locked} onClick={e => setInsertAt(e.currentTarget.getBoundingClientRect())}><span className="insert-dot"><Plus size={12} /></span> Insert <ChevronDown size={14} /></button>
         {!scratch && canShareScreen() && <TB locked={locked} label="Meeting" onClick={() => insertCtx.record('meeting')}><AudioLines size={18} /></TB>}
         {!scratch && <TB locked={locked} label="Recording" onClick={() => insertCtx.record('recording')}><Mic size={18} /></TB>}
-        <TB locked={locked} label="Checklist" on={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={18} /></TB>
         {!scratch && <>
+        <TB locked={locked} label="Checklist" on={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={18} /></TB>
         <TB locked={locked} label={tokens.inTask ? 'Due date' : 'Due date (place the cursor in a task)'} on={!!tokens.due} disabled={!tokens.inTask} onClick={() => setDateDialog('due')}><CalendarDays size={18} /></TB>
         <TB locked={locked} label="Reminder" on={!!tokens.remind} disabled={!tokens.inTask} onClick={() => setDateDialog('remind')}><Bell size={18} /></TB>
         <TB locked={locked} label="Flag task" on={tokens.flag} disabled={!tokens.inTask} onClick={() => setTaskToken(editor, 'flag', tokens.flag ? null : '1')}><Flag size={18} /></TB>
-        </>}
         <span className="tb-sep" />
         <TB locked={locked} label="Undo" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}><Undo2 size={18} /></TB>
         <TB locked={locked} label="Redo" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}><Redo2 size={18} /></TB>
@@ -697,6 +697,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
         <TB locked={locked} label="Bulleted list" on={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={18} /></TB>
         <TB locked={locked} label="Numbered list" on={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={18} /></TB>
         <TB locked={locked} label="Quote" on={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}><Quote size={18} /></TB>
+        </>}
       </div>
 
       <div className="editor-main">

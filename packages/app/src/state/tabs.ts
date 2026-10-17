@@ -44,6 +44,9 @@ function set(next: TabsState) {
   for (const l of listeners) l();
 }
 
+/** The strip is shown only while two or more Tabs are open (CONTEXT.md, Tab). */
+export const showsTabBar = (tabs: readonly Tab[]): boolean => tabs.length >= 2;
+
 export const tabsState = (): TabsState => state;
 export function useTabs(): TabsState {
   return useSyncExternalStore(l => { listeners.add(l); return () => listeners.delete(l); }, () => state);

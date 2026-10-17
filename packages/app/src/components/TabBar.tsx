@@ -2,7 +2,7 @@ import { useEffect, useState, type DragEvent } from 'react';
 import { FileText, X } from 'lucide-react';
 import { useApp } from '../state/app';
 import { classNames } from '../state/util';
-import { closeTab, dropMissingNotes, followRoute, moveTab, useTabs, type Tab } from '../state/tabs';
+import { closeTab, dropMissingNotes, followRoute, moveTab, showsTabBar, useTabs, type Tab } from '../state/tabs';
 
 const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 
@@ -21,7 +21,8 @@ export function TabBar() {
   const { tabs, active } = useTabs();
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
-  if (tabs.length === 0) return null;
+  // one open Item needs no strip; it appears when a second is opened
+  if (!showsTabBar(tabs)) return null;
   const title = (t: Tab) => (t.kind === 'note' ? app.byId.get(t.ref)?.title || 'Untitled' : baseName(t.ref));
   const close = (t: Tab) => { const h = closeTab(t.key); if (h) location.hash = h; };
   const onDrop = (e: DragEvent, before: string | null) => { e.preventDefault(); if (dragging) moveTab(dragging, before); setDragging(null); setOver(null); };

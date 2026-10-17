@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemPersist } from '../src/persist.ts';
 import { MemStore } from '../src/store.ts';
-import { Vault } from '../src/vault.ts';
+import { Vault, captureTitle } from '../src/vault.ts';
 import { MemFs } from '../src/vaultfs.ts';
 import type { StoreConfig } from '../src/api.ts';
 
@@ -420,5 +420,24 @@ describe('two devices', () => {
     expect((await A.getNote(n.id))!.body).toBe('A\nb\nc\nd\nE');
     expect((await B.getNote(n.id))!.body).toBe('A\nb\nc\nd\nE');
     expect(await A.conflicts()).toHaveLength(0);
+  });
+});
+
+describe('the title of a captured text', () => {
+  it('is its first line of words, without Markdown', () => {
+    expect(captureTitle('Remember the milk\nand eggs')).toBe('Remember the milk');
+    expect(captureTitle('\n\n# A heading\nbody')).toBe('A heading');
+    expect(captureTitle('- [ ] buy bread')).toBe('buy bread');
+    expect(captureTitle('1. first thing')).toBe('first thing');
+    expect(captureTitle('see [the plan](a/b.md) soon')).toBe('see the plan soon');
+  });
+  it('skips a line that is only a picture and takes the words after it', () => {
+    expect(captureTitle('![shot.png](../attachments/shot.png)\nWhat I saw')).toBe('What I saw');
+    expect(captureTitle('![a drawing](x.png) a caption')).toBe('a caption');
+  });
+  it('is Quick note when there are no words, and is cut at 60 characters', () => {
+    expect(captureTitle('![](../attachments/a.png)')).toBe('Quick note');
+    expect(captureTitle('   \n  ')).toBe('Quick note');
+    expect(captureTitle('x'.repeat(80))).toBe('x'.repeat(57) + '…');
   });
 });
