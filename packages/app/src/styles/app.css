@@ -592,7 +592,14 @@ html.kbd .resizer:focus-visible { outline: none; }
 .card .foot .date { color: var(--text-2); margin-top: 4px; flex-basis: 100%; }
 .card.create { align-items: center; justify-content: center; gap: 12px; cursor: pointer; font-size: var(--fs-s); color: var(--text-strong); }
 .create-dot { width: 40px; height: 40px; border-radius: 50%; background: var(--green-fill); color: var(--on-green); display: grid; place-items: center; }
-.w-capture .capture { background: var(--sticky); border-color: transparent; height: 256px; border-radius: 8px; }
+.scratch-box { height: 340px; display: flex; flex-direction: column; min-height: 0; background: var(--scratch); border: 1px solid var(--scratch-edge); border-radius: var(--radius-lg); overflow: hidden; }
+.scratch-box .editor { flex: 1; }
+.editor.scratch { background: transparent; }
+.editor.scratch .toolbar { background: transparent; border-bottom: 1px solid var(--scratch-edge); padding: 4px 6px; flex-wrap: wrap; row-gap: 0; }
+.editor.scratch .editor-scroll { background: transparent; }
+.editor.scratch .editor-page { padding: 10px 14px 12px; max-width: none; }
+.editor.scratch .editor-foot { background: transparent; border-top: 1px solid var(--scratch-edge); padding: 6px 10px; gap: 10px; }
+.editor.scratch .ProseMirror { min-height: 120px; font-size: var(--fs-s, 14px); }
 .w-capture .capture textarea { flex: 1; min-height: 0; color: var(--text); }
 .w-capture .capture .foot { margin-top: 4px; }
 @media (max-width: 899px) { .home-row { grid-template-columns: minmax(0, 1fr); gap: 0; } }

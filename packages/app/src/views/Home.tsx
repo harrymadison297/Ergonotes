@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight, ChevronLeft, ChevronRight, FilePlus2, Send } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, FilePlus2 } from 'lucide-react';
 import { useApp } from '../state/app';
 import { href, noteHref } from '../state/router';
 import { isoDay } from '../state/util';
 import { IconBtn, NoteCard, TagLink } from '../components/ui';
 import { TaskRow } from './Tasks';
 import { FirstRunBanner } from '../components/FirstRunBanner';
+import { ScratchPad } from '../components/ScratchPad';
 
 export function MiniCalendar({ onPick }: { onPick?: (day: string) => void }) {
   const app = useApp();
@@ -42,7 +43,6 @@ export function MiniCalendar({ onPick }: { onPick?: (day: string) => void }) {
 export function Home() {
   const app = useApp();
   const [tab, setTab] = useState<'recent' | 'inbox'>('recent');
-  const [capture, setCapture] = useState('');
   const notes = useMemo(() => app.items.filter(i => i.type === 'note' && !i.inTrash && !i.template), [app.items]);
   const recent = useMemo(() => [...notes].sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, 10), [notes]);
   const inboxId = app.settings.captureFolder ?? app.items.find(i => i.role === 'inbox')?.id;
@@ -54,11 +54,6 @@ export function Home() {
   const shown = tab === 'recent' ? recent : inbox;
   const folderName = (n: { parent: string | null }) => (n.parent ? app.byId.get(n.parent)?.title : undefined);
 
-  const saveCapture = async () => {
-    if (!capture.trim()) return;
-    const n = await app.run(app.api.capture({ text: capture }));
-    if (n) { setCapture(''); app.toast('Saved to Inbox'); await app.refresh(); }
-  };
 
   return (
     <div className="home">
@@ -85,14 +80,7 @@ export function Home() {
 
         <section className="widget w-capture" aria-labelledby="w-capture">
           <h2 id="w-capture">Scratch pad</h2>
-          <div className="capture">
-            <textarea aria-label="Scratch pad" placeholder="Start writing…" value={capture} onChange={e => setCapture(e.target.value)}
-              onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void saveCapture(); }} />
-            <div className="foot">
-              <span>{capture.length ? `${capture.length} characters` : 'Goes to your Inbox'}</span>
-              <IconBtn label="Save to Inbox (Ctrl+Enter)" icon={<Send size={16} />} onClick={() => void saveCapture()} disabled={!capture.trim()} />
-            </div>
-          </div>
+          <ScratchPad />
         </section>
       </div>
 

@@ -4,7 +4,7 @@ import { useApp, AppOverride } from '../state/app';
 import { NoteEditor } from '../components/NoteEditor';
 import { canOpenExternal, extRead, extReveal, extStat, type ExternalText } from '../backend/external';
 import { EXTERNAL_PREFIX, baseName, externalApi, externalState, externalSummary, type ExternalState } from '../state/externalApi';
-import { setApiRef } from '../state/appRef';
+import { ApiKeeper } from '../state/apiKeeper';
 import type { ItemSummary } from '@ergonotes/core';
 
 /** A file outside the vault (CONTEXT.md, External file): the note editor on the file itself, saved straight back to it. */
@@ -90,12 +90,4 @@ function Loaded({ path, file, reload }: { path: string; file: ExternalText; relo
       </div>
     </AppOverride>
   );
-}
-
-/** Editor node views reach the api through a holder outside React; while this file is shown that is its api. */
-function ApiKeeper({ api }: { api: ReturnType<typeof externalApi> }) {
-  const app = useApp();
-  setApiRef(api);
-  useEffect(() => () => setApiRef(app.api), []); // eslint-disable-line react-hooks/exhaustive-deps
-  return null;
 }

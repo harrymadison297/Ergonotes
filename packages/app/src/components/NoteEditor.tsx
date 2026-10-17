@@ -286,9 +286,8 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
     for (const f of Array.from(files)) {
       if (scratch && /\.(md|markdown|txt)$/i.test(f.name)) {
         // a text file dropped on the Scratchpad is its words, not an attachment
-        const md = (editor?.storage as unknown as { markdown: { parser: { parse(s: string): string } } } | undefined)?.markdown;
-        const text = await f.text();
-        if (md) editor?.chain().focus('end').insertContent(md.parser.parse(text)).run();
+        // (the Markdown extension reads a string given to insertContent as Markdown)
+        editor?.chain().focus('end').insertContent('\n\n' + (await f.text())).run();
         continue;
       }
       const data = toB64(new Uint8Array(await f.arrayBuffer()));
