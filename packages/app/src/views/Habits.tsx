@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Check, Plus, Repeat } from 'lucide-react';
+import { Check, Plus } from 'lucide-react';
+import { Mood } from '../components/Mood';
 import type { HabitInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames } from '../state/util';
@@ -39,7 +40,7 @@ function HabitList() {
       </div>
       {nudges.length > 0 && <div className="nudges">{nudges.map(h => <NudgeCard key={h.id} habit={h} nudge={h.nudge!} showName />)}</div>}
       {active.length === 0
-        ? <div className="empty"><Repeat size={32} /><h3>No habits yet</h3><p>A habit is something you want to do again and again: 8 glasses of water a day, a run 2 times in 3 days. Check in each time, and the app keeps your streak.</p><button className="btn primary" onClick={() => setAdding(true)}><Plus size={16} /> New habit</button></div>
+        ? <div className="empty"><Mood name="sleeping" size={72} /><h3>No habits yet</h3><p>A habit is something you want to do again and again: 8 glasses of water a day, a run 2 times in 3 days. Check in each time, and the app keeps your streak.</p><button className="btn primary" onClick={() => setAdding(true)}><Plus size={16} /> New habit</button></div>
         : <ul className="habit-list">{active.map(h => <HabitRow key={h.id} h={h} />)}</ul>}
       {archived.length > 0 && (
         <details className="habit-archived"><summary>Archived ({archived.length})</summary>

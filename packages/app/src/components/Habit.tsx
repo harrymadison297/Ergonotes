@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, Flame, Loader2, Plus, Repeat, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, Plus, Trash2, X } from 'lucide-react';
 import type { HabitDay, HabitDetail, HabitInfo, Nudge } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames } from '../state/util';
 import { describeTarget, dismissNudge, hhmm, nudgeDismissed, nudgeId, progress, STATE_WORD } from '../state/habits';
 import { habitHref, href } from '../state/router';
+import { moodForNudge } from '../state/mood';
+import { Mood } from './Mood';
 import { Dialog } from './ui';
 
 /** A ring of how much of today's window is done (`done` of `of`). */
@@ -50,7 +52,7 @@ export function NudgeCard({ habit, nudge, showName }: { habit: HabitInfo; nudge:
   if (gone) return null;
   return (
     <div className={classNames('nudge', `nudge-${nudge.tone}`)} role="status">
-      {nudge.tone === 'good' ? <Flame size={16} aria-hidden /> : <span className="nudge-dot" aria-hidden />}
+      <Mood name={moodForNudge(nudge)} size={40} />
       <span className="grow">{showName && <a href={habitHref(habit.id)}><b>{habit.title}</b></a>}{showName ? ' · ' : ''}{nudge.text}</span>
       <button type="button" className="icon-btn" aria-label="Put this message away for today" title="Put away for today" onClick={() => { dismissNudge(app.today, id); setGone(true); }}><X size={16} /></button>
     </div>
@@ -197,7 +199,7 @@ export function HabitPage({ id }: { id: string }) {
   if (d === null) {
     return (
       <div className="habits-page">
-        <div className="empty"><Repeat size={32} /><h3>This habit is not here</h3><p>It was deleted, or it is on another device that has not synced yet.</p><a className="btn" href={href({ name: 'habits' })}>All habits</a></div>
+        <div className="empty"><Mood name="surprised" size={72} /><h3>This habit is not here</h3><p>It was deleted, or it is on another device that has not synced yet.</p><a className="btn" href={href({ name: 'habits' })}>All habits</a></div>
       </div>
     );
   }
