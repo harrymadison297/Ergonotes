@@ -16,9 +16,10 @@ and a transcript, kept in one folder and played with the pictures marked on the 
 | | |
 |---|---|
 | **Start at once** | A new install on Windows, Linux or Android makes a vault in your Documents folder and shows Home straight away, with no set-up screen and no password until you want one (docs/adr/0012). A running curve shows while the app starts and while a big folder is read. |
-| **Scratchpad** | A light blue note on Home that is not a note yet: it uses the note editor, keeps its draft on the device, takes dropped pictures and files, and becomes a note in the Inbox when you send it. |
-| **Habits** | A habit is a note with a target such as twice in three days. Check in when you do it; the streak, the misses, the 7, 30 and 90 day rates, a 12 week heat map and the messages are worked out, never stored (docs/adr/0013). Mention a habit in any note with `@`. |
-| **Calendar and Home** | Each day shows counts: tasks done and open, reminders, notes, events, habits met. Home says what is left today. |
+| **Scratchpad** | A very pale blue note on Home that is not a note yet: it uses the note editor with only an Insert button, keeps its draft on the device, takes dropped or pasted pictures and files, and becomes a note in the Inbox when you send it. |
+| **Habits** | A habit is a file in the hidden `.habits/` folder with a target such as twice in three days; it is not a note and has a page of its own (docs/adr/0014). Check in when you do it; the streak, the misses, the 7, 30 and 90 day rates, a 12 week heat map and the messages, each with a hand-drawn face, are worked out, never stored (docs/adr/0013). Mention a habit in any note with `@`. |
+| **Home** | A dashboard of widgets you arrange on each device (never synced): notes, scratch pad, tasks due, reminders, events, files, tags, and habit widgets with a ring on each day, the month's rate against last month, check-ins per habit, streaks and a year heat map, plus charts of notes edited and tasks done. |
+| **Calendar** | Each day shows counts: tasks done and open, reminders, notes, events. |
 | **Tabs and Open with** | Notes open in tabs (Ctrl+click, Ctrl+W, Ctrl+Shift+T). Right click a Markdown file anywhere, *Open with Ergonotes*: it is edited in place and nothing is added to it. |
 | **Export** | Markdown, HTML, PDF and Word (`.docx`, made in the app). |
 | **VS Code** | `apps/vscode` is an extension to read and edit the same files in VS Code: syntax, a preview, links, snippets and habit check-ins. |

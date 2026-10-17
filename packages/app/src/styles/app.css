@@ -1367,7 +1367,7 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .widget.w-scratch.size-L .scratch-box { height: 480px; }
 
 .w-greeting { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; }
-.w-greeting h3 { margin: 0; font-size: 28px; line-height: 1.15; color: var(--text-strong); }
+.w-greeting h3 { margin: 0; font-size: var(--fs-title); line-height: 1.15; color: var(--text-strong); }
 .w-greeting p { margin: 4px 0 0; font-size: var(--fs-s); }
 .w-greeting .mood { color: var(--text-2); }
 .g-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
@@ -1383,7 +1383,7 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .day-ring .n { position: relative; font-size: var(--fs-s); color: var(--text-2); font-variant-numeric: tabular-nums; }
 .day-ring.full .n { color: var(--text-strong); font-weight: 700; }
 .hcal .day.today .n { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--sel); color: #fff; font-weight: 700; }
-.hrate .big { font-size: 42px; font-weight: 700; line-height: 1.1; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.hrate .big { font-size: var(--fs-title); font-weight: 700; line-height: 1.1; color: var(--text-strong); font-variant-numeric: tabular-nums; }
 .hrate .delta { font-size: var(--fs-s); color: var(--text-2); margin-top: 2px; }
 .hrate .delta.up { color: var(--green-ink); }
 .hrate .delta.down { color: var(--danger); }

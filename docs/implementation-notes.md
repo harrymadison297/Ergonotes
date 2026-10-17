@@ -178,10 +178,32 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
   compares modification times). Links inside an External file are not followed yet (`[[x]]` finds nothing, relative links are plain text).
 - **Scratchpad**: `components/ScratchPad.tsx` is `NoteEditor` with `scratch` set and an api of its own (`state/scratchApi.ts`); the draft and the
   files dropped on it are in IndexedDB (`state/scratch.ts`) and only reach the Vault when it is sent.
-- **Habits** (ADR 0013): `core/src/habit.ts` is pure (the day rules, the words, the log lines); `Vault.habits/habit/createHabit/updateHabit/
+- **Habits** (ADR 0013, 0014; see the next section for where they live): `core/src/habit.ts` is pure (the day rules, the words, the log lines); `Vault.habits/habit/createHabit/updateHabit/
   checkInHabit/undoCheckIn/setHabitRemark`; the Task parser reads `@done`. `app.habits` is read with the rest at each refresh and again when
   the day changes. The `@` picker (`MentionSuggest`) and the chip for a link to a Habit are in `NoteEditor` and `editor/extensions.tsx`.
 - **Word**: `state/exportDocx.ts` walks the clean copy of the note that the PDF uses (`paperBody`) and builds the file with `docx`; SVG and
   `<img>` become PNGs through a canvas. Checked by opening a generated file with pandoc and python-docx.
 - **VS Code**: `apps/vscode` (see its README); `render.ts` and `notes.ts` are plain TypeScript with unit tests, the rest is thin VS Code glue,
   exercised by `tools/e2e-vscode.sh`.
+
+## The dashboard, habits in `.habits/`, mood pictures (2026-10-17)
+
+- **A Habit is its own kind of item** (ADR 0014): `_ergo_kind: habit` in the replica, held by the Vault in `habitFiles`, never in `views`, so
+  no list, search, tag, task, calendar or backlink of the Notes sees it. The scan reads one hidden folder, `.habits/` at the top, only `*.md` in
+  it, and adds no Folder for it. `Vault.habits/habit/habitDays/createHabit/renameHabit/deleteHabit/updateHabit/checkInHabit/undoCheckIn`.
+  Two Devices that checked in at once leave two heads; `combineHabitConflicts` (run with the housekeeping after a pull) joins them with
+  `unionText`, so nobody is asked. A delete against an edit is still left to the person.
+- **A mention** is `[Run](.habits/Run.md "type_habit")`: `TitledLink` (editor/extensions.tsx) keeps the title of a link; the chip, and the click
+  that opens `#/habits/<id>`, are found by the path in `NoteEditor`. A rename of a habit follows the links with `followMoves`.
+- **The page of a habit** (`HabitPage` in components/Habit.tsx, route `habits` with `habit`): the figures, 12 weeks, rename, delete, the notes that
+  mention it. Not a Tab. No place to write a remark: existing remarks are shown read-only.
+- **Dashboard** (`state/dashboard.ts`, pure and tested; stored in localStorage `ergo.dashboard`, never in the Vault): widgets with `layouts[n]`
+  for 1, 2 and 3 columns, so the order on a phone and in three columns can differ; `columnsFor(width)` picks the layout from the width of
+  Home. `views/Home.tsx` draws columns, the edit mode (arrows, drag, S/M/L, remove) and the gallery; `components/widgets.tsx` has the 18
+  bodies; `components/charts.tsx` the SVG charts (rings, columns, bars, line, year grid); `state/habitStats.ts` the figures, with tests.
+  The habit widgets read `Vault.habitDays(from, to, today)` again when `app.habits` changes.
+- **Mood pictures**: `assets/mood/*.svg` (ten of the person's own drawings, colour `currentColor`), `components/Mood.tsx` inlines them,
+  `state/mood.ts` says which goes with which nudge.
+- **Paste**: the editor's paste and drop listeners are put on once, in the capture phase (`NoteEditor`), because ProseMirror moves the focus to a
+  hidden box while it handles a paste, the re-render took the listener off and on again, and the paste that caused it was lost.
+  `state/paste.ts` decides what to attach: pictures always, other files only when no text comes with them.
