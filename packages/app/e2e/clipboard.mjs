@@ -68,9 +68,11 @@ await page.locator('.ex-empty').waitFor({ timeout: 15000 });
 await page.locator('.explorer').click({ position: { x: 300, y: 300 } });
 await page.keyboard.press('Control+v');
 await page.getByText('Pasted 2 items').waitFor({ timeout: 10000 });
-const one = await until(async () => (await where('One copy')) === 'Dest/One copy.md' && (await where('Two copy')) === 'Dest/Two copy.md');
-check('ctrl+V after a copy puts duplicates in the open folder', !!one, `${await where('One copy')} ${await where('Two copy')}`);
-check('and the originals are still where they were', (await where('One')) === 'Source/One.md' && (await where('Two')) === 'Source/Two.md');
+// in another folder a copy keeps its name (next to the original it is "… copy")
+const at = async p => (await items()).some(i => i.filePath === p && !i.inTrash);
+const one = await until(async () => (await at('Dest/One.md')) && (await at('Dest/Two.md')));
+check('ctrl+V after a copy puts duplicates in the open folder', !!one, JSON.stringify((await items()).map(i => i.filePath).filter(p => p.startsWith('Dest'))));
+check('and the originals are still where they were', (await at('Source/One.md')) && (await at('Source/Two.md')));
 
 // ---- cut and paste into a folder that is picked: a move
 await page.goto(`${base}/#/notes?folder=${Src.id}`);
@@ -101,11 +103,11 @@ await page.keyboard.press('Escape');
 
 // ---- delete key, with several picked
 await page.goto(`${base}/#/notes?folder=${Dst.id}`);
-await tile('One copy').waitFor({ timeout: 15000 });
-await tile('One copy').click();
-await tile('Two copy').click({ modifiers: ['Control'] });
+await tile('One').waitFor({ timeout: 15000 });
+await tile('One').click();
+await tile('Two').click({ modifiers: ['Control'] });
 await page.keyboard.press('Delete');
-check('delete moves the picked items to the Trash', !!(await until(async () => !(await where('One copy')) && !(await where('Two copy')))));
+check('delete moves the picked items to the Trash', !!(await until(async () => !(await at('Dest/One.md')) && !(await at('Dest/Two.md')))));
 check('no console errors', errors.filter(x => !/Failed to load resource|status of 400/.test(x)).length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
 console.log(failures ? `${failures} check(s) failed` : 'all checks passed');

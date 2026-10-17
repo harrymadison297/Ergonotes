@@ -241,7 +241,7 @@ check('the command "Show or hide the note list" shows it again', (await width('.
 
 // ---- the collapsed sidebar: one size, one rhythm, no slack
 {
-  const c2 = await browser.newContext({ viewport: { width: 1280, height: 780 } });
+  const c2 = await browser.newContext({ viewport: { width: 1280, height: 860 } });
   await c2.addInitScript(() => { try { localStorage.setItem('ergo.rail', '1'); } catch { /* ignore */ } });
   const p2 = await c2.newPage();
   await p2.goto(base);
