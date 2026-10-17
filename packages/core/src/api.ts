@@ -30,6 +30,12 @@ export interface VaultStatus {
   authenticated?: boolean;
   /** something about the vault folder the person should know (a very large folder, a file that could not be written) */
   notice?: string | null;
+  /** false: the vault is open without a password (ADR 0012) */
+  hasPassword: boolean;
+  /** this Device may keep a vault with no password, and so may set or remove one */
+  passwordOptional: boolean;
+  /** the first look at the folder is still running: how many files have been read of how many */
+  scan: { done: number; total: number } | null;
 }
 
 export interface ItemSummary {
@@ -170,11 +176,16 @@ export interface ExportResult { filename: string; mime: string; content: string 
 export interface VaultApi {
   status(): Promise<VaultStatus>;
   /** `setupToken` is only read by a Server peer that was started with one */
-  createVault(password: string, opts?: { deviceName?: string; remember?: boolean; setupToken?: string }): Promise<void>;
+  createVault(password: string, opts?: { deviceName?: string; remember?: boolean; setupToken?: string; noPassword?: boolean }): Promise<void>;
   joinVault(store: StoreConfig, password: string, opts?: { deviceName?: string; remember?: boolean; setupToken?: string }): Promise<void>;
   unlock(password: string, opts?: { remember?: boolean }): Promise<void>;
   lock(): Promise<void>;
+  /** Also how a password is first set on a vault with no password (`oldPassword` is ignored then). */
   changePassword(oldPassword: string, newPassword: string): Promise<void>;
+  /** Back to a vault with no password (ADR 0012); only where `status().passwordOptional`. */
+  removePassword(password: string): Promise<void>;
+  /** Forget a password-less vault that has no Store, to join an existing one instead. */
+  leaveVault(): Promise<void>;
   setDeviceName(name: string): Promise<void>;
 
   listItems(): Promise<ItemSummary[]>;
@@ -257,7 +268,7 @@ export interface VaultApi {
 }
 
 export const VAULT_METHODS = [
-  'status', 'createVault', 'joinVault', 'unlock', 'lock', 'changePassword', 'setDeviceName',
+  'status', 'createVault', 'joinVault', 'unlock', 'lock', 'changePassword', 'removePassword', 'leaveVault', 'setDeviceName',
   'listItems', 'getNote', 'createNote', 'saveNote', 'createFolder', 'capture', 'rename', 'duplicate', 'copy', 'move', 'setTags',
   'renameTag', 'setPinned', 'setPrivate', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'searchHits', 'linkTargets', 'tags', 'tasks', 'toggleTask',
   'calendar', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',

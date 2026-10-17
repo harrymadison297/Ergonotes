@@ -8,7 +8,7 @@ import type {
   Settings, StoreConfig, SyncReport, TaskEntry, VaultApi, VaultState, VaultStatus, VersionInfo,
 } from './api.ts';
 import {
-  DEFAULT_KDF, Sealer, WrongPasswordError, checkPassword, createVaultFile, unwrapMasterKey, wrapMasterKey,
+  DEFAULT_KDF, Sealer, WrongPasswordError, checkPassword, createPasswordlessVaultFile, createVaultFile, hasPassword, unwrapMasterKey, wrapMasterKey,
   type VaultFile,
 } from './crypto.ts';
 import {
@@ -51,6 +51,10 @@ export interface VaultOptions {
   watchMs?: number;
   /** A folder with more files than this is read only in part and the person is told. */
   maxFiles?: number;
+  /** ADR 0012: this Device may keep a vault with no password (desktop and Android; not the Server peer or the web). */
+  passwordOptional?: boolean;
+  /** Open the vault before the folder has been read (the interface shows the progress). Off: opening waits for the first look. */
+  backgroundScan?: boolean;
 }
 
 interface View {
@@ -189,6 +193,9 @@ export class Vault implements VaultApi {
   private linkIdx: LinkIndex | null = null;
   private linkCache = new Map<string, string[]>();
   private notice: string | null = null;
+  /** the first look at the folder after opening: the UI is shown while it runs (progress in the status) */
+  private scanning: Promise<void> | null = null;
+  private scanProgress: { done: number; total: number } | null = null;
 
   private constructor(opts: VaultOptions) {
     this.opts = opts;
@@ -205,7 +212,9 @@ export class Vault implements VaultApi {
       await opts.persist.setMeta('deviceId', v.meta.deviceId);
     }
     const remembered = v.meta.rememberedKey as string | undefined;
-    if (v.vaultFile && remembered) {
+    if (v.vaultFile && !hasPassword(v.vaultFile)) {
+      try { await v.activate(await unwrapMasterKey('', v.vaultFile)); } catch { /* fall back to locked */ }
+    } else if (v.vaultFile && remembered) {
       try { await v.activate(fromB64(remembered)); } catch { /* fall back to locked */ }
     }
     return v;
@@ -242,6 +251,9 @@ export class Vault implements VaultApi {
       remembered: !!this.meta.rememberedKey,
       remote: false,
       notice: this.notice,
+      hasPassword: this.vaultFile ? hasPassword(this.vaultFile) : true,
+      passwordOptional: !!this.opts.passwordOptional,
+      scan: this.scanProgress,
     };
   }
 
@@ -258,31 +270,51 @@ export class Vault implements VaultApi {
     this.pathById.clear();
     if (this.fs.durable !== false) for (const [p, e] of (this.meta.fileIndex as [string, IndexEntry][] | undefined) ?? []) this.setIndex(p, e);
     this.refresh(this.replica.items());
-    // files that changed while the app was closed, and notes that arrived but were never written out
-    await this.rescan();
-    this.queueWrite(this.replica.items().filter(i => !this.pathById.has(i)));
-    await this.flushDisk();
+    // files that changed while the app was closed, and notes that arrived but were never written out:
+    // looked at in the background so the app shows at once (the status carries the progress)
+    this.scanProgress = this.opts.backgroundScan ? { done: 0, total: 0 } : null;
+    const replica = this.replica;
+    const run = (async () => {
+      try {
+        await this.diskTask(() => this.scanNow(!!this.opts.backgroundScan));
+        if (this.replica !== replica) return;
+        this.queueWrite(replica.items().filter(i => !this.pathById.has(i)));
+        await this.flushDisk();
+      } catch (e) {
+        this.notice = `Could not read the vault folder: ${e instanceof Error ? e.message : String(e)}`;
+      } finally {
+        if (this.replica === replica) { this.scanProgress = null; this.emit({ type: 'status' }); }
+      }
+    })();
+    this.scanning = run;
+    void run.finally(() => { if (this.scanning === run) this.scanning = null; });
     this.emit({ type: 'status' });
+    if (!this.opts.backgroundScan) await run;
   }
+
+  /** Wait until the first look at the folder is over (what must not run on a half-read vault). */
+  private async scanned(): Promise<void> { await this.scanning; }
 
   private async folderIsEmpty(): Promise<boolean> {
     const top = await this.fs.readdir('');
     return top.every(e => e.name.startsWith('.'));
   }
 
-  async createVault(password: string, o: { deviceName?: string; remember?: boolean } = {}): Promise<void> {
+  async createVault(password: string, o: { deviceName?: string; remember?: boolean; noPassword?: boolean } = {}): Promise<void> {
     if (this.vaultFile) throw new Error('A vault already exists on this device');
-    const problem = checkPassword(password);
+    if (o.noPassword && !this.opts.passwordOptional) throw new Error('A vault on this device needs a password.');
+    const problem = o.noPassword ? null : checkPassword(password);
     if (problem) throw new Error(problem);
     const empty = await this.folderIsEmpty();
-    const { file, masterKey } = await createVaultFile(password, this.opts.kdf ?? DEFAULT_KDF);
+    const { file, masterKey } = o.noPassword ? createPasswordlessVaultFile() : await createVaultFile(password, this.opts.kdf ?? DEFAULT_KDF);
     this.vaultFile = file;
     await this.setMeta('vaultFile', file);
     if (o.deviceName) await this.setMeta('deviceName', o.deviceName);
     if (o.remember) await this.setMeta('rememberedKey', toB64(masterKey));
     await this.activate(masterKey);
-    // a folder somebody already filled is taken as it is; an empty one gets the PARA folders and a welcome note
-    if (empty) await this.seedDefaults();
+    // a folder somebody already filled is taken as it is (read in the background); an empty one gets the PARA folders
+    // and a welcome note, once the first look at it, which is instant, is over
+    if (empty) { await this.scanned(); await this.seedDefaults(); }
   }
 
   async joinVault(store: StoreConfig, password: string, o: { deviceName?: string; remember?: boolean } = {}): Promise<void> {
@@ -299,6 +331,7 @@ export class Vault implements VaultApi {
     if (o.deviceName) await this.setMeta('deviceName', o.deviceName);
     if (o.remember) await this.setMeta('rememberedKey', toB64(masterKey));
     await this.activate(masterKey);
+    await this.scanned();
     await this.sync({ full: true });
     await this.flushDisk();
   }
@@ -361,18 +394,57 @@ export class Vault implements VaultApi {
     this.emit({ type: 'status' });
   }
 
+  /** Sets a password on a vault that has none (`oldPassword` is not read then), or changes the one it has. */
   async changePassword(oldPassword: string, newPassword: string): Promise<void> {
     if (!this.vaultFile) throw new Error('No vault');
     const problem = checkPassword(newPassword);
     if (problem) throw new Error(problem);
     const key = await unwrapMasterKey(oldPassword, this.vaultFile);
+    const wasOpen = !hasPassword(this.vaultFile);
     const file = await wrapMasterKey(newPassword, key, this.opts.kdf ?? DEFAULT_KDF, this.vaultFile.epoch);
     file.created = this.vaultFile.created;
-    // the Store first: if it cannot be reached nothing has changed here, and other devices never see a password this one lost
+    await this.saveVaultFile(file);
+    // the installed apps keep the key on the Device (as the sign-in screen's "keep unlocked" does), so setting a password
+    // protects the copy on the Store and other Devices without asking for it here at once
+    if (wasOpen && this.opts.passwordOptional) await this.setMeta('rememberedKey', toB64(key));
+  }
+
+  /** ADR 0012: back to a vault with no password. The master key stays, so nothing is re-encrypted. */
+  async removePassword(password: string): Promise<void> {
+    if (!this.vaultFile) throw new Error('No vault');
+    if (!this.opts.passwordOptional) throw new Error('A vault on this device needs a password.');
+    if (!hasPassword(this.vaultFile)) return;
+    const key = await unwrapMasterKey(password, this.vaultFile);
+    const { file } = createPasswordlessVaultFile(key, this.vaultFile.epoch);
+    file.created = this.vaultFile.created;
+    await this.saveVaultFile(file);
+    await this.setMeta('rememberedKey', undefined);
+    delete this.meta.rememberedKey;
+  }
+
+  /** The Store first: if it cannot be reached nothing has changed here, and other devices never see a password this one lost. */
+  private async saveVaultFile(file: VaultFile): Promise<void> {
     const s = await this.getStore();
     if (s) await s.put('vault.json', enc(JSON.stringify(file)));
     this.vaultFile = file;
     await this.setMeta('vaultFile', file);
+    this.emit({ type: 'status' });
+  }
+
+  /**
+   * Forget a vault that has no password and is not connected to a Store, so that this Device can join one that exists.
+   * History and conversations in `.ergonotes/` go; the notes in the folder stay and join the vault that is joined.
+   */
+  async leaveVault(): Promise<void> {
+    if (!this.vaultFile) return;
+    if (!this.opts.passwordOptional || hasPassword(this.vaultFile)) throw new Error('Only a vault with no password can be left from here.');
+    if (this.meta.store) throw new Error('Disconnect the storage first.');
+    await this.lock();
+    for (const k of ['vaultFile', 'rememberedKey', 'store', 'fileIndex', 'lastSyncAt']) { delete this.meta[k]; await this.persist.setMeta(k, undefined); }
+    await this.persist.reset?.();
+    this.vaultFile = null;
+    this.store = undefined;
+    this.emit({ type: 'status' });
   }
 
   async setDeviceName(name: string): Promise<void> {
@@ -587,7 +659,7 @@ export class Vault implements VaultApi {
     return this.diskTask(() => this.scanNow());
   }
 
-  private async scanNow(): Promise<number> {
+  private async scanNow(showProgress = false): Promise<number> {
     const r = this.replica;
     if (!r) return 0;
     if (!(await this.fs.stat(''))) { this.notice = 'The vault folder cannot be reached.'; return 0; }
@@ -604,7 +676,15 @@ export class Vault implements VaultApi {
     let again = false;
     const skipped: string[] = [];
     const oversized: string[] = [];
+    let seen = 0;
+    let lastTick = 0;
     for (const [path, f] of files) {
+      if (showProgress && ++seen && Date.now() - lastTick > 150) {
+        lastTick = Date.now();
+        this.scanProgress = { done: seen, total: files.size };
+        this.emit({ type: 'status' });
+        await new Promise<void>(res => setTimeout(res, 0)); // let the interface paint between slices
+      }
       const known = this.index.get(path);
       if (known && known.size === f.size && known.mtime === f.mtime) continue;
       if (settle > 0 && f.mtime > cut) { again = true; continue; } // still being written by another program

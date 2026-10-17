@@ -3,10 +3,12 @@ import { argon2id } from 'hash-wasm';
 import { dec, enc, fromB64, toB64 } from './util.ts';
 
 export interface KdfParams { alg: 'argon2id'; salt: string; m: number; t: number; p: number }
+/** ADR 0012: a vault with no password keeps its master key unwrapped, so opening it costs no key derivation. */
+export interface NoKdf { alg: 'none' }
 export interface VaultFile {
   version: 1;
-  kdf: KdfParams;
-  /** AES-256-GCM(iv|ct|tag) of the master key, base64 */
+  kdf: KdfParams | NoKdf;
+  /** AES-256-GCM(iv|ct|tag) of the master key, base64; with `kdf.alg === 'none'` the master key itself, base64 */
   wrappedKey: string;
   /** bumps when the master key is rotated */
   epoch: number;
@@ -28,15 +30,22 @@ async function aesKey(raw: Uint8Array, usage: KeyUsage[]): Promise<CryptoKey> {
   return subtle().importKey('raw', raw as BufferSource, 'AES-GCM', false, usage);
 }
 
+export interface Argon2Job { password: Uint8Array; salt: Uint8Array; parallelism: number; iterations: number; memorySize: number }
+export type Argon2Runner = (job: Argon2Job) => Promise<Uint8Array>;
+const inline: Argon2Runner = job => argon2id({ ...job, hashLength: 32, outputType: 'binary' });
+let runArgon2: Argon2Runner = inline;
+/** The app runs Argon2 in a Web Worker so that the 64 MB, quarter-second derivation does not freeze the interface. */
+export function setArgon2Runner(r: Argon2Runner | null): void { runArgon2 = r ?? inline; }
+/** The default way of running Argon2 on this thread, for a worker to call. */
+export const argon2Here: Argon2Runner = inline;
+
 async function derive(password: string, k: KdfParams): Promise<Uint8Array> {
-  return argon2id({
+  return runArgon2({
     password: enc(password.normalize('NFKC')),
     salt: fromB64(k.salt),
     parallelism: k.p,
     iterations: k.t,
     memorySize: k.m,
-    hashLength: 32,
-    outputType: 'binary',
   });
 }
 
@@ -67,6 +76,13 @@ export async function createVaultFile(password: string, params = DEFAULT_KDF): P
   return { file, masterKey };
 }
 
+/** A new vault with no password (ADR 0012): the master key is stored as it is. */
+export function createPasswordlessVaultFile(masterKey: Uint8Array = rand(32), epoch = 1): { file: VaultFile; masterKey: Uint8Array } {
+  return { file: { version: 1, kdf: { alg: 'none' }, wrappedKey: toB64(masterKey), epoch, created: Date.now() }, masterKey };
+}
+
+export const hasPassword = (file: VaultFile): boolean => file.kdf.alg !== 'none';
+
 export async function wrapMasterKey(password: string, masterKey: Uint8Array, params = DEFAULT_KDF, epoch = 1): Promise<VaultFile> {
   const kdf: KdfParams = { alg: 'argon2id', salt: toB64(rand(16)), ...params };
   const kek = await aesKey(await derive(password, kdf), ['encrypt']);
@@ -82,6 +98,11 @@ function assertSaneKdf(k: KdfParams): void {
 }
 
 export async function unwrapMasterKey(password: string, file: VaultFile): Promise<Uint8Array> {
+  if (file.kdf.alg === 'none') {
+    const key = fromB64(file.wrappedKey);
+    if (key.length !== 32) throw new Error('This vault file is damaged.');
+    return key;
+  }
   assertSaneKdf(file.kdf);
   const kek = await aesKey(await derive(password, file.kdf), ['decrypt']);
   try {

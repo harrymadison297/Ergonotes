@@ -2,7 +2,7 @@
 // unseen conflict, unreadable Store objects, Windows line endings, "keep both" without a base,
 // untrusted key-derivation settings and a password changed on another device.
 import { describe, expect, it } from 'vitest';
-import { Sealer, createVaultFile, unwrapMasterKey } from '../src/crypto.ts';
+import { Sealer, createVaultFile, unwrapMasterKey, type KdfParams } from '../src/crypto.ts';
 import { unionText } from '../src/merge.ts';
 import { splitDoc } from '../src/markdown.ts';
 import { MemPersist } from '../src/persist.ts';
@@ -93,8 +93,8 @@ describe('keep both and line endings', () => {
 describe('key derivation settings from the Store', () => {
   it('rejects absurd cost parameters before running Argon2', async () => {
     const { file } = await createVaultFile(PASSWORD, KDF);
-    await expect(unwrapMasterKey(PASSWORD, { ...file, kdf: { ...file.kdf, m: 2 ** 31 } })).rejects.toThrow(/does not accept/);
-    await expect(unwrapMasterKey(PASSWORD, { ...file, kdf: { ...file.kdf, t: 5000 } })).rejects.toThrow(/does not accept/);
+    await expect(unwrapMasterKey(PASSWORD, { ...file, kdf: { ...(file.kdf as KdfParams), m: 2 ** 31 } })).rejects.toThrow(/does not accept/);
+    await expect(unwrapMasterKey(PASSWORD, { ...file, kdf: { ...(file.kdf as KdfParams), t: 5000 } })).rejects.toThrow(/does not accept/);
     await expect(unwrapMasterKey(PASSWORD, file)).resolves.toHaveLength(32);
   });
 });

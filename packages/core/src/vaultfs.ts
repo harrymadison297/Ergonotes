@@ -203,9 +203,20 @@ export class FsPersist implements Persist {
     await this.ensure();
     if (value === undefined) delete this.meta[key]; else this.meta[key] = value;
     if (!this.local) { await this.queue(() => this.fs.write(`${this.dir}/meta.json`, JSON.stringify(this.meta), { private: true })); return; }
-    if (key === 'vaultFile') { await this.queue(() => this.fs.write(`${this.dir}/vault.json`, JSON.stringify(value), { private: true })); }
+    if (key === 'vaultFile') {
+      await this.queue(() => value === undefined ? this.fs.remove(`${this.dir}/vault.json`) : this.fs.write(`${this.dir}/vault.json`, JSON.stringify(value), { private: true }));
+    }
     const { vaultFile: _v, ...mine } = this.meta;
     await this.queue(() => this.local!.save(mine));
   }
   async close() { await this.writing; }
+
+  async reset() {
+    await this.ensure();
+    await this.writing;
+    this.heads = {};
+    delete this.meta.vaultFile;
+    await this.queue(() => this.fs.remove(this.dir));
+    if (this.local) { const { vaultFile: _v, ...mine } = this.meta; await this.queue(() => this.local!.save(mine)); }
+  }
 }

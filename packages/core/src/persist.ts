@@ -22,6 +22,8 @@ export interface Persist {
   setSealer?(s: Sealer | null): void;
   /** wait for queued writes; called when the owner shuts down */
   close?(): Promise<void>;
+  /** forget the commits, heads and vault file (a vault being left); the Device's own settings stay */
+  reset?(): Promise<void>;
 }
 
 export class MemPersist implements Persist {
