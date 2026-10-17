@@ -2,12 +2,13 @@
 import type { ReactNode } from 'react';
 import {
   AlignHorizontalSpaceAround, CalendarDays, Clipboard, Copy, FilePlus2, FileText, Folder, Home, Keyboard, ListChecks, PanelLeft, PanelRight, Paperclip, RefreshCw,
-  Scissors, Search, Settings as SettingsIcon, ZoomIn, ZoomOut, Maximize2, Trash2, CalendarCheck,
+  Scissors, Search, Settings as SettingsIcon, ZoomIn, ZoomOut, Maximize2, Trash2, CalendarCheck, X, RotateCcw,
 } from 'lucide-react';
 import { usePrefs, setPrefs, ZOOM_STEP, clampZoom, type Prefs } from './prefs';
 import { useApp, type AppCtx } from './app';
 import { formatBinding, normalizeBinding, type Bound } from './keymap';
 import { commandForChord } from './shortcuts';
+import { closeTab, neighbourTab, reopenTab, tabsState } from './tabs';
 import { useSync } from '../components/useSync';
 
 export type CommandGroup = 'General' | 'Navigate' | 'View' | 'Items';
@@ -47,6 +48,12 @@ export const COMMANDS: Command[] = [
   nav('files', 'Files', <Paperclip size={S} />, { name: 'files' }, ['g f']),
   nav('folders', 'Folders', <Folder size={S} />, { name: 'folders' }),
   nav('trash', 'Trash', <Trash2 size={S} />, { name: 'trash' }),
+
+  // Ctrl+W, Ctrl+Shift+T and Ctrl+Tab belong to the browser in a web page, so the web build also has the Alt ones
+  { id: 'tab.close', title: 'Close the tab', group: 'Navigate', icon: <X size={S} />, keys: ['Mod+w', 'Alt+w'], keywords: 'tab close note', run: () => { const t = tabsState().active; const h = t ? closeTab(t) : null; if (h) location.hash = h; } },
+  { id: 'tab.reopen', title: 'Reopen the closed tab', group: 'Navigate', icon: <RotateCcw size={S} />, keys: ['Mod+Shift+t', 'Alt+Shift+t'], keywords: 'tab undo close restore', run: () => { const h = reopenTab(); if (h) location.hash = h; } },
+  { id: 'tab.next', title: 'Next tab', group: 'Navigate', keys: ['Mod+Tab', 'Alt+]'], keywords: 'tab switch', run: () => { const h = neighbourTab(1); if (h) location.hash = h; } },
+  { id: 'tab.prev', title: 'Previous tab', group: 'Navigate', keys: ['Mod+Shift+Tab', 'Alt+['], keywords: 'tab switch', run: () => { const h = neighbourTab(-1); if (h) location.hash = h; } },
 
   { id: 'view.sidebar', title: 'Show or hide the sidebar', group: 'View', icon: <PanelLeft size={S} />, keys: ['Mod+\\'], keywords: 'toggle navigation rail left', run: c => c.app.toggleRail() },
   { id: 'view.aside', title: 'Show or hide the right sidebar', group: 'View', icon: <PanelRight size={S} />, keys: ['Mod+Shift+\\'], keywords: 'toggle contents assistant', run: c => setPrefs({ aside: !c.prefs.aside }) },

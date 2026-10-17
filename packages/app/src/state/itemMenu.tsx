@@ -1,5 +1,6 @@
 // What the right-click menu of a Note or a Folder offers: one list for every place an item is shown (the Explorer, the
 // sidebar tree, the note list, the cards), so they never disagree.
+import { openInNewTabNext } from './tabs';
 import { ClipboardPaste, Copy, CopyPlus, ExternalLink, FilePlus2, FolderOpen, FolderPlus, Link2, Pin, PinOff, Scissors, Trash2 } from 'lucide-react';
 import { markdownLink, type ItemSummary } from '@ergonotes/core';
 import type { MenuEntry } from '../components/ui';
@@ -43,6 +44,7 @@ export function useItemMenu() {
     }
     return [
       { label: 'Open', icon: <FolderOpen size={16} />, onClick: () => open(it) },
+      ...(!folder && !app.isMobile ? [{ label: 'Open in new tab', onClick: () => { openInNewTabNext(); open(it); } }] : []),
       ...(folder ? [
         { label: 'New note here', icon: <FilePlus2 size={16} />, onClick: () => void app.newNote({ parent: it.id }) },
         { label: 'New subfolder', icon: <FolderPlus size={16} />, onClick: () => app.setDialog({ kind: 'newFolder', parent: it.id }) },

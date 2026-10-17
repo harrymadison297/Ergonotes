@@ -14,12 +14,18 @@ import { Home } from '../views/Home';
 import { NotesView, TrashView } from '../views/Notes';
 import { TasksView } from '../views/Tasks';
 import { FilePreviewDialog } from './FilePreview';
+import { ExternalView } from '../views/External';
 import { SearchPalette } from './SearchPalette';
 import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, SettingsDialog, TemplatesDialog } from './Dialogs';
 import { Sidebar } from './Sidebar';
 import { RightSidebar, useAsideVisible } from './RightSidebar';
 import { IconBtn, TagLink, Toasts } from './ui';
 import { CurveLoader } from './CurveLoader';
+import { TabBar, useTabsFollowRoute } from './TabBar';
+import { openInNewTabNext, tabFor } from '../state/tabs';
+import { parseHash } from '../state/router';
+import { canOpenExternal, onOpenWith, openWithTake } from '../backend/external';
+import { vaultRelative } from '../state/externalApi';
 import { useSync } from './useSync';
 import { RecorderMini } from './RecorderPanel';
 import { recorder, useRecorder } from '../record/recorder';
@@ -31,6 +37,7 @@ import { ShortcutMatcher } from '../state/shortcuts';
 function RouteView() {
   const { route } = useApp();
   switch (route.name) {
+    case 'external': return <ExternalView path={route.path} />;
     case 'home': return <Home />;
     case 'notes': return <NotesView noteId={route.note} />;
     case 'tasks': return <TasksView noteId={route.note} taskIndex={route.task} />;
@@ -277,10 +284,62 @@ function ScanPill() {
   );
 }
 
+/** Files the system opens with this app ("Open with Ergonotes", a double click): each becomes a tab. */
+function useOpenWith() {
+  const app = useApp();
+  const latest = useRef(app);
+  latest.current = app;
+  useEffect(() => {
+    if (!canOpenExternal()) return;
+    let off: (() => void) | undefined;
+    let live = true;
+    const take = async () => {
+      const paths = await openWithTake().catch(() => [] as string[]);
+      // the lists may still be arriving when the app was started by a double click
+      for (let i = 0; i < 30 && paths.length && latest.current.items.length === 0; i++) await new Promise(r => setTimeout(r, 100));
+      for (const path of paths) {
+        const a = latest.current;
+        const rel = a.folder ? vaultRelative(path, a.folder.path) : null;
+        const note = rel ? a.items.find(it => it.type === 'note' && it.filePath.toLowerCase() === rel.toLowerCase()) : undefined;
+        openInNewTabNext();
+        // a file of the vault folder is the note it is; anything else is opened where it is, without touching it
+        if (note) a.go({ name: 'notes', note: note.id, folder: note.parent ?? undefined });
+        else a.go({ name: 'external', path });
+      }
+    };
+    void take();
+    void onOpenWith(() => void take()).then(f => { if (live) off = f; else f(); });
+    return () => { live = false; off?.(); };
+  }, []);
+}
+
+/** Ctrl+click and middle click on a link to a note open it in a new tab. */
+function useNewTabClicks() {
+  useEffect(() => {
+    const on = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement | null)?.closest?.('a[href^="#/"]') as HTMLAnchorElement | null;
+      if (!a || a.closest('.tabbar')) return;
+      const fresh = e.type === 'auxclick' ? e.button === 1 : e.button === 0 && (e.ctrlKey || e.metaKey);
+      if (!fresh) return;
+      const h = a.getAttribute('href')!;
+      if (!tabFor(parseHash(h))) return;
+      e.preventDefault();
+      openInNewTabNext();
+      location.hash = h;
+    };
+    document.addEventListener('click', on, true);
+    document.addEventListener('auxclick', on, true);
+    return () => { document.removeEventListener('click', on, true); document.removeEventListener('auxclick', on, true); };
+  }, []);
+}
+
 export function Shell() {
   const app = useApp();
   const prefs = usePrefs();
   useGlobalShortcuts();
+  useTabsFollowRoute();
+  useNewTabClicks();
+  useOpenWith();
   useReminders();
   useShareIntent();
   const aside = useAsideVisible();
@@ -293,7 +352,7 @@ export function Shell() {
     <>
       <div className={classNames('app', app.rail && 'rail', aside && !focus && 'has-aside', focus && 'focus')}>
         <Sidebar />
-        <main className="main"><RouteView /></main>
+        <main className="main"><TabBar /><div className="main-body"><RouteView /></div></main>
         <RightSidebar />
       </div>
       <RecordingDock />

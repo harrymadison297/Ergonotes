@@ -13,12 +13,16 @@ use std::{
 use serde::Serialize;
 use tauri::{
     ipc::{InvokeBody, Request, Response},
-    AppHandle, Manager, State,
+    AppHandle, Emitter, Manager, State,
 };
 use tauri_plugin_dialog::DialogExt;
 
 #[derive(Default)]
 struct VaultRoot(Mutex<Option<PathBuf>>);
+
+/// Files the system asked the app to open ("Open with Ergonotes"), until the webview has taken them.
+#[derive(Default)]
+struct OpenQueue(Mutex<Vec<String>>);
 
 #[derive(Serialize)]
 struct Entry {
@@ -323,10 +327,178 @@ fn reveal(_p: &Path) -> Result<(), String> {
     Err("Showing a file in the file manager is not available on Android".into())
 }
 
+
+// ---------------------------------------------------------------- "Open with": files outside the vault
+// The person picked these files themselves (Explorer's Open with, a double click), so unlike the vault commands
+// these take a full path. Nothing is added to them: no id, no frontmatter; they are read and written as they are.
+
+const EXTERNAL_EXTS: [&str; 4] = ["md", "markdown", "mdown", "txt"];
+const MAX_EXTERNAL_BYTES: u64 = 20 * 1024 * 1024;
+
+fn is_openable(p: &Path) -> bool {
+    p.is_file()
+        && p.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| EXTERNAL_EXTS.contains(&e.to_ascii_lowercase().as_str()))
+            .unwrap_or(false)
+}
+
+/// The arguments of a start (or of a second start, which is handed to the running app) that name a file to open.
+fn openable_args(args: &[String]) -> Vec<String> {
+    args.iter()
+        .filter(|a| !a.starts_with('-'))
+        .map(PathBuf::from)
+        .filter(|p| is_openable(p))
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect()
+}
+
+#[tauri::command]
+fn open_with_take(queue: State<OpenQueue>) -> Vec<String> {
+    std::mem::take(&mut *queue.0.lock().unwrap())
+}
+
+#[derive(Serialize)]
+struct ExternalText {
+    text: String,
+    mtime: f64,
+    size: u64,
+    /// the file starts with a byte order mark, which is put back when it is written
+    bom: bool,
+    /// the file uses CRLF line ends
+    crlf: bool,
+}
+
+#[tauri::command]
+fn ext_read(path: String) -> Result<ExternalText, String> {
+    let p = PathBuf::from(&path);
+    let meta = fs::metadata(&p).map_err(|e| format!("Could not open the file: {e}"))?;
+    if !meta.is_file() {
+        return Err("That is not a file".into());
+    }
+    if meta.len() > MAX_EXTERNAL_BYTES {
+        return Err("The file is larger than 20 MB".into());
+    }
+    let bytes = fs::read(&p).map_err(|e| format!("Could not read the file: {e}"))?;
+    let (bom, body) = match bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
+        Some(rest) => (true, rest),
+        None => (false, &bytes[..]),
+    };
+    let text = std::str::from_utf8(body).map_err(|_| "The file is not UTF-8 text, so it is left alone".to_string())?;
+    let crlf = text.contains("\r\n");
+    Ok(ExternalText {
+        text: if crlf { text.replace("\r\n", "\n") } else { text.to_string() },
+        mtime: mtime_ms(&meta),
+        size: meta.len(),
+        bom,
+        crlf,
+    })
+}
+
+/// Writes through a temporary file. `expected` is the modification time the editor last saw: when the file has been
+/// changed since, nothing is written (`changed`) unless `force` is set.
+#[tauri::command]
+fn ext_write(path: String, text: String, bom: bool, crlf: bool, expected: Option<f64>, force: bool) -> Result<f64, String> {
+    let p = PathBuf::from(&path);
+    if let (Some(exp), false) = (expected, force) {
+        if let Ok(m) = fs::metadata(&p) {
+            if (mtime_ms(&m) - exp).abs() > 1.0 {
+                return Err("changed".into());
+            }
+        }
+    }
+    let body = if crlf { text.replace('\n', "\r\n") } else { text };
+    let mut bytes = Vec::with_capacity(body.len() + 3);
+    if bom {
+        bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+    }
+    bytes.extend_from_slice(body.as_bytes());
+    let tmp = {
+        let mut name = p.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+        name.push(format!(".{}.ergo.tmp", std::process::id()));
+        p.with_file_name(name)
+    };
+    {
+        let mut f = fs::File::create(&tmp).map_err(|e| format!("Could not save: {e}"))?;
+        f.write_all(&bytes).map_err(|e| format!("Could not save: {e}"))?;
+        f.sync_all().ok();
+    }
+    fs::rename(&tmp, &p).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        format!("Could not save: {e}")
+    })?;
+    fs::metadata(&p).map(|m| mtime_ms(&m)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn ext_stat(path: String) -> Option<Stat> {
+    fs::metadata(&path).ok().map(|m| Stat { kind: if m.is_dir() { "dir" } else { "file" }, size: m.len(), mtime: mtime_ms(&m) })
+}
+
+/// A file beside the document (an image it shows), by a path relative to the document's folder.
+#[tauri::command]
+fn ext_read_beside(doc: String, rel: String) -> Result<Response, String> {
+    let p = beside(&doc, &rel)?;
+    fs::read(p).map(Response::new).map_err(|e| e.to_string())
+}
+
+/// Body: the bytes. Headers `x-doc` and `x-rel`: the document's path and the file's path relative to its folder, percent-encoded.
+#[tauri::command]
+fn ext_write_beside(request: Request) -> Result<(), String> {
+    let dec = |n: &str| header(&request, n).map(|r| percent_encoding::percent_decode_str(&r).decode_utf8_lossy().into_owned());
+    let doc = dec("x-doc").ok_or("missing document")?;
+    let rel = dec("x-rel").ok_or("missing path")?;
+    let p = beside(&doc, &rel)?;
+    let bytes = match request.body() {
+        InvokeBody::Raw(b) => b.clone(),
+        InvokeBody::Json(serde_json::Value::Array(a)) => a.iter().map(|v| v.as_u64().unwrap_or(0) as u8).collect(),
+        InvokeBody::Json(_) => return Err("expected the file's bytes".into()),
+    };
+    if let Some(dir) = p.parent() {
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    fs::write(&p, bytes).map_err(|e| e.to_string())
+}
+
+fn beside(doc: &str, rel: &str) -> Result<PathBuf, String> {
+    let mut p = Path::new(doc).parent().map(Path::to_path_buf).ok_or("The document has no folder")?;
+    for c in Path::new(rel).components() {
+        match c {
+            Component::Normal(s) => p.push(s),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                p.pop();
+            }
+            _ => return Err("That path cannot be reached from the document".into()),
+        }
+    }
+    Ok(p)
+}
+
+#[tauri::command]
+fn ext_reveal(path: String) -> Result<(), String> {
+    reveal(Path::new(&path))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // a second start (a double click on another file) hands its file to the running app instead of opening a second window
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+        let files = openable_args(&argv);
+        if !files.is_empty() {
+            app.state::<OpenQueue>().0.lock().unwrap().extend(files);
+            let _ = app.emit("open-with", ());
+        }
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.unminimize();
+            let _ = w.set_focus();
+        }
+    }));
+    builder
         .manage(VaultRoot::default())
+        .manage(OpenQueue(Mutex::new(openable_args(&std::env::args().skip(1).collect::<Vec<_>>()))))
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
@@ -345,6 +517,13 @@ pub fn run() {
             vault_reveal,
             device_meta_load,
             device_meta_save,
+            open_with_take,
+            ext_read,
+            ext_write,
+            ext_stat,
+            ext_read_beside,
+            ext_write_beside,
+            ext_reveal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Ergonotes");
@@ -352,13 +531,34 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::is_write_temp;
+    use super::{beside, is_write_temp, openable_args};
 
     #[test]
     fn a_write_in_progress_is_not_a_vault_file() {
         assert!(is_write_temp("a.md.4242.k3j2x.tmp"));
         assert!(is_write_temp("a.md.4242.17.tmp"));
         assert!(is_write_temp(".hidden.1.0.tmp"));
+    }
+
+    #[test]
+    fn only_arguments_that_name_a_text_file_are_opened() {
+        let dir = std::env::temp_dir().join(format!("ergo-open-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let md = dir.join("A.MD");
+        let png = dir.join("a.png");
+        std::fs::write(&md, "x").unwrap();
+        std::fs::write(&png, "x").unwrap();
+        let args = vec!["--flag".to_string(), md.to_string_lossy().into_owned(), png.to_string_lossy().into_owned(), dir.join("missing.md").to_string_lossy().into_owned()];
+        assert_eq!(openable_args(&args), vec![md.to_string_lossy().into_owned()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_beside_a_document_is_found_from_its_folder() {
+        let p = beside("/home/a/notes/x.md", "img/p.png").unwrap();
+        assert!(p.ends_with("notes/img/p.png") || p.ends_with("notes\\img\\p.png"));
+        let up = beside("/home/a/notes/x.md", "../shared/p.png").unwrap();
+        assert!(up.ends_with("a/shared/p.png") || up.ends_with("a\\shared\\p.png"));
     }
 
     #[test]

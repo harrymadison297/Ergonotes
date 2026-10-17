@@ -10,7 +10,7 @@ import TableRow from '@tiptap/extension-table-row';
 import { Markdown } from 'tiptap-markdown';
 import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
-  ChevronsLeft, ChevronsRight, ZoomIn, ZoomOut, EyeOff, Maximize2, Minimize2, MoveHorizontal, AlignCenter, AudioLines, Mic, Sparkles, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
+  ChevronsLeft, ChevronsRight, ZoomIn, ZoomOut, EyeOff, Maximize2, Minimize2, MoveHorizontal, AlignCenter, AudioLines, Mic, Sparkles, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Loader2, Send, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
 } from 'lucide-react';
 import { mergeText, preserveBlocks, recordLinkMarkdown, toB64, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
@@ -41,7 +41,13 @@ type SaveState = 'saved' | 'saving' | 'error';
 /** A task to bring into view when the note opens: its place among the note's tasks, and its words (to find it again if the note changed). */
 export interface FocusTask { index: number; text?: string }
 
-export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; onBack?: () => void; readOnly?: boolean; focusTask?: FocusTask }) {
+/** `outside`: the document is a file outside the vault (its full path): no folder, tags, history or other vault things are offered for it. */
+/**
+ * `scratch`: the editor is the Scratchpad's (a draft that is not a Note yet): no title, folder, tags or top bar, a Send button, and
+ * text files dropped on it join the draft as text. `send` gets the draft's Markdown and resolves when it has become a Note.
+ */
+export interface ScratchMode { send(body: string): Promise<void>; sending?: boolean }
+export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }: { id: string; onBack?: () => void; readOnly?: boolean; focusTask?: FocusTask; outside?: string; scratch?: ScratchMode }) {
   const app = useApp();
   const { api } = app;
   const [doc, setDoc] = useState<NoteDoc | null>(null);
@@ -115,7 +121,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
       MarkdownBulletList,
       ListItem.extend({ content: 'paragraph (bulletList | orderedList)*' }),
       Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
-      Placeholder.configure({ placeholder: 'Press "/" to insert an element' }),
+      Placeholder.configure({ placeholder: scratch ? 'Start writing, drop a file or a picture here…' : 'Press "/" to insert an element' }),
       MarkdownTaskList, TaskItem.extend({ content: 'paragraph taskList?' }).configure({ nested: true }),
       Table.configure({ resizable: false }), TableRow, SingleParagraphHeader, SingleParagraphCell, TableKeys,
       StoredImage.configure({ inline: true }),
@@ -278,6 +284,13 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
 
   const attach = async (files: FileList | File[]) => {
     for (const f of Array.from(files)) {
+      if (scratch && /\.(md|markdown|txt)$/i.test(f.name)) {
+        // a text file dropped on the Scratchpad is its words, not an attachment
+        const md = (editor?.storage as unknown as { markdown: { parser: { parse(s: string): string } } } | undefined)?.markdown;
+        const text = await f.text();
+        if (md) editor?.chain().focus('end').insertContent(md.parser.parse(text)).run();
+        continue;
+      }
       const data = toB64(new Uint8Array(await f.arrayBuffer()));
       const mime = f.type || 'application/octet-stream';
       const r = await app.run(api.addFile({ name: f.name, mime, data }));
@@ -441,7 +454,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
 
   const exportEntries = (): MenuEntry[] => [
     { label: 'Markdown (.md)', icon: <FileText size={16} />, onClick: async () => { await flushNow(); const r = await app.run(api.exportNote(id, 'md')); if (r) download(r.filename, r.mime, r.content); } },
-    { label: 'Web page (.html)', icon: <FileText size={16} />, onClick: async () => { await flushNow(); const r = await app.run(api.exportNote(id, 'html')); if (r) download(r.filename, r.mime, r.content); } },
+    ...(outside ? [] : [{ label: 'Web page (.html)', icon: <FileText size={16} />, onClick: async () => { await flushNow(); const r = await app.run(api.exportNote(id, 'html')); if (r) download(r.filename, r.mime, r.content); } }]),
     ...(canPrint() ? [{ label: 'PDF…', icon: <Download size={16} />, onClick: async () => {
       await flushNow();
       await printNote({ title: title || doc.title, tags: doc.tags, body: editor.view.dom as HTMLElement });
@@ -449,7 +462,10 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
   ];
   const flushNow = async () => { saveBody.flush(); saveTitle.flush(); await inflight.current; };
 
-  const moreEntries = (): MenuEntry[] => [
+  const moreEntries = (): MenuEntry[] => outside ? [
+    { label: 'Readable line length', icon: <AlignCenter size={16} />, checked: prefs.noteWidth === 'readable', onClick: () => setPrefs({ noteWidth: 'readable' }) },
+    { label: 'Full width', icon: <MoveHorizontal size={16} />, checked: prefs.noteWidth === 'full', onClick: () => setPrefs({ noteWidth: 'full' }) },
+  ] : [
     { label: doc.pinned ? 'Unpin' : 'Pin to sidebar', icon: doc.pinned ? <PinOff size={16} /> : <Pin size={16} />, onClick: async () => { await app.run(api.setPinned(id, !doc.pinned)); } },
     { label: 'Move to…', icon: <FolderIcon size={16} />, onClick: () => app.setDialog({ kind: 'move', id }) },
     { label: doc.private ? 'Allow AI to see this note' : 'Keep private from AI', icon: <EyeOff size={16} />, onClick: async () => { await app.run(api.setPrivate(id, !doc.private)); const d = await api.getNote(id); if (d) setDoc(x => x && ({ ...x, private: d.private })); await app.refresh(); } },
@@ -542,6 +558,23 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
     { label: 'Heading 3', checked: styleLabel === 'Heading 3', onClick: () => editor.chain().focus().toggleHeading({ level: 3 }).run() },
   ];
 
+  const sendScratch = async () => {
+    if (!scratch || !editor || scratch.sending) return;
+    saveBody.flush();
+    await inflight.current;
+    const body = currentBody(editor);
+    if (!body.trim()) return;
+    try {
+      await scratch.send(body);
+      loadBody('');
+      dirty.current = false;
+      editSeq.current++;
+      await api.saveNote(id, { body: '' });
+      setSaveState('saved');
+      editor.commands.focus();
+    } catch { /* the Scratchpad has told the person */ }
+  };
+
   const setLink = () => {
     const prev = editor.getAttributes('link').href as string | undefined;
     const url = window.prompt('Link address', prev ?? 'https://');
@@ -551,7 +584,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
   };
 
   return (
-    <div className="editor">
+    <div className={classNames('editor', scratch && 'scratch')} onKeyDown={scratch ? e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); void sendScratch(); } } : undefined}>
       {isTrashed && (
         <div className="banner info" role="status">
           <Trash2 size={16} /><span className="grow">This note is in the Trash.</span>
@@ -572,7 +605,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
           <button className="btn" onClick={async () => { await flushNow(); app.setDialog({ kind: 'conflict', id }); }}>Compare…</button>
         </div>
       )}
-      <div className="editor-top">
+      {!scratch && <div className="editor-top">
         {onBack && <IconBtn label="Back" icon={<ArrowLeft size={20} />} onClick={onBack} />}
         {!onBack && !app.isMobile && app.route.name === 'notes' && (
           <>
@@ -583,7 +616,8 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
         )}
         <nav className="crumbs" aria-label="Location">
           <FolderIcon size={14} />
-          {path.length === 0 && <span style={{ padding: '0 6px' }}>No folder</span>}
+          {outside && <span className="crumb-path" title={outside}>{outside}</span>}
+          {!outside && path.length === 0 && <span style={{ padding: '0 6px' }}>No folder</span>}
           {path.map((p, i) => (
             <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center' }}>
               {i > 0 && <span aria-hidden>/</span>}
@@ -604,18 +638,20 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
         )}
         <IconBtn label="Export" haspopup icon={<Share2 size={18} />} onClick={e => exportMenu.open(e, exportEntries(), 'right')} />
         <IconBtn label="More actions" haspopup icon={<MoreHorizontal size={20} />} onClick={e => moreMenu.open(e, moreEntries(), 'right')} />
-      </div>
+      </div>}
       {exportMenu.node}{moreMenu.node}{styleMenu.node}
       {insertAt && <InsertMenu anchor={insertAt} ctx={insertCtx} onClose={() => setInsertAt(null)} />}
 
       <div className="toolbar" role="toolbar" aria-label="Formatting">
         <button type="button" className="tb-btn accent" disabled={locked} onClick={e => setInsertAt(e.currentTarget.getBoundingClientRect())}><span className="insert-dot"><Plus size={12} /></span> Insert <ChevronDown size={14} /></button>
-        {canShareScreen() && <TB locked={locked} label="Meeting" onClick={() => insertCtx.record('meeting')}><AudioLines size={18} /></TB>}
-        <TB locked={locked} label="Recording" onClick={() => insertCtx.record('recording')}><Mic size={18} /></TB>
+        {!scratch && canShareScreen() && <TB locked={locked} label="Meeting" onClick={() => insertCtx.record('meeting')}><AudioLines size={18} /></TB>}
+        {!scratch && <TB locked={locked} label="Recording" onClick={() => insertCtx.record('recording')}><Mic size={18} /></TB>}
         <TB locked={locked} label="Checklist" on={editor.isActive('taskList')} onClick={() => editor.chain().focus().toggleTaskList().run()}><CheckSquare size={18} /></TB>
+        {!scratch && <>
         <TB locked={locked} label={tokens.inTask ? 'Due date' : 'Due date (place the cursor in a task)'} on={!!tokens.due} disabled={!tokens.inTask} onClick={() => setDateDialog('due')}><CalendarDays size={18} /></TB>
         <TB locked={locked} label="Reminder" on={!!tokens.remind} disabled={!tokens.inTask} onClick={() => setDateDialog('remind')}><Bell size={18} /></TB>
         <TB locked={locked} label="Flag task" on={tokens.flag} disabled={!tokens.inTask} onClick={() => setTaskToken(editor, 'flag', tokens.flag ? null : '1')}><Flag size={18} /></TB>
+        </>}
         <span className="tb-sep" />
         <TB locked={locked} label="Undo" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}><Undo2 size={18} /></TB>
         <TB locked={locked} label="Redo" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}><Redo2 size={18} /></TB>
@@ -636,12 +672,12 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
       <div className="editor-main">
       <div className="editor-scroll" ref={scrollRef} onScroll={trackHeading}>
         <div className={classNames('editor-page', prefs.noteWidth === 'full' && 'full')}>
-          <div className="edited">Edited {new Date(doc.updated).toLocaleDateString('en', { month: 'short', day: 'numeric' })}{doc.private && <span className="private-flag" title="The AI assistant and AI agents cannot see this note"><EyeOff size={12} /> Private</span>}</div>
-          <input className="title-input" aria-label="Title" placeholder="Title" value={title} readOnly={locked}
+          {!scratch && <div className="edited">Edited {new Date(doc.updated).toLocaleDateString('en', { month: 'short', day: 'numeric' })}{doc.private && <span className="private-flag" title="The AI assistant and AI agents cannot see this note"><EyeOff size={12} /> Private</span>}</div>}
+          {!scratch && <input className="title-input" aria-label="Title" placeholder="Title" value={title} readOnly={locked || !!outside}
             onChange={e => { setTitle(e.target.value); setSaveState('saving'); saveTitle(id, e.target.value); }}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); editor.commands.focus('start'); } }} />
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); editor.commands.focus('start'); } }} />}
           <EditorContent editor={editor} />
-          {doc.backlinks.length > 0 && (
+          {!scratch && doc.backlinks.length > 0 && (
             <section aria-label="Backlinks" style={{ marginTop: 40, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
               <h3 style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-2)', margin: '0 0 8px' }}>Linked from</h3>
               {doc.backlinks.map(b => <a key={b.id} href={href({ name: 'notes', note: b.id })} className="chip reminder" style={{ marginRight: 6 }}>{b.title}</a>)}
@@ -651,15 +687,24 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
       </div>
       </div>
 
-      <div className="editor-foot">
-        <Tag size={15} />
-        <TagBar tags={doc.tags} onRemove={locked ? undefined : t => void removeTag(t)}>
+      {scratch && (
+        <div className="editor-foot scratch-foot">
+          <span className="grow">{words === 0 ? 'Goes to your Inbox when you send it' : `${words} word${words === 1 ? '' : 's'} · not a note yet`}</span>
+          <button type="button" className="btn primary" disabled={scratch.sending} onClick={() => void sendScratch()} title="Send to Inbox (Ctrl+Enter)">
+            {scratch.sending ? <Loader2 size={16} className="spin" /> : <Send size={16} />} Send
+          </button>
+        </div>
+      )}
+      {!scratch && <div className="editor-foot">
+        {!outside && <Tag size={15} />}
+        {!outside && <TagBar tags={doc.tags} onRemove={locked ? undefined : t => void removeTag(t)}>
           {!locked && (
             <input className="tag-input" aria-label="Add tag" placeholder="Add tag" value={tagDraft} onChange={e => setTagDraft(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); void addTag(tagDraft); } else if (e.key === 'Backspace' && !tagDraft && doc.tags.length) void removeTag(doc.tags[doc.tags.length - 1]); }}
               onBlur={() => void addTag(tagDraft)} />
           )}
-        </TagBar>
+        </TagBar>}
+        {outside && <span className="grow" />}
         {app.ai.suggest && ghostState.busy && <span className="ghost-status" role="status"><Sparkles size={12} /> Thinking of a suggestion…</span>}
         {app.ai.suggest && !ghostState.busy && ghostState.error && <span className="ghost-status err" role="status" title={ghostState.error}>Suggestion unavailable: {ghostState.error.length > 60 ? ghostState.error.slice(0, 59) + '…' : ghostState.error}</span>}
         {app.ai.suggest && !ghostState.busy && !ghostState.error && ghostState.empty && <span className="ghost-status" role="status">No suggestion for this text</span>}
@@ -672,7 +717,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
         )}
         <span>{words} word{words === 1 ? '' : 's'}</span>
         <span role="status" aria-live="polite">{saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Could not save' : 'All changes saved'}</span>
-      </div>
+      </div>}
 
       <input ref={fileInput} type="file" multiple hidden onChange={e => { if (e.target.files) void attach(e.target.files); e.target.value = ''; }} />
 

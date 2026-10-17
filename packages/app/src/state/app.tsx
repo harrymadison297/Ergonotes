@@ -69,6 +69,13 @@ export const useApp = (): AppCtx => {
   return c;
 };
 
+/** The app's context with some of it replaced for what is inside (a file outside the vault has an api of its own). */
+export function AppOverride({ patch, children }: { patch: Partial<AppCtx>; children: ReactNode }) {
+  const parent = useApp();
+  const value = useMemo(() => ({ ...parent, ...patch }), [parent, patch]);
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
 function useMedia(q: string): boolean {
   const [m, setM] = useState(() => window.matchMedia(q).matches);
   useEffect(() => {

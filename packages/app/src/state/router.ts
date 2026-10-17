@@ -9,6 +9,8 @@ export type Route =
   | { name: 'folders' }
   | { name: 'trash'; note?: string }
   | { name: 'conflicts'; note?: string }
+  /** a file outside the vault, opened with "Open with" (a full path) */
+  | { name: 'external'; path?: string }
   | { name: 'more' };
 
 export function parseHash(hash: string): Route {
@@ -23,6 +25,7 @@ export function parseHash(hash: string): Route {
     case 'folders': return { name: 'folders' };
     case 'trash': return { name: 'trash', note: seg[1] };
     case 'conflicts': return { name: 'conflicts', note: seg[1] };
+    case 'external': return { name: 'external', path: p.get('path') ?? undefined };
     case 'more': return { name: 'more' };
     default: return { name: 'home' };
   }
@@ -45,6 +48,7 @@ export function href(r: Route): string {
     case 'folders': return '#/folders';
     case 'trash': return `#/trash${r.note ? '/' + r.note : ''}`;
     case 'conflicts': return `#/conflicts${r.note ? '/' + r.note : ''}`;
+    case 'external': return `#/external${r.path ? '?path=' + encodeURIComponent(r.path) : ''}`;
     case 'more': return '#/more';
   }
 }
