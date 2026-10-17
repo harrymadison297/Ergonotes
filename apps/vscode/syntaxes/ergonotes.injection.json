@@ -10,9 +10,9 @@
   "repository": {
     "tokens": {
       "patterns": [
-        { "name": "constant.other.date.due.ergonotes", "match": "@(?:due|remind)\\([^)\\n]*\\)" },
-        { "name": "constant.other.date.done.ergonotes", "match": "@done\\([^)\\n]*\\)" },
-        { "name": "constant.other.event.ergonotes", "match": "@event\\([^)\\n]*\\)" },
+        { "name": "keyword.control.due.ergonotes", "match": "@(?:due|remind)\\([^)\\n]*\\)" },
+        { "name": "string.quoted.other.done.ergonotes", "match": "@done\\([^)\\n]*\\)" },
+        { "name": "entity.name.type.event.ergonotes", "match": "@event\\([^)\\n]*\\)" },
         { "name": "keyword.other.flag.ergonotes", "match": "@flag\\b" }
       ]
     },
