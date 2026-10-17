@@ -25,6 +25,7 @@ and a transcript, kept in one folder and played with the pictures marked on the 
 | **VS Code** | `apps/vscode` is an extension to read and edit the same files in VS Code: syntax, a preview, links, snippets and habit check-ins. |
 
 <table>
+<tr><td colspan="2"><img src="docs/media/screens/win-dashboard-light.png" alt="Home as a dashboard of widgets"></td></tr>
 <tr><td><img src="docs/media/habits.png" alt="Habits"></td><td><img src="docs/media/calendar.png" alt="Calendar"></td></tr>
 <tr><td><img src="docs/media/scratchpad.png" alt="Scratchpad"></td><td><img src="docs/media/export.png" alt="Export to Word"></td></tr>
 <tr><td><img src="docs/media/vscode.png" alt="VS Code"></td><td><img src="docs/media/tabs.png" alt="Tabs and Open with"></td></tr>
