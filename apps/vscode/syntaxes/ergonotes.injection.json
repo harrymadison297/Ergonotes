@@ -1,0 +1,40 @@
+{
+  "scopeName": "ergonotes.markdown.injection",
+  "injectionSelector": "L:text.html.markdown -markup.fenced_code -markup.inline.raw -comment.block",
+  "patterns": [
+    { "include": "#tokens" },
+    { "include": "#wikilink" },
+    { "include": "#comment" },
+    { "include": "#drawing" }
+  ],
+  "repository": {
+    "tokens": {
+      "patterns": [
+        { "name": "constant.other.date.due.ergonotes", "match": "@(?:due|remind)\\([^)\\n]*\\)" },
+        { "name": "constant.other.date.done.ergonotes", "match": "@done\\([^)\\n]*\\)" },
+        { "name": "constant.other.event.ergonotes", "match": "@event\\([^)\\n]*\\)" },
+        { "name": "keyword.other.flag.ergonotes", "match": "@flag\\b" }
+      ]
+    },
+    "wikilink": {
+      "name": "markup.underline.link.wikilink.ergonotes",
+      "match": "!?\\[\\[[^\\]\\n]+\\]\\]"
+    },
+    "comment": {
+      "name": "comment.block.obsidian.ergonotes",
+      "match": "%%.*?%%"
+    },
+    "drawing": {
+      "name": "markup.fenced_code.block.ergonotes-excalidraw",
+      "begin": "^(\\s*)(```)(ergonote-excalidraw)\\s*$",
+      "beginCaptures": {
+        "2": { "name": "punctuation.definition.markdown" },
+        "3": { "name": "fenced_code.block.language.markdown" }
+      },
+      "end": "^(\\s*)(```)\\s*$",
+      "endCaptures": { "2": { "name": "punctuation.definition.markdown" } },
+      "contentName": "meta.embedded.block.ergonotes-excalidraw",
+      "patterns": [{ "include": "source.json" }]
+    }
+  }
+}

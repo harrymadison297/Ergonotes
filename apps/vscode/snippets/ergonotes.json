@@ -1,0 +1,17 @@
+{
+  "Task": { "prefix": "task", "body": ["- [ ] ${1:What needs doing} @due(${2:${CURRENT_YEAR}-${CURRENT_MONTH}-${CURRENT_DATE}})"], "description": "A task with a due date" },
+  "Task with a reminder": { "prefix": "remind", "body": ["- [ ] ${1:What needs doing} @remind(${2:${CURRENT_YEAR}-${CURRENT_MONTH}-${CURRENT_DATE}}T${3:09:00})"], "description": "A task with a reminder" },
+  "Event": { "prefix": "event", "body": ["${1:Team sync} @event(${2:${CURRENT_YEAR}-${CURRENT_MONTH}-${CURRENT_DATE}}T${3:09:00}-${4:10:00})"], "description": "A dated entry for the calendar" },
+  "All-day event": { "prefix": "eventday", "body": ["${1:Holiday} @event(${2:${CURRENT_YEAR}-${CURRENT_MONTH}-${CURRENT_DATE}})"], "description": "An all-day event" },
+  "Habit": {
+    "prefix": "habit",
+    "body": ["---", "habit: true", "target: ${1:1}", "per: ${2|1,3,5,7|}", "start: ${3:${CURRENT_YEAR}-${CURRENT_MONTH}-${CURRENT_DATE}}", "---", "", "${4:Why it matters.}", "", "## Log", "", "$0"],
+    "description": "The frontmatter and the log of a habit note"
+  },
+  "Check-in": { "prefix": "checkin", "body": ["- [x] @done(${1:${CURRENT_YEAR}-${CURRENT_MONTH}-${CURRENT_DATE}}T${2:${CURRENT_HOUR}:${CURRENT_MINUTE}}) ${3:comment}"], "description": "One time a habit was done" },
+  "Day remark": { "prefix": "remark", "body": ["- ${1:${CURRENT_YEAR}-${CURRENT_MONTH}-${CURRENT_DATE}}: ${2:how it went}"], "description": "A remark on a day of a habit" },
+  "Toggle": { "prefix": "toggle", "body": ["<details>", "<summary>${1:Title}</summary>", "", "${2:Content}", "", "</details>"], "description": "A toggle (collapsible block)" },
+  "Page break": { "prefix": "pagebreak", "body": ["<div style=\"page-break-after: always;\"></div>"], "description": "A page break for print and Word" },
+  "Drawing": { "prefix": "drawing", "body": ["```ergonote-excalidraw", "$0", "```"], "description": "A drawing block (edited in Ergonotes)" },
+  "Formula": { "prefix": "formula", "body": ["$$", "${1:E = mc^2}", "$$"], "description": "A formula block" }
+}

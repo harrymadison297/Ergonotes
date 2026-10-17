@@ -1,0 +1,67 @@
+{
+  "name": "ergonotes-vscode",
+  "displayName": "Ergonotes",
+  "description": "Read and edit an Ergonotes vault in VS Code: syntax for tasks, events and habits, a preview, snippets, links, and habit check-ins.",
+  "version": "0.1.0",
+  "publisher": "ergonotes",
+  "private": true,
+  "license": "UNLICENSED",
+  "repository": { "type": "git", "url": "https://github.com/harrymadison297/Ergonotes.git", "directory": "apps/vscode" },
+  "type": "module",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Notebooks", "Programming Languages", "Snippets"],
+  "keywords": ["markdown", "notes", "tasks", "habits", "ergonotes"],
+  "activationEvents": ["onLanguage:markdown"],
+  "main": "./dist/extension.cjs",
+  "contributes": {
+    "commands": [
+      { "command": "ergonotes.openPreview", "title": "Ergonotes: Open Preview to the Side", "icon": "$(open-preview)" },
+      { "command": "ergonotes.insertTask", "title": "Ergonotes: Insert Task" },
+      { "command": "ergonotes.insertDue", "title": "Ergonotes: Set Due Date on This Line" },
+      { "command": "ergonotes.insertRemind", "title": "Ergonotes: Set Reminder on This Line" },
+      { "command": "ergonotes.insertEvent", "title": "Ergonotes: Insert Event" },
+      { "command": "ergonotes.newHabit", "title": "Ergonotes: New Habit" },
+      { "command": "ergonotes.checkIn", "title": "Ergonotes: Check In (Habit)" },
+      { "command": "ergonotes.habitRemark", "title": "Ergonotes: Remark on a Day (Habit)" }
+    ],
+    "menus": {
+      "editor/title": [{ "command": "ergonotes.openPreview", "when": "editorLangId == markdown", "group": "navigation" }],
+      "commandPalette": [
+        { "command": "ergonotes.checkIn", "when": "ergonotes.isHabit" },
+        { "command": "ergonotes.habitRemark", "when": "ergonotes.isHabit" }
+      ]
+    },
+    "keybindings": [
+      { "command": "ergonotes.openPreview", "key": "ctrl+k v", "mac": "cmd+k v", "when": "editorLangId == markdown" },
+      { "command": "ergonotes.insertTask", "key": "ctrl+alt+t", "mac": "cmd+alt+t", "when": "editorLangId == markdown && editorTextFocus" }
+    ],
+    "grammars": [
+      {
+        "scopeName": "ergonotes.markdown.injection",
+        "path": "./syntaxes/ergonotes.injection.json",
+        "injectTo": ["text.html.markdown"],
+        "embeddedLanguages": { "meta.embedded.block.ergonotes-excalidraw": "json" }
+      }
+    ],
+    "snippets": [{ "language": "markdown", "path": "./snippets/ergonotes.json" }],
+    "configuration": {
+      "title": "Ergonotes",
+      "properties": {
+        "ergonotes.habitFolder": { "type": "string", "default": "Habits", "description": "The folder of the vault where New Habit puts its note." },
+        "ergonotes.showHabitInStatusBar": { "type": "boolean", "default": true, "description": "Show the streak of a habit note in the status bar." }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "package": "node esbuild.mjs && vsce package --no-dependencies --skip-license -o ergonotes-vscode.vsix"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.85.0",
+    "@vscode/vsce": "^3.2.0",
+    "katex": "^0.16.11"
+  },
+  "dependencies": {
+    "markdown-it": "^14.1.0"
+  }
+}
