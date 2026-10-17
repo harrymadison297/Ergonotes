@@ -266,6 +266,21 @@ describe('AI proxy', () => {
     });
   });
 
+  it('asks the same of every AI endpoint: a POST, a signed-in page of this site, and for the stream JSON', async () => {
+    await withServer({}, async (_s, u) => {
+      const get = (path: string, headers: Record<string, string> = {}) => fetch(`${u}${path}`, { headers });
+      const created = await postJson(u, '/api/rpc/createVault', JSON.stringify([PASSWORD]));
+      const cookie = created.headers.get('set-cookie')!.split(';')[0];
+      for (const path of ['/api/ai/stream', '/api/ai/models', '/api/ai/transcribe']) {
+        expect((await get(path, { cookie })).status, `GET ${path}`).toBe(405);
+        expect((await postJson(u, path, '{}')).status, `signed out ${path}`).toBe(401);
+        expect((await postJson(u, path, '{}', { cookie, origin: 'https://evil.example' })).status, `cross-origin ${path}`).toBe(403);
+      }
+      const plain = await fetch(`${u}/api/ai/stream`, { method: 'POST', headers: { cookie, 'content-type': 'text/plain' }, body: '{}' });
+      expect(plain.status).toBe(415);
+    });
+  });
+
   it('reports a provider failure as an error event instead of hanging', async () => {
     const aiFetch = (async () => new Response(JSON.stringify({ error: { message: 'No credits' } }), { status: 402 })) as unknown as typeof fetch;
     await withServer({ aiFetch }, async (_s, u) => {

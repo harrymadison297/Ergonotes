@@ -240,12 +240,20 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     }
   };
 
+  /** What every AI endpoint asks first: a POST from a signed-in page of this site (and, for `ready`, a vault that is open). True when it may go on. */
+  const aiGuard = async (req: IncomingMessage, res: ServerResponse, o: { jsonOnly?: boolean; ready?: boolean } = {}): Promise<boolean> => {
+    const refuse = (status: number, error: string) => { json(res, status, { error }); return false; };
+    if (req.method !== 'POST') return refuse(405, 'Method not allowed');
+    if (!authed(req)) return refuse(401, 'Sign in first');
+    if (o.jsonOnly && !/^application\/json/.test(req.headers['content-type'] ?? '')) return refuse(415, 'JSON only');
+    if (!sameOrigin(req)) return refuse(403, 'Cross-origin request refused');
+    if (o.ready && (await vault.status()).state !== 'ready') return refuse(409, 'The vault is locked');
+    return true;
+  };
+
   /** The in-app chat and ghost text go through here so the provider key stays on the server. */
   const aiStream = async (req: IncomingMessage, res: ServerResponse) => {
-    if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
-    if (!authed(req)) return json(res, 401, { error: 'Sign in first' });
-    if (!/^application\/json/.test(req.headers['content-type'] ?? '')) return json(res, 415, { error: 'JSON only' });
-    if (!sameOrigin(req)) return json(res, 403, { error: 'Cross-origin request refused' });
+    if (!(await aiGuard(req, res, { jsonOnly: true }))) return;
     let body: AiRequest;
     try {
       body = JSON.parse(await readBody(req, 16 * 1024 * 1024)) as AiRequest;
@@ -267,12 +275,9 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     res.end();
   };
 
-  /** The model names the configured provider offers (the settings page fills its pick-list from this). */
+  /** Speech to text with the provider key the server holds. */
   const aiTranscribe = async (req: IncomingMessage, res: ServerResponse) => {
-    if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
-    if (!authed(req)) return json(res, 401, { error: 'Sign in first' });
-    if (!sameOrigin(req)) return json(res, 403, { error: 'Cross-origin request refused' });
-    if ((await vault.status()).state !== 'ready') return json(res, 409, { error: 'The vault is locked' });
+    if (!(await aiGuard(req, res, { ready: true }))) return;
     let file: { name?: string; mime?: string; data?: string; timed?: boolean };
     try { file = JSON.parse((await readBody(req, 40 * 1024 * 1024)) || '{}') as typeof file; } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -288,11 +293,9 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     catch (e) { return json(res, 400, { error: e instanceof Error ? e.message : String(e) }); }
   };
 
+  /** The model names the configured provider offers (the settings page fills its pick-list from this). */
   const aiModels = async (req: IncomingMessage, res: ServerResponse) => {
-    if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
-    if (!authed(req)) return json(res, 401, { error: 'Sign in first' });
-    if (!sameOrigin(req)) return json(res, 403, { error: 'Cross-origin request refused' });
-    if ((await vault.status()).state !== 'ready') return json(res, 409, { error: 'The vault is locked' });
+    if (!(await aiGuard(req, res, { ready: true }))) return;
     let want = '';
     try { want = String((JSON.parse((await readBody(req, 64 * 1024)) || '{}') as { connection?: string }).connection ?? ''); } catch { return json(res, 400, { error: 'Bad JSON' }); }
     const conn = vault.aiConfig().connections.find(c => c.id === want);

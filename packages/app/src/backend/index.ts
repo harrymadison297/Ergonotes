@@ -35,18 +35,19 @@ class HttpBackend implements Backend {
     return b?.models ?? [];
   };
 
-  aiTranscribe = async (file: AudioFile, signal?: AbortSignal): Promise<string> => {
-    const r = await fetch('./api/ai/transcribe', { method: 'POST', credentials: 'same-origin', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify(file) });
-    const b = await r.json().catch(() => null) as { text?: string; error?: string } | null;
-    if (!r.ok) throw new Error(b?.error ?? (r.status === 413 ? 'That recording is too large.' : `Request failed (${r.status})`));
-    return b?.text ?? '';
-  };
-
-  aiTranscribeTimed = async (file: AudioFile, signal?: AbortSignal): Promise<TimedTranscript> => {
-    const r = await fetch('./api/ai/transcribe', { method: 'POST', credentials: 'same-origin', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...file, timed: true }) });
+  /** One call to the server's speech-to-text; `timed` asks for the phrases with their times too. */
+  private transcribeCall = async (file: AudioFile, signal: AbortSignal | undefined, timed: boolean): Promise<Partial<TimedTranscript>> => {
+    const r = await fetch('./api/ai/transcribe', { method: 'POST', credentials: 'same-origin', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify(timed ? { ...file, timed: true } : file) });
     const b = await r.json().catch(() => null) as (Partial<TimedTranscript> & { error?: string }) | null;
     if (!r.ok) throw new Error(b?.error ?? (r.status === 413 ? 'That recording is too large.' : `Request failed (${r.status})`));
-    return { text: b?.text ?? '', segments: Array.isArray(b?.segments) ? b!.segments : [] };
+    return b ?? {};
+  };
+
+  aiTranscribe = async (file: AudioFile, signal?: AbortSignal): Promise<string> => (await this.transcribeCall(file, signal, false)).text ?? '';
+
+  aiTranscribeTimed = async (file: AudioFile, signal?: AbortSignal): Promise<TimedTranscript> => {
+    const b = await this.transcribeCall(file, signal, true);
+    return { text: b.text ?? '', segments: Array.isArray(b.segments) ? b.segments : [] };
   };
 
   /** The server calls the provider with the key it holds and streams the events back as one JSON object per line. */
