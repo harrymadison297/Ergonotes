@@ -23,8 +23,9 @@ import { useSync } from './useSync';
 import { RecorderMini } from './RecorderPanel';
 import { recorder, useRecorder } from '../record/recorder';
 import { setPrefs, usePrefs } from '../state/prefs';
-import { COMMANDS, keysFor, useCommands } from '../state/commands';
-import { chordOf, needsModifier } from '../state/keymap';
+import { boundGlobal, useCommands } from '../state/commands';
+import { chordOf } from '../state/keymap';
+import { ShortcutMatcher } from '../state/shortcuts';
 
 function RouteView() {
   const { route } = useApp();
@@ -75,7 +76,7 @@ function useGlobalShortcuts() {
   const cmds = useCommands();
   const latest = useRef(cmds);
   latest.current = cmds;
-  const pending = useRef<{ first: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const matcher = useRef(new ShortcutMatcher());
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.isComposing) return;
@@ -83,23 +84,8 @@ function useGlobalShortcuts() {
       if (!chord) return;
       const el = e.target as HTMLElement;
       const typing = el.matches('input, textarea, select, [contenteditable="true"]') || el.isContentEditable;
-      const { prefs } = latest.current;
-      const bound = COMMANDS.filter(c => !c.scoped).map(c => ({ id: c.id, keys: keysFor(c, prefs.keys) }));
-      // the second key of a two-key shortcut
-      if (pending.current) {
-        const seq = `${pending.current.first} ${chord}`;
-        clearTimeout(pending.current.timer);
-        pending.current = null;
-        const hit = bound.find(b => b.keys.includes(seq));
-        if (hit) { e.preventDefault(); latest.current.run(hit.id); return; }
-      }
-      // a bare key is text while typing; only a chord with Ctrl or Alt (or a function key) is a shortcut there
-      if (typing && !needsModifier(chord) && !/^F\d/.test(chord)) return;
-      const hit = bound.find(b => b.keys.includes(chord));
-      if (hit) { e.preventDefault(); latest.current.run(hit.id); return; }
-      if (!typing && bound.some(b => b.keys.some(k => k.startsWith(`${chord} `)))) {
-        pending.current = { first: chord, timer: setTimeout(() => { pending.current = null; }, 900) };
-      }
+      const id = matcher.current.press(chord, typing, boundGlobal(latest.current.prefs.keys), Date.now());
+      if (id) { e.preventDefault(); latest.current.run(id); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

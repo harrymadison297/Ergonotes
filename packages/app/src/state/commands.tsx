@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import { usePrefs, setPrefs, ZOOM_STEP, clampZoom, type Prefs } from './prefs';
 import { useApp, type AppCtx } from './app';
-import { normalizeBinding, type Bound } from './keymap';
+import { formatBinding, normalizeBinding, type Bound } from './keymap';
+import { commandForChord } from './shortcuts';
 import { useSync } from '../components/useSync';
 
 export type CommandGroup = 'General' | 'Navigate' | 'View' | 'Items';
@@ -76,6 +77,10 @@ export function boundCommands(overrides: Record<string, string[]>): Bound[] {
   return COMMANDS.map(c => ({ id: c.id, keys: keysFor(c, overrides) }));
 }
 
+/** Only the commands that act on the whole app (`scoped: false`), or only those that act on what is picked in a list. */
+export const boundGlobal = (overrides: Record<string, string[]>): Bound[] => COMMANDS.filter(c => !c.scoped).map(c => ({ id: c.id, keys: keysFor(c, overrides) }));
+export const boundScoped = (overrides: Record<string, string[]>): Bound[] => COMMANDS.filter(c => c.scoped).map(c => ({ id: c.id, keys: keysFor(c, overrides) }));
+
 /** Run a command for the keyboard or the palette. */
 export function useCommands() {
   const app = useApp();
@@ -84,6 +89,10 @@ export function useCommands() {
   return {
     prefs,
     keys: (id: string): string[] => { const c = commandById(id); return c ? keysFor(c, prefs.keys) : []; },
+    /** The keys of a command as a person reads them (`Ctrl+C`), or undefined when it has none: for hints in menus. */
+    hint: (id: string): string | undefined => { const k = commandById(id); const first = k ? keysFor(k, prefs.keys)[0] : undefined; return first ? formatBinding(first) : undefined; },
+    /** Which list command (copy, cut, paste, rename, delete, select all) a key press is, if any. */
+    scoped: (chord: string | null): string | null => commandForChord(chord, boundScoped(prefs.keys)),
     run: (id: string) => { const c = commandById(id); if (c && !c.scoped) void c.run({ app, sync: sync.run, prefs }); },
   };
 }

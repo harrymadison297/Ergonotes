@@ -88,14 +88,13 @@ export function Explorer({ heading, parentId, crumbs, folders, notes }: {
   const pasteTarget = (): string | null | undefined => (picked.length === 1 && picked[0].type === 'folder' ? picked[0].id : parentId);
   const onKeyDown = (e: React.KeyboardEvent) => {
     if ((e.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]')) return;
-    const chord = chordOf(e);
-    const is = (id: string) => !!chord && cmds.keys(id).includes(chord);
-    if (is('item.selectAll')) { e.preventDefault(); setSel(new Set(ordered.map(i => i.id))); }
-    else if (is('item.copy') && picked.length) { e.preventDefault(); ops.copy(picked.map(i => i.id)); }
-    else if (is('item.cut') && picked.length) { e.preventDefault(); ops.cut(picked.map(i => i.id)); }
-    else if (is('item.paste')) { const t = pasteTarget(); if (t !== undefined) { e.preventDefault(); void ops.paste(t); } }
-    else if (is('item.delete') && picked.length) { e.preventDefault(); void ops.trash(picked); setSel(new Set()); }
-    else if (is('item.rename') && picked.length === 1) { e.preventDefault(); app.setDialog({ kind: 'rename', id: picked[0].id }); }
+    const cmd = cmds.scoped(chordOf(e));
+    if (cmd === 'item.selectAll') { e.preventDefault(); setSel(new Set(ordered.map(i => i.id))); }
+    else if (cmd === 'item.copy' && picked.length) { e.preventDefault(); ops.copy(picked.map(i => i.id)); }
+    else if (cmd === 'item.cut' && picked.length) { e.preventDefault(); ops.cut(picked.map(i => i.id)); }
+    else if (cmd === 'item.paste') { const t = pasteTarget(); if (t !== undefined) { e.preventDefault(); void ops.paste(t); } }
+    else if (cmd === 'item.delete' && picked.length) { e.preventDefault(); void ops.trash(picked); setSel(new Set()); }
+    else if (cmd === 'item.rename' && picked.length === 1) { e.preventDefault(); app.setDialog({ kind: 'rename', id: picked[0].id }); }
     else if (e.key === 'Escape' && sel.size) setSel(new Set());
   };
   const isCut = (it: ItemSummary) => clip?.mode === 'cut' && clip.ids.includes(it.id);

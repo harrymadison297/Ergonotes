@@ -118,12 +118,11 @@ export function Sidebar() {
           {...dragSource({ id: f.id, type: 'folder' })} {...dropZone(key, drop, moveInto(f.id), canMove(f.id), importInto(f.id))}
           onClick={rowClick(() => go({ name: 'notes', folder: f.id }))}
           onKeyDown={e => {
-            const chord = chordOf(e);
-            const is = (id: string) => !!chord && cmds.keys(id).includes(chord);
-            if (is('item.copy')) { e.preventDefault(); ops.copy([f.id]); }
-            else if (is('item.cut')) { e.preventDefault(); ops.cut([f.id]); }
-            else if (is('item.paste') && clip) { e.preventDefault(); void ops.paste(f.id); }
-            else if (is('item.rename')) { e.preventDefault(); app.setDialog({ kind: 'rename', id: f.id }); }
+            const cmd = cmds.scoped(chordOf(e));
+            if (cmd === 'item.copy') { e.preventDefault(); ops.copy([f.id]); }
+            else if (cmd === 'item.cut') { e.preventDefault(); ops.cut([f.id]); }
+            else if (cmd === 'item.paste' && clip) { e.preventDefault(); void ops.paste(f.id); }
+            else if (cmd === 'item.rename') { e.preventDefault(); app.setDialog({ kind: 'rename', id: f.id }); }
           }}
           onContextMenu={e => { e.preventDefault(); folderMenu.open({ currentTarget: e.currentTarget }, itemEntries(f)); }}>
           <button className="nav-chevron" aria-label={open ? 'Collapse' : 'Expand'} onClick={() => toggleFolder(f.id)} style={{ visibility: kids.length ? 'visible' : 'hidden' }}>

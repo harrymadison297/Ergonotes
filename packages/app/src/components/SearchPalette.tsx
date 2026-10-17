@@ -7,6 +7,7 @@ import { classNames, dueLabel, relTime } from '../state/util';
 import { folderChain } from '../state/tree';
 import { COMMANDS, keysFor, useCommands, type Command } from '../state/commands';
 import { formatBinding } from '../state/keymap';
+import { arrangeRows, fit, parseQuery, type GroupName } from '../state/paletteRank';
 import { IconBtn, TagDots } from './ui';
 
 /** Bold the parts of `text` that match any query word. */
@@ -16,10 +17,6 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
   const parts = text.split(re);
   return <>{parts.map((p, i) => (i % 2 ? <mark key={i}>{p}</mark> : <span key={i}>{p}</span>))}</>;
 }
-
-type GroupName = 'Notes' | 'Recent notes' | 'Folders' | 'Tasks' | 'Tags' | 'Pages' | 'Commands';
-/** Where groups sit when nothing matches one better than another. */
-const ORDER: GroupName[] = ['Notes', 'Recent notes', 'Folders', 'Tasks', 'Tags', 'Pages', 'Commands'];
 
 interface Row {
   id: string;
@@ -36,14 +33,6 @@ interface Row {
   run: () => void;
 }
 
-/** How well `text` fits what was typed (every word must be in it): 0 best, 3 not at all. */
-function fit(text: string, terms: string[]): number {
-  const t = text.toLowerCase();
-  if (!terms.every(w => t.includes(w))) return 3;
-  if (t.startsWith(terms[0])) return 0;
-  return t.split(/[\s/_-]+/).some(w => w.startsWith(terms[0])) ? 1 : 2;
-}
-
 /**
  * The search popup (Ctrl+K): Notes and Folders as you type, each with where it lives and the matching passage, and with
  * them the Tasks, Tags, Pages and Commands that match. `>` shows only Commands, `#` only Tags, `-` only Tasks.
@@ -57,8 +46,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
   const listRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  const mode: 'all' | 'commands' | 'tags' | 'tasks' = q.startsWith('>') ? 'commands' : q.startsWith('#') ? 'tags' : q.startsWith('-') ? 'tasks' : 'all';
-  const query = (mode === 'all' ? q : q.slice(1)).trim();
+  const { mode, query } = parseQuery(q);
   const terms = useMemo(() => query.toLowerCase().split(/\s+/).filter(Boolean), [query]);
   const words = useMemo(() => query.split(/\s+/).filter(Boolean), [query]);
 
@@ -122,17 +110,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
         ...runnable.map(cmdRow),
       ];
     }
-    if (terms.length) out = out.filter(r => r.rank < 3);
-    // next to notes, a command, a page or a tag must begin a word with what was typed; the Commands list (">") is looser
-    if (mode === 'all' && terms.length) out = out.filter(r => !['Commands', 'Pages', 'Tags'].includes(r.group) || r.rank <= 1);
-    // inside a group the better fits come first; a search that finds nothing else shows the tasks and tags it did find
-    const cap: Partial<Record<GroupName, number>> = mode === 'all' ? { Tasks: 5, Tags: 5, Pages: 4, Commands: 5 } : {};
-    const taken: Partial<Record<GroupName, number>> = {};
-    const sorted = out.map((r, i) => ({ r, i })).sort((a, b) => a.r.rank - b.r.rank || a.i - b.i).map(x => x.r);
-    const kept = sorted.filter(r => { const n = (taken[r.group] ?? 0) + 1; taken[r.group] = n; return n <= (cap[r.group] ?? 50); });
-    const best = (g: GroupName) => Math.min(...kept.filter(r => r.group === g).map(r => r.rank), 9);
-    const groups = ORDER.filter(g => kept.some(r => r.group === g)).sort((a, b) => (mode === 'all' && query ? best(a) - best(b) : 0) || ORDER.indexOf(a) - ORDER.indexOf(b));
-    return groups.flatMap(g => kept.filter(r => r.group === g));
+    return arrangeRows(out, { mode, query, terms });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, query, hits, app.tasks, app.tags, recent, cmds.prefs.keys]);
 
