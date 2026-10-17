@@ -1,138 +1,170 @@
-import { useMemo, useState } from 'react';
-import { ArrowRight, ChevronLeft, ChevronRight, FilePlus2 } from 'lucide-react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, GripVertical, LayoutGrid, Plus, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import { useApp } from '../state/app';
-import { href, noteHref } from '../state/router';
-import { isoDay } from '../state/util';
-import { IconBtn, NoteCard, TagLink } from '../components/ui';
-import { TaskRow } from './Tasks';
-import { HabitTaskRow, NudgeCard } from '../components/Habit';
-import { nudgeDismissed, nudgeId, openToday } from '../state/habits';
 import { classNames } from '../state/util';
+import {
+  CATALOGUE, canMove, columnsFor, columnsOf, moveWidget, newWidgetId, nudgeWidget, removeWidget, resetDashboard, resizeWidget, setDashboard, addWidget, useDashboard,
+  type ColumnCount, type Dashboard, type WidgetGroup, type WidgetInstance, type WidgetKind, type WidgetSize,
+} from '../state/dashboard';
 import { FirstRunBanner } from '../components/FirstRunBanner';
-import { ScratchPad } from '../components/ScratchPad';
+import { WIDGETS } from '../components/widgets';
+import { Dialog } from '../components/ui';
+import { Mood } from '../components/Mood';
 
-export function MiniCalendar({ onPick }: { onPick?: (day: string) => void }) {
-  const app = useApp();
-  const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
-  const marks = useMemo(() => {
-    const s = new Set<string>();
-    for (const t of app.tasks) if (!t.done && t.due) s.add(t.due.slice(0, 10));
-    return s;
-  }, [app.tasks]);
-  const first = cursor.getDay();
-  const days = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
-  const cells: (Date | null)[] = [...Array(first).fill(null), ...Array.from({ length: days }, (_, i) => new Date(cursor.getFullYear(), cursor.getMonth(), i + 1))];
-  const today = isoDay();
+const DRAG = 'text/x-ergo-widget';
+
+/** The width of Home, followed, to know how many columns fit. */
+function useColumns(ref: React.RefObject<HTMLElement | null>, isMobile: boolean): ColumnCount {
+  const [n, setN] = useState<ColumnCount>(() => (isMobile ? 1 : columnsFor(typeof window === 'undefined' ? 1200 : window.innerWidth - 260)));
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setN(isMobile ? 1 : columnsFor(el.clientWidth - 56));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref, isMobile]);
+  return n;
+}
+
+function EditBar({ w, cols, dash }: { w: WidgetInstance; cols: ColumnCount; dash: Dashboard }) {
+  const can = canMove(dash, cols, w.id);
+  const title = WIDGETS[w.kind].title;
+  const move = (dir: 'up' | 'down' | 'left' | 'right') => setDashboard(nudgeWidget(dash, cols, w.id, dir));
+  const btn = (dir: 'up' | 'down' | 'left' | 'right', icon: JSX.Element) => (
+    <button type="button" className="icon-btn" disabled={!can[dir]} aria-label={`Move ${title} ${dir}`} title={`Move ${dir}`} onClick={() => move(dir)}>{icon}</button>
+  );
   return (
-    <div className="mini-cal">
-      <div className="head">
-        <IconBtn label="Previous month" icon={<ChevronLeft size={18} />} onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} />
-        <span>{cursor.toLocaleDateString('en', { month: 'long', year: 'numeric' })}</span>
-        <IconBtn label="Next month" icon={<ChevronRight size={18} />} onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} />
-      </div>
-      <div className="grid">
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="dow">{d}</div>)}
-        {cells.map((d, i) => d ? (
-          <button key={i} className={`day${isoDay(d) === today ? ' today' : ''}`} onClick={() => onPick ? onPick(isoDay(d)) : app.go({ name: 'calendar' })}
-            aria-label={d.toLocaleDateString('en', { dateStyle: 'full' })}>
-            {d.getDate()}{marks.has(isoDay(d)) && <i />}
-          </button>
-        ) : <span key={i} />)}
-      </div>
+    <div className="w-edit" role="toolbar" aria-label={`Change ${title}`}>
+      <span className="w-grip" aria-hidden title="Drag to move"><GripVertical size={16} /></span>
+      {btn('up', <ArrowUp size={15} />)}
+      {btn('down', <ArrowDown size={15} />)}
+      {cols > 1 && btn('left', <ArrowLeft size={15} />)}
+      {cols > 1 && btn('right', <ArrowRight size={15} />)}
+      {cols > 1 && (
+        <span className="seg" role="group" aria-label={`Size of ${title}`}>
+          {(['S', 'M', 'L'] as const).map(s => <button key={s} type="button" aria-pressed={w.size === s} onClick={() => setDashboard(resizeWidget(dash, w.id, s))}>{s}</button>)}
+        </span>
+      )}
+      <span className="grow" />
+      <button type="button" className="icon-btn" aria-label={`Remove ${title}`} title="Remove from Home" onClick={() => setDashboard(removeWidget(dash, w.id))}><X size={16} /></button>
     </div>
+  );
+}
+
+function Frame({ w, editing, cols, dash, dragging, setDragging, over, setOver }: {
+  w: WidgetInstance; editing: boolean; cols: ColumnCount; dash: Dashboard;
+  dragging: string | null; setDragging: (id: string | null) => void; over: string | null; setOver: (id: string | null) => void;
+}) {
+  const e = WIDGETS[w.kind];
+  const Body = e.Body;
+  const headingId = `wh-${w.id}`;
+  const onDragStart = (ev: DragEvent) => { setDragging(w.id); ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData(DRAG, w.id); };
+  return (
+    <section
+      className={classNames('widget', `w-${w.kind}`, `size-${w.size}`, e.bare && 'bare', e.headless && 'headless', editing && 'editing', dragging === w.id && 'dragging', over === w.id && 'over')}
+      aria-labelledby={e.headless ? undefined : headingId} aria-label={e.headless ? e.title : undefined} data-widget={w.kind} data-widget-id={w.id}
+      draggable={editing} onDragStart={editing ? onDragStart : undefined} onDragEnd={() => { setDragging(null); setOver(null); }}
+      onDragOver={editing ? ev => { if (dragging && dragging !== w.id) { ev.preventDefault(); ev.stopPropagation(); setOver(w.id); } } : undefined}
+      onDrop={editing ? ev => {
+        const id = ev.dataTransfer.getData(DRAG);
+        if (!id) return;
+        ev.preventDefault(); ev.stopPropagation();
+        const col = dash.layouts[cols].findIndex(c => c.includes(w.id));
+        setDashboard(moveWidget(dash, cols, id, col, w.id));
+        setDragging(null); setOver(null);
+      } : undefined}>
+      {editing && <EditBar w={w} cols={cols} dash={dash} />}
+      {!e.headless && (
+        <h2 id={headingId}>{e.title}<span className="grow" />
+          {e.action && !editing && <a href={e.action.href} className="icon-btn" title={e.action.label} aria-label={e.action.label}><ArrowRight size={18} /></a>}
+        </h2>
+      )}
+      <div className={classNames('w-body', editing && 'inert')} {...(editing ? { 'aria-hidden': true } : {})}><Body size={w.size} /></div>
+    </section>
+  );
+}
+
+const GROUPS: WidgetGroup[] = ['Start', 'Notes', 'Tasks', 'Habits', 'Activity'];
+
+/** Every Widget there is, to put one on Home (the same kind can be put twice). */
+function Gallery({ dash, onClose }: { dash: Dashboard; onClose: () => void }) {
+  const count = (k: WidgetKind) => dash.widgets.filter(w => w.kind === k).length;
+  return (
+    <Dialog title="Add a widget" onClose={onClose} wide footer={<button className="btn" onClick={onClose}>Done</button>}>
+      <div className="gallery">
+        {GROUPS.map(g => (
+          <section key={g} aria-label={g}>
+            <h3>{g}</h3>
+            <ul>
+              {CATALOGUE.filter(d => d.group === g).map(d => (
+                <li key={d.kind}>
+                  <div className="info"><b>{d.title}</b><span>{d.blurb}</span></div>
+                  {count(d.kind) > 0 && <small className="muted">{count(d.kind)} on Home</small>}
+                  <button className="btn" aria-label={`Add ${d.title}`} onClick={() => setDashboard(addWidget(dash, d.kind, newWidgetId(d.kind)))}><Plus size={15} /> Add</button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </Dialog>
   );
 }
 
 export function Home() {
   const app = useApp();
-  const [tab, setTab] = useState<'recent' | 'inbox'>('recent');
-  const notes = useMemo(() => app.items.filter(i => i.type === 'note' && !i.inTrash && !i.template), [app.items]);
-  const recent = useMemo(() => [...notes].sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, 10), [notes]);
-  const inboxId = app.settings.captureFolder ?? app.items.find(i => i.role === 'inbox')?.id;
-  const inbox = useMemo(() => notes.filter(n => n.parent === inboxId).sort((a, b) => b.updated.localeCompare(a.updated)).slice(0, 10), [notes, inboxId]);
-  const pinned = notes.filter(n => n.pinned).slice(0, 6);
-  // today: what is open and due now or overdue, what is to remind today, and what a Habit still wants
-  const today = app.today;
-  const dueTasks = useMemo(() => app.tasks.filter(t => !t.done && t.due && t.due.slice(0, 10) <= today)
-    .sort((a, b) => (a.due ?? '').localeCompare(b.due ?? '')), [app.tasks, today]);
-  const reminders = useMemo(() => app.tasks.filter(t => !t.done && t.remind && t.remind.slice(0, 10) === today)
-    .sort((a, b) => (a.remind ?? '').localeCompare(b.remind ?? '')), [app.tasks, today]);
-  const habitsLeft = useMemo(() => openToday(app.habits), [app.habits]);
-  const [list, setList] = useState<'tasks' | 'reminders' | 'habits'>('tasks');
-  const nudges = app.habits.filter(h => h.nudge && !h.archived && !nudgeDismissed(today, nudgeId(h, h.nudge))).slice(0, 2);
-  const counts = { tasks: dueTasks.length, reminders: reminders.length, habits: habitsLeft.length };
-  const shown = tab === 'recent' ? recent : inbox;
-  const folderName = (n: { parent: string | null }) => (n.parent ? app.byId.get(n.parent)?.title : undefined);
-
-
+  const dash = useDashboard();
+  const [editing, setEditing] = useState(false);
+  const [gallery, setGallery] = useState(false);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const cols = useColumns(ref, app.isMobile);
+  const columns = columnsOf(dash, cols);
+  const dropIn = (col: number) => (ev: DragEvent) => {
+    const id = ev.dataTransfer.getData(DRAG);
+    if (!editing || !id) return;
+    ev.preventDefault();
+    setDashboard(moveWidget(dash, cols, id, col, null));
+    setDragging(null); setOver(null);
+  };
   return (
-    <div className="home">
-      <h1>Home</h1>
+    <div className="home" ref={ref}>
+      <div className="home-head">
+        <h1>Home</h1>
+        <span className="grow" />
+        {editing ? (
+          <>
+            <button className="btn" onClick={() => setGallery(true)}><Plus size={16} /> Add widget</button>
+            <button className="btn" onClick={() => { if (window.confirm('Put Home back as it was at the start?')) resetDashboard(); }}><RotateCcw size={16} /> Reset</button>
+            <button className="btn primary" onClick={() => setEditing(false)}>Done</button>
+          </>
+        ) : (
+          <button className="btn" onClick={() => setEditing(true)}><SlidersHorizontal size={16} /> Customise</button>
+        )}
+      </div>
       <FirstRunBanner />
-      <div className="today-line" role="group" aria-label="Today">
-        <span className="today-label">Today</span>
-        {([['tasks', 'task', 'tasks'], ['reminders', 'reminder', 'reminders'], ['habits', 'habit', 'habits left']] as const).map(([k, one, many]) => (
-          <button key={k} type="button" className={classNames('today-count', list === k && 'on', counts[k] === 0 && 'zero')} aria-pressed={list === k} onClick={() => setList(k)}>
-            <b>{counts[k]}</b> {k === 'habits' ? (counts[k] === 1 ? 'habit left' : 'habits left') : counts[k] === 1 ? one : many}
-          </button>
-        ))}
-      </div>
-      {nudges.length > 0 && <div className="nudges">{nudges.map(h => <NudgeCard key={h.id} habit={h} nudge={h.nudge!} showName />)}</div>}
-
-      <div className="home-row">
-        <section className="widget w-notes" aria-labelledby="w-notes">
-          <h2 id="w-notes">Notes
-            <span className="grow" />
-            <span className="seg" role="group" aria-label="Which notes">
-              <button aria-pressed={tab === 'recent'} onClick={() => setTab('recent')}>Recent</button>
-              <button aria-pressed={tab === 'inbox'} onClick={() => setTab('inbox')}>Inbox</button>
-            </span>
-          </h2>
-          <div className="cards hrow">
-            {shown.map(n => <NoteCard key={n.id} n={n} folder={folderName(n)} href={noteHref(n)} />)}
-            <button className="card create" onClick={() => void app.newNote()}>
-              <span className="create-dot"><FilePlus2 size={20} /></span>
-              <span>Create new note</span>
-            </button>
+      {editing && <p className="dash-hint muted">This arrangement stays on this device. Drag a widget, or use the arrows, to move it.</p>}
+      <div className={classNames('dash', `cols-${cols}`, editing && 'editing')}>
+        {columns.map((col, i) => (
+          <div key={i} className="dash-col" data-col={i}
+            onDragOver={editing ? ev => { if (dragging) ev.preventDefault(); } : undefined} onDrop={dropIn(i)}>
+            {col.map(w => <Frame key={w.id} w={w} editing={editing} cols={cols} dash={dash} dragging={dragging} setDragging={setDragging} over={over} setOver={setOver} />)}
+            {col.length === 0 && editing && <div className="drop-empty"><LayoutGrid size={18} aria-hidden /> Drop a widget here</div>}
           </div>
-        </section>
-
-        <section className="widget w-capture" aria-labelledby="w-capture">
-          <h2 id="w-capture">Scratch pad</h2>
-          <ScratchPad />
-        </section>
+        ))}
+        {dash.widgets.length === 0 && (
+          <div className="dash-empty">
+            <Mood name="sleeping" size={80} />
+            <h3>Home is empty</h3>
+            <p>Choose what you want to see here.</p>
+            <button className="btn primary" onClick={() => { setEditing(true); setGallery(true); }}><Plus size={16} /> Add a widget</button>
+          </div>
+        )}
       </div>
-
-      <div className="home-grid">
-        <div className="home-main">
-          {pinned.length > 0 && (
-            <section className="widget w-pinned" aria-labelledby="w-pin">
-              <h2 id="w-pin">Pinned</h2>
-              <div className="cards hrow">{pinned.map(n => <NoteCard key={n.id} n={n} folder={folderName(n)} href={noteHref(n)} />)}</div>
-            </section>
-          )}
-
-          {app.tags.length > 0 && (
-            <section className="widget w-tags" aria-labelledby="w-tags">
-              <h2 id="w-tags">Tags</h2>
-              <div className="tag-cloud">{app.tags.slice(0, 30).map(t => <TagLink key={t.tag} tag={t.tag} count={t.count} href={href({ name: 'notes', tag: t.tag })} />)}</div>
-            </section>
-          )}
-        </div>
-
-        <aside className="home-side" aria-label="Calendar and tasks">
-          <section className="widget w-tasks" aria-labelledby="w-tasks">
-            <h2 id="w-tasks">{list === 'tasks' ? 'Tasks due' : list === 'reminders' ? 'Reminders today' : 'Habits today'}<span className="grow" /><a href={href({ name: list === 'habits' ? 'habits' : 'tasks' })} className="icon-btn" title={list === 'habits' ? 'All habits' : 'All tasks'} aria-label={list === 'habits' ? 'All habits' : 'All tasks'}><ArrowRight size={18} /></a></h2>
-            {list === 'tasks' && (dueTasks.length === 0 ? <div className="empty" style={{ padding: 16 }}>Nothing due. Add a due date to a task in any note.</div> : dueTasks.slice(0, 8).map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} compact />))}
-            {list === 'reminders' && (reminders.length === 0 ? <div className="empty" style={{ padding: 16 }}>No reminders today. Set one on a task with the bell.</div> : reminders.slice(0, 8).map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} compact />))}
-            {list === 'habits' && (habitsLeft.length === 0 ? <div className="empty" style={{ padding: 16 }}>{app.habits.some(h => !h.archived) ? 'Every habit is met for today.' : 'No habits yet.'}</div> : habitsLeft.map(h => <HabitTaskRow key={h.id} h={h} compact />))}
-          </section>
-          <section className="widget w-cal" aria-labelledby="w-cal">
-            <h2 id="w-cal">Calendar</h2>
-            <MiniCalendar />
-          </section>
-        </aside>
-      </div>
+      {gallery && <Gallery dash={dash} onClose={() => setGallery(false)} />}
     </div>
   );
 }

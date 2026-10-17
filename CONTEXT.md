@@ -121,7 +121,7 @@ A calendar day judged against a Habit's Target: *met* when its window holds at l
 _Avoid_: Miss as a stored state
 
 **Nudge**:
-The fixed sentence the app shows about a Habit: praise when today's Target is met or a Streak reaches 3, 7, 14, 30, 60 or 100 days, and gentler or firmer words after 1, 2, 3 to 6, and 7 or more missed days. Shown as a card on Home and on the Habit, and as one toast when the app opens, each with a Mood picture; never as an operating-system notification.
+The fixed sentence the app shows about a Habit: praise when today's Target is met or a Streak reaches 3, 7, 14, 30, 60 or 100 days, and gentler or firmer words after 1, 2, 3 to 6, and 7 or more missed days. Shown as a card in the Habits today Widget of Home and on the Habit, and as one toast when the app opens, each with a Mood picture; never as an operating-system notification.
 _Avoid_: Reminder (that belongs to a Task), alert
 
 **Scratchpad**:
