@@ -1280,9 +1280,9 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .habit-target select { font: inherit; padding: 2px 6px; border: 1px solid var(--border-field); border-radius: 6px; background: var(--bg); color: inherit; }
 .habit-sub { color: var(--text-2); font-size: var(--fs-s); margin-top: 2px; }
 .habit-archive { display: inline-flex; gap: 6px; align-items: center; color: var(--text-2); font-size: var(--fs-s); }
-.habit-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.habit-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; margin: 0; }
 .habit-stats div { padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); }
-.habit-stats dt { color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; }
+.habit-stats dt { color: var(--text-3); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
 .habit-stats dd { margin: 2px 0 0; font-size: 20px; font-weight: 700; color: var(--text-strong); }
 .habit-stats dd small { font-size: var(--fs-xs); font-weight: 500; color: var(--text-3); }
 .habit-heat { display: flex; gap: 3px; overflow-x: auto; padding-bottom: 2px; }
@@ -1307,7 +1307,7 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .habit-often input { width: 72px; }
 .task-check.habit { border-radius: 50%; border-color: var(--green-mark); }
 .habit-due { color: var(--green-ink); }
-@media (max-width: 720px) { .habit-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } .habits-page { padding: 8px 16px 90px; } .habit-row { flex-wrap: wrap; } }
+@media (max-width: 720px) { .habits-page { padding: 8px 16px 90px; } .habit-row { flex-wrap: wrap; } }
 
 /* a link to a Habit in a note */
 .prose a.habit-chip { display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; background: var(--bg-sidebar); color: var(--text-strong); text-decoration: none; border: 1px solid var(--border-card); line-height: 1.6; }

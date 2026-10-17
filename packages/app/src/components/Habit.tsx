@@ -13,7 +13,7 @@ export function Ring({ done, of, size = 36, met }: { done: number; of: number; s
   return (
     <svg className={classNames('habit-ring', met && 'met')} width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={4} className="track" />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={4} strokeLinecap="round" className="fill" strokeDasharray={`${c * frac} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={4} strokeLinecap={frac > 0 ? 'round' : 'butt'} className="fill" strokeDasharray={`${c * frac} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
       {met && <path d={`M${size * 0.32} ${size * 0.52} l${size * 0.12} ${size * 0.12} l${size * 0.22} -${size * 0.26}`} fill="none" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="tick" />}
     </svg>
   );

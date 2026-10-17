@@ -139,7 +139,7 @@ export function plainSnippet(body: string, max = 180): string {
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
     .replace(/!?\[\[([^\]|#^]*)(?:[#^][^\]|]*)?(?:\|([^\]]*))?\]\]/g, (_m, t: string, a?: string) => a || t)
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/@(due|remind)\([^)]*\)|@flag\b/g, '')
+    .replace(/@(due|remind|done)\([^)]*\)|@flag\b/g, '')
     .replace(/@event\(([^)]*)\)/g, '')
     .replace(/@date\((\d{4}-\d{2}-\d{2})\)/g, '$1')
     .replace(/<\/?[a-zA-Z][^>\n]*>/g, ' ')

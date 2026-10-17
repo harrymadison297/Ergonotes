@@ -480,7 +480,7 @@ fn beside(doc: &str, rel: &str) -> Result<PathBuf, String> {
 /// chooses where, and the file is written. Body: the bytes. Header `x-name`: the suggested file name, percent-encoded.
 /// Returns the path it was written to, or `null` when the dialog was cancelled.
 #[tauri::command]
-async fn save_download(app: AppHandle, request: Request) -> Result<Option<String>, String> {
+async fn save_download(app: AppHandle, request: Request<'_>) -> Result<Option<String>, String> {
     let name = header(&request, "x-name")
         .map(|r| percent_encoding::percent_decode_str(&r).decode_utf8_lossy().into_owned())
         .ok_or("missing name")?;
