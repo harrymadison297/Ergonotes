@@ -1307,7 +1307,13 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .habit-often input { width: 72px; }
 .task-check.habit { border-radius: 50%; border-color: var(--green-mark); }
 .habit-due { color: var(--green-ink); }
-@media (max-width: 720px) { .habits-page { padding: 8px 16px 90px; } .habit-row { flex-wrap: wrap; } }
+@media (max-width: 720px) {
+  .habits-page { padding: 8px 16px 90px; }
+  .habit-row { flex-wrap: wrap; row-gap: 8px; }
+  .habit-name { flex: 1 1 calc(100% - 64px); min-width: 0; }
+  .habit-streak { margin-left: 50px; text-align: left; min-width: 0; }
+  .habit-row .btn { margin-left: auto; }
+}
 
 /* a link to a Habit in a note */
 .prose a.habit-chip { display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; background: var(--bg-sidebar); color: var(--text-strong); text-decoration: none; border: 1px solid var(--border-card); line-height: 1.6; }
