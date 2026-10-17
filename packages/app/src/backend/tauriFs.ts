@@ -46,14 +46,15 @@ class SafFs implements VaultFs {
   constructor(b: ErgoVaultBridge) { this.b = b; }
   private ok(err: string) { if (err) throw new Error(err); }
   async readdir(dir: string): Promise<FsEntry[]> { return JSON.parse(this.b.list(dir)) as FsEntry[]; }
-  async read(path: string): Promise<Uint8Array | null> { const s = this.b.read(path); return s === null ? null : fromB64(s); }
+  // a Kotlin `null` string reaches the page as `null` or as `undefined`, depending on the WebView: both mean "not there"
+  async read(path: string): Promise<Uint8Array | null> { const s = this.b.read(path); return s == null ? null : fromB64(s); }
   async write(path: string, data: Uint8Array | string): Promise<void> {
     this.ok(this.b.write(path, toB64(typeof data === 'string' ? new TextEncoder().encode(data) : data)));
   }
   async remove(path: string): Promise<void> { this.ok(this.b.remove(path)); }
   async rename(from: string, to: string): Promise<void> { this.ok(this.b.rename(from, to)); }
   async mkdir(path: string): Promise<void> { this.ok(this.b.mkdir(path)); }
-  async stat(path: string): Promise<FsStat | null> { const s = this.b.stat(path); return s === null ? null : (JSON.parse(s) as FsStat); }
+  async stat(path: string): Promise<FsStat | null> { const s = this.b.stat(path); return s == null ? null : (JSON.parse(s) as FsStat); }
 }
 
 /** `content://…/tree/primary%3ADocuments%2FNotes` as `Internal storage / Documents / Notes`. */
