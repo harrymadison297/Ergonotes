@@ -1,5 +1,7 @@
 # A habit is a note that records only what was done; everything else is computed
 
+*Amended by ADR 0014: a Habit now lives in the hidden `.habits/` folder and is no longer a Note; the rest of this ADR stands.*
+
 ADR 0010 (the vault is a folder of Markdown) and ADR 0009 (plain Markdown forms) stand. CONTEXT.md's rule that a Task lives in a Note is kept: the Tasks a Habit offers are not stored, so they are not Tasks until ticked.
 
 A Habit has to appear as something to do on Home, the Calendar and the Tasks page, show streaks and misses, take a remark for any day, and be mentioned from other notes. Storing a Task per Habit per day would write into notes by itself, two Devices would both write the same day (and the Merge would see overlapping changes), and a missed day would need a stored marker.
