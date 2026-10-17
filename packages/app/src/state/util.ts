@@ -46,7 +46,16 @@ export function isoDay(d = new Date()): string {
 }
 
 /** Save a Blob as a file through a temporary link. */
-export function downloadBlob(filename: string, blob: Blob) {
+/**
+ * Keep a file the person asked for. A browser saves it through a temporary link. The installed desktop app has no download
+ * manager in its webview (a blob link fails there), so it asks the shell: the person picks where, and it writes the file.
+ * Resolves to where it was written when that is known.
+ */
+export async function downloadBlob(filename: string, blob: Blob): Promise<string | null> {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window && !(window as unknown as { ErgoVault?: unknown }).ErgoVault) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<string | null>('save_download', new Uint8Array(await blob.arrayBuffer()), { headers: { 'x-name': encodeURIComponent(filename) } });
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -55,10 +64,11 @@ export function downloadBlob(filename: string, blob: Blob) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+  return null;
 }
 
-export function download(filename: string, mime: string, content: string) {
-  downloadBlob(filename, new Blob([content], { type: `${mime};charset=utf-8` }));
+export function download(filename: string, mime: string, content: string): Promise<string | null> {
+  return downloadBlob(filename, new Blob([content], { type: `${mime};charset=utf-8` }));
 }
 
 /**

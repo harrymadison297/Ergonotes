@@ -481,7 +481,8 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
       const { noteToDocx } = await import('../state/exportDocx');
       try {
         const blob = await noteToDocx({ title: title || doc.title, tags: doc.tags, body: editor.view.dom as HTMLElement });
-        downloadBlob(`${(title || doc.title || 'Note').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Note'}.docx`, blob);
+        const where = await downloadBlob(`${(title || doc.title || 'Note').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Note'}.docx`, blob);
+        if (where) app.toast(`Saved ${where}`);
       } catch (e) { app.toast(`Could not make the Word file: ${e instanceof Error ? e.message : String(e)}`, 'error'); }
     } },
     ...(canPrint() ? [{ label: 'PDF…', icon: <Download size={16} />, onClick: async () => {

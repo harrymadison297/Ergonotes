@@ -475,6 +475,41 @@ fn beside(doc: &str, rel: &str) -> Result<PathBuf, String> {
     Ok(p)
 }
 
+
+/// A file the person asked to keep ("Export", "Download"): a webview cannot save a blob by itself, so the bytes come here, the person
+/// chooses where, and the file is written. Body: the bytes. Header `x-name`: the suggested file name, percent-encoded.
+/// Returns the path it was written to, or `null` when the dialog was cancelled.
+#[tauri::command]
+async fn save_download(app: AppHandle, request: Request) -> Result<Option<String>, String> {
+    let name = header(&request, "x-name")
+        .map(|r| percent_encoding::percent_decode_str(&r).decode_utf8_lossy().into_owned())
+        .ok_or("missing name")?;
+    let bytes = match request.body() {
+        InvokeBody::Raw(b) => b.clone(),
+        InvokeBody::Json(serde_json::Value::Array(a)) => a.iter().map(|v| v.as_u64().unwrap_or(0) as u8).collect(),
+        InvokeBody::Json(_) => return Err("expected the file's bytes".into()),
+    };
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = (app, name, bytes);
+        Err("Saving a file is not available on this device yet".into())
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let mut dialog = app.dialog().file().set_file_name(&name);
+        if let Ok(dir) = app.path().download_dir() {
+            dialog = dialog.set_directory(dir);
+        }
+        if let Some(ext) = Path::new(&name).extension().and_then(|e| e.to_str()) {
+            dialog = dialog.add_filter(format!("{} file", ext.to_uppercase()), &[ext]);
+        }
+        let Some(picked) = dialog.blocking_save_file() else { return Ok(None) };
+        let path = picked.into_path().map_err(|e| e.to_string())?;
+        fs::write(&path, bytes).map_err(|e| format!("Could not save: {e}"))?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    }
+}
+
 #[tauri::command]
 fn ext_reveal(path: String) -> Result<(), String> {
     reveal(Path::new(&path))
@@ -524,6 +559,7 @@ pub fn run() {
             ext_read_beside,
             ext_write_beside,
             ext_reveal,
+            save_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Ergonotes");

@@ -178,7 +178,8 @@ check('a checkbox can be ticked', (await noteBody('Elements')).includes('Tick â˜
 await page.locator('.date-chip').first().click();
 await page.getByRole('heading', { name: /October 2026/ }).waitFor({ timeout: 5000 }).catch(() => {});
 check('a date mention opens the calendar on its month', await page.getByRole('heading', { name: /October 2026/ }).isVisible());
-check('the event shows on the calendar', (await page.locator('.cal-ev.event').count()) > 0 && (await page.locator('.cal-ev.event').first().textContent()).includes('Team sync'));
+// a day's cell only counts what it holds; the day that is open lists it
+check('the event is counted on the calendar and listed for the open day', (await page.locator('.cnt.event').count()) > 0 && (await page.locator('.cal-section', { hasText: 'Events' }).innerText()).includes('Team sync'));
 await page.screenshot({ path: `${shots}/insert-calendar.png` });
 
 // ---- new linked note
