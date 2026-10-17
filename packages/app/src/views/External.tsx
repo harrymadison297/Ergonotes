@@ -69,7 +69,7 @@ function Loaded({ path, file, reload }: { path: string; file: ExternalText; relo
 
   return (
     <AppOverride patch={patch}>
-      <ApiKeeper api={api} />
+      <ApiKeeper api={api} restore={app.api} />
       <div className="ext-view">
         <div className="banner info" role="note">
           <FolderOpen size={16} />

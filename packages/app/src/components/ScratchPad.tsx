@@ -64,7 +64,7 @@ export function ScratchPad() {
   return (
     <div className="scratch-box">
       <AppOverride patch={patch}>
-        <ApiKeeper api={api} />
+        <ApiKeeper api={api} restore={app.api} />
         <NoteEditor id={SCRATCH_ID} scratch={{ send, sending }} />
       </AppOverride>
     </div>
