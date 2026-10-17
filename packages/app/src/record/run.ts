@@ -4,6 +4,7 @@ import {
   AUTO_DROP_FRACTION, GRAY_H, GRAY_W, audioExt, audioPartName, changedFraction, concatBytes, frameFileName, grayFromRgba, joinWebm, newRecordMeta, recordDirName, recordFilePaths, toB64,
   type RecordKind, type RecordMeta, type VaultApi,
 } from '@ergonotes/core';
+import { openMixer, pickAudioMime } from './capture';
 
 export const PART_SECONDS = 10 * 60;
 const FRAME_LONG_EDGE = 1280;
@@ -58,7 +59,7 @@ export class RecordRun {
   private streams: MediaStream[] = [];
   private ctx: AudioContext | null = null;
   private rec: MediaRecorder | null = null;
-  private analyser: AnalyserNode | null = null;
+  private level: () => number = () => 0;
   private video: HTMLVideoElement | null = null;
   private canvas = document.createElement('canvas');
   private small = document.createElement('canvas');
@@ -139,24 +140,12 @@ export class RecordRun {
           ? 'The microphone is blocked, so only the shared sound is recorded.'
           : 'No microphone was found, so only the shared sound is recorded.';
       }
-      const ac = new AudioContext();
-      void ac.resume();
-      this.ctx = ac;
-      const mix = ac.createMediaStreamDestination();
-      mix.channelCount = 1; // ADR 0011: mono; a call or a lecture gains nothing from two channels
-      mix.channelCountMode = 'explicit';
-      mix.channelInterpretation = 'speakers';
-      const an = ac.createAnalyser();
-      an.fftSize = 256;
-      this.analyser = an;
-      for (const st of [...(mic ? [mic] : []), ...(display ? [new MediaStream(display.getAudioTracks())] : [])]) {
-        const src = ac.createMediaStreamSource(st);
-        src.connect(mix);
-        src.connect(an);
-      }
+      const mixer = openMixer([...(mic ? [mic] : []), ...(display ? [new MediaStream(display.getAudioTracks())] : [])]);
+      this.ctx = mixer.ctx;
+      this.level = mixer.level;
       this.state.heard = mic && display ? 'both' : display ? 'shared' : 'mic';
-      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(m => MediaRecorder.isTypeSupported(m));
-      const r = new MediaRecorder(mix.stream, mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : undefined);
+      const mime = pickAudioMime();
+      const r = new MediaRecorder(mixer.stream, mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : undefined);
       this.rec = r;
       this.mime = (r.mimeType || mime || 'audio/webm').split(';')[0];
       this.meta.mime = this.mime;
@@ -200,12 +189,8 @@ export class RecordRun {
       await this.writeMeta();
       this.o.onStarted(this.dir);
       this.tick = setInterval(() => this.emit(), 250);
-      const buf = new Uint8Array(an.fftSize);
       const loop = () => {
-        an.getByteTimeDomainData(buf);
-        let peak = 0;
-        for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
-        this.state.level = Math.min(1, peak / 64);
+        this.state.level = this.level();
         this.raf = requestAnimationFrame(loop);
       };
       loop();

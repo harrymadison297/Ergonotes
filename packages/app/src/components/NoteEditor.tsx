@@ -26,7 +26,7 @@ import { offeredItems, type InsertCtx } from '../editor/insertItems';
 import { canShareScreen } from '../record/run';
 import { InsertMenu } from './InsertMenu';
 import { DateDialog, EventDialog, LinkedNoteDialog } from './InsertDialogs';
-import { blobToB64, RecorderDialog, TranscribeDialog, type Recording } from './Recorder';
+import { blobToB64, DictateDialog, TranscribeDialog, type Recording } from './Recorder';
 import { DrawingDialog } from './DrawingDialog';
 import { editorBridge } from '../state/editorBridge';
 import { suggestionRequest, cleanSuggestion, completeText } from '@ergonotes/core';
@@ -689,8 +689,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
           setDrawing(null);
         }} />
       )}
-      {recorder === 'dictate' && <RecorderDialog kind="dictate" sttReady={app.ai.speechReady} privateNote={!!doc.private} onClose={() => setRecorder(null)}
-        onFinish={(r, _o, setStatus) => onDictated(r, setStatus)} />}
+      {recorder === 'dictate' && <DictateDialog sttReady={app.ai.speechReady} privateNote={!!doc.private} onClose={() => setRecorder(null)} onFinish={onDictated} />}
       {(recorder === 'recording' || recorder === 'meeting') && <RecordDialog kind={recorder} noteId={id} noteTitle={doc.title} privateNote={!!doc.private}
         onClose={() => setRecorder(null)} onStarted={onRecordStarted(recorder)} />}
       {transcribing && <TranscribeDialog privateNote={!!doc.private} onClose={() => setTranscribing(false)} onPick={onMediaFile} />}
