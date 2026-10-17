@@ -332,7 +332,7 @@ await mp.screenshot({ path: `${shots}/07-mobile-notes.png` });
 check('mobile bottom navigation present', (await mp.locator('.bottom-nav').count()) === 1);
 await mp.goto(`${base}/#/`);
 await mp.locator('.home h1').waitFor();
-check('mobile has a home screen with notes and a scratch pad', (await mp.locator('.home .card.create').count()) === 1 && (await mp.getByRole('textbox', { name: 'Scratch pad' }).count()) === 1);
+check('mobile has a home screen with notes and a scratch pad', (await mp.locator('.home .card.create').count()) === 1 && (await mp.locator('.home .scratch-box .ProseMirror').count()) === 1);
 check('mobile home has no horizontal overflow', await mp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 await mp.screenshot({ path: `${shots}/07a-mobile-home.png` });
 await mp.goto(`${base}/#/tasks`);

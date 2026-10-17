@@ -168,7 +168,7 @@ a.nav-item { padding: 0 6px 0 0; }
 .sidebar.rail .new-pill { order: 2; flex: none; width: var(--rail-box); height: var(--rail-box); padding: 0; border-radius: 50%; }
 .sidebar.rail .quick .ring-more { order: 3; width: var(--rail-box); height: var(--rail-box); }
 .sidebar.rail .nav { width: 100%; padding: 0; display: flex; flex-direction: column; align-items: center; gap: var(--rail-gap); }
-.sidebar.rail .nav-item, .sidebar.rail a.nav-item, .sidebar.rail button.nav-item { width: var(--rail-box); height: var(--rail-box); padding: 0; justify-content: center; border-radius: var(--radius); }
+.sidebar.rail .nav-item, .sidebar.rail a.nav-item, .sidebar.rail button.nav-item { width: var(--rail-box); height: var(--rail-box); padding: 0; justify-content: center; border-radius: var(--radius); flex: none; }
 .sidebar.rail .nav-link { justify-content: center; padding: 0; }
 .sidebar.rail .nav-item svg { width: 18px; height: 18px; }
 .sidebar.rail .nav-item > svg { margin: 0; }

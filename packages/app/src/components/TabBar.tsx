@@ -39,7 +39,7 @@ export function TabBar() {
             <FileText size={14} aria-hidden />
             <span>{title(t)}</span>
           </a>
-          <button type="button" className="tab-close" aria-label={`Close ${title(t)}`} title="Close (Ctrl+W)" onClick={() => close(t)}><X size={14} /></button>
+          <button type="button" className="tab-close" aria-label="Close tab" title="Close (Ctrl+W)" onClick={() => close(t)}><X size={14} /></button>
         </div>
       ))}
     </div>

@@ -71,3 +71,12 @@ tools/e2e-folder-vm.sh http://127.0.0.1:18080 /home/ergo/Notes
 # a real Tauri app (Android or Windows) through its WebView DevTools socket
 node packages/app/e2e/device.mjs http://127.0.0.1:9222 http://127.0.0.1:18080 http://10.0.2.2:19000 shots/ Android "Pixel emulator" "From Android"
 ```
+
+## VS Code extension, in a real VS Code
+
+```sh
+tools/e2e-vscode.sh      # builds apps/vscode, downloads VS Code once (temp/vscode-e2e) and runs apps/vscode/e2e/suite.cjs headless under Xvfb
+```
+
+The suite activates the extension on a copy of `apps/vscode/e2e/workspace`, completes `[[` and `@`, inserts a task, checks in to a habit note and opens the preview.
+
