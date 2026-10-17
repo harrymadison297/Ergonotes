@@ -172,7 +172,7 @@ a.nav-item { padding: 0 6px 0 0; }
 .sidebar.rail .nav-link { justify-content: center; padding: 0; }
 .sidebar.rail .nav-item svg { width: 18px; height: 18px; }
 .sidebar.rail .nav-item > svg { margin: 0; }
-.sidebar.rail .nav-sep { height: var(--rail-sep); }
+.sidebar.rail .nav-sep { height: var(--rail-sep); flex: none; }
 .sidebar.rail .sidebar-foot { flex-direction: column; border-top: 0; width: 100%; align-items: center; gap: var(--rail-gap); padding: 0; margin-top: 0; }
 .sidebar.rail .sidebar-foot .icon-btn { width: var(--rail-box); height: var(--rail-box); }
 .sidebar.rail .nav-item .alert-dot { display: block; position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }

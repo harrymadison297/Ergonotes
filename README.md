@@ -9,9 +9,31 @@ page breaks, dates, events, formulas, Mermaid diagrams, recordings and meetings 
 them is stored as standard Markdown (docs/adr/0009). A meeting is the audio of a call, pictures of the shared screen
 and a transcript, kept in one folder and played with the pictures marked on the timeline (docs/adr/0011).
 
+![Ergonotes on Windows and Android](docs/media/hero.png)
+
+## What is in it
+
 | | |
 |---|---|
-| **Android, Windows, Linux** | Tauri 2 apps. Notes are files in a folder on the device (choose it on the first screen; default `Documents/Ergonotes`); sync is optional. |
+| **Start at once** | A new install on Windows, Linux or Android makes a vault in your Documents folder and shows Home straight away, with no set-up screen and no password until you want one (docs/adr/0012). A running curve shows while the app starts and while a big folder is read. |
+| **Scratchpad** | A light blue note on Home that is not a note yet: it uses the note editor, keeps its draft on the device, takes dropped pictures and files, and becomes a note in the Inbox when you send it. |
+| **Habits** | A habit is a note with a target such as twice in three days. Check in when you do it; the streak, the misses, the 7, 30 and 90 day rates, a 12 week heat map and the messages are worked out, never stored (docs/adr/0013). Mention a habit in any note with `@`. |
+| **Calendar and Home** | Each day shows counts: tasks done and open, reminders, notes, events, habits met. Home says what is left today. |
+| **Tabs and Open with** | Notes open in tabs (Ctrl+click, Ctrl+W, Ctrl+Shift+T). Right click a Markdown file anywhere, *Open with Ergonotes*: it is edited in place and nothing is added to it. |
+| **Export** | Markdown, HTML, PDF and Word (`.docx`, made in the app). |
+| **VS Code** | `apps/vscode` is an extension to read and edit the same files in VS Code: syntax, a preview, links, snippets and habit check-ins. |
+
+<table>
+<tr><td><img src="docs/media/habits.png" alt="Habits"></td><td><img src="docs/media/calendar.png" alt="Calendar"></td></tr>
+<tr><td><img src="docs/media/scratchpad.png" alt="Scratchpad"></td><td><img src="docs/media/export.png" alt="Export to Word"></td></tr>
+<tr><td><img src="docs/media/vscode.png" alt="VS Code"></td><td><img src="docs/media/tabs.png" alt="Tabs and Open with"></td></tr>
+</table>
+
+![Habit check-ins](docs/media/habit-flow.gif)
+
+| | |
+|---|---|
+| **Android, Windows, Linux** | Tauri 2 apps. Notes are files in a folder on the device (default `Documents/Ergonotes`, changed in Settings or from the first-run note); sync is optional. |
 | **Web** | The same UI served by the optional Linux *server peer* (no offline mode). |
 | **Sync** | End-to-end encrypted objects in an S3-compatible bucket, WebDAV share, or plain folder. |
 | **Agents** | MCP over HTTP on the server peer, with revocable API tokens. |
@@ -28,7 +50,7 @@ ERGONOTES_DATA=./data node apps/server/src/main.ts
 
 No Node on the host? `tools/n <command>` runs any command in a Node container.
 
-Open the page, choose a password (12+ characters, **it cannot be recovered**) and write. The notes are Markdown files in
+Open the page, choose a password (12+ characters, **it cannot be recovered**) and write. (The desktop and Android apps need no password to start; *Settings → Security* adds one.) The notes are Markdown files in
 `./data/vault` (set `ERGONOTES_VAULT_DIR` to use a folder you already have).
 To sync devices: *Settings → Sync & storage*, enter an S3/WebDAV location, then on the other device choose
 *Join existing* with the same location and password.
@@ -65,7 +87,7 @@ The toolchain (Node, Rust + Windows/Android targets, JDK, Android SDK/NDK, NSIS)
 
 ```sh
 docker build -t ergonotes-builder tools/builder     # once, ~16 GB
-tools/release.sh                                    # Windows installer, Linux .deb, server bundle -> dist/release
+tools/release.sh                                    # Windows installer, Linux .deb, server bundle, VS Code extension -> dist/release
 tools/build-android.sh                              # signed release APK -> dist/release
 ```
 

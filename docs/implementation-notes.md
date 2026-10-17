@@ -157,3 +157,31 @@ Where the code differs from the ADRs / issues, and what is not done. Keep this l
   recording runs; a browser tab uses `beforeunload`.
 - Test: `packages/app/e2e/audio.mjs` (fake microphone, a canvas as the shared screen whose slide changes every 2.5 s; it ends
   the microphone track on purpose, makes a note private mid-recording, and reloads the record behind the Filter dialog).
+
+## Start at once, tabs, Open with, Scratchpad, Habits, Word, VS Code (2026-10-17)
+
+- **No password** (ADR 0012): `vault.json` with `kdf: { alg: 'none' }` holds the master key; `Vault.open` opens such a vault by itself
+  and `Vault.createVault('', { noPassword: true })` makes one, only when the host says `passwordOptional` (the installed apps do, the server
+  peer and the browser build do not). `changePassword('', pw)` sets a first password and keeps the key on the device as the sign-in's
+  "keep unlocked" does; `removePassword` and `leaveVault` (a password-less vault with no Store, to join another one) are the ways back.
+  `App.tsx` makes the vault on the first launch unless `ergo.join` says the person chose to join one. Argon2 runs in a worker
+  (`backend/argon2.ts`, `setArgon2Runner` in the core).
+- **Reading the folder after opening**: with `backgroundScan` the first `scanNow` runs after `activate`, and `status().scan` carries
+  `{ done, total }` for the pill in `Shell`. Without it (tests, the server) opening waits for the scan as before.
+- **Loader**: `components/curves.ts` has the five formulas (tested to stay in the box and close), `CurveLoader` draws the trail on a
+  canvas, `public/splash.js` is the same rose before the bundle arrives (a separate file: the installed app's CSP allows scripts from itself only).
+- **Tabs**: `state/tabs.ts` is a store (localStorage `ergo.tabs`) that follows the address; only `#/notes/<id>` and `#/external?path=` are tabs.
+  Commands `tab.close`, `tab.reopen`, `tab.next`, `tab.prev` carry the keys; the web build also has the Alt ones because the browser keeps Ctrl+W/T/Tab.
+- **Open with**: the installer registers `.md`, `.markdown`, `.mdown` and `.txt`; `tauri-plugin-single-instance` hands a second start's file to the
+  window. `views/External.tsx` runs the note editor on an api of its own (`state/externalApi.ts`, a `Proxy` over the vault api): the head
+  (frontmatter), line ends and BOM are put back as read, and a write is refused when the file changed since it was read (`ext_write`
+  compares modification times). Links inside an External file are not followed yet (`[[x]]` finds nothing, relative links are plain text).
+- **Scratchpad**: `components/ScratchPad.tsx` is `NoteEditor` with `scratch` set and an api of its own (`state/scratchApi.ts`); the draft and the
+  files dropped on it are in IndexedDB (`state/scratch.ts`) and only reach the Vault when it is sent.
+- **Habits** (ADR 0013): `core/src/habit.ts` is pure (the day rules, the words, the log lines); `Vault.habits/habit/createHabit/updateHabit/
+  checkInHabit/undoCheckIn/setHabitRemark`; the Task parser reads `@done`. `app.habits` is read with the rest at each refresh and again when
+  the day changes. The `@` picker (`MentionSuggest`) and the chip for a link to a Habit are in `NoteEditor` and `editor/extensions.tsx`.
+- **Word**: `state/exportDocx.ts` walks the clean copy of the note that the PDF uses (`paperBody`) and builds the file with `docx`; SVG and
+  `<img>` become PNGs through a canvas. Checked by opening a generated file with pandoc and python-docx.
+- **VS Code**: `apps/vscode` (see its README); `render.ts` and `notes.ts` are plain TypeScript with unit tests, the rest is thin VS Code glue,
+  exercised by `tools/e2e-vscode.sh`.
