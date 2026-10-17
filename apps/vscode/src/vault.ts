@@ -2,7 +2,7 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
-import { posix, titleOf, type NoteRef, habitOf } from './notes';
+import { posix, titleOf, type NoteRef, habitOf, isHabitFile } from './notes';
 
 export interface VaultRoot { fsPath: string }
 
@@ -32,10 +32,10 @@ export async function noteRefs(root: VaultRoot): Promise<NoteRef[]> {
   return files.map(f => { const p = relToRoot(root, f); return { title: titleOf(p), path: p }; });
 }
 
-/** The notes that are Habits (their frontmatter says `habit: true`). */
+/** The Habits: the files of `.habits/` whose frontmatter says `habit: true` (ADR 0014). */
 export async function habitFiles(root: VaultRoot): Promise<NoteRef[]> {
   const out: NoteRef[] = [];
-  for (const n of await noteRefs(root)) {
+  for (const n of (await noteRefs(root)).filter(r => isHabitFile(r.path))) {
     try {
       const head = fs.readFileSync(path.join(root.fsPath, n.path), 'utf8').slice(0, 2000);
       if (/^---\r?\n[\s\S]*?\bhabit:\s*true\b/.test(head) && habitOf(head + '\n---\n', '2000-01-01')) out.push(n);

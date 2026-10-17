@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import TaskItem from '@tiptap/extension-task-item';
 import ListItem from '@tiptap/extension-list-item';
@@ -15,12 +14,11 @@ import {
 import { mergeText, preserveBlocks, recordLinkMarkdown, toB64, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, debounce, download, downloadBlob, isoDay } from '../state/util';
-import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MentionSuggest, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, TrailingParagraph } from '../editor/extensions';
+import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MentionSuggest, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, TitledLink, TrailingParagraph } from '../editor/extensions';
 import { RawBlock, RawInline, Wikilink } from '../editor/raw';
 import { AudioClip, CodeWithDiagrams, DateMention, InlineCheckbox, MathBlock, MathInline, PageBreak, Toggle } from '../editor/blocks';
 import { linkTo, setNoteDir, vaultPathsOf } from '../state/noteCtx';
 import { habitChip } from '../state/habits';
-import { HabitPanel } from './Habit';
 import { RecordBlock } from '../editor/recordBlock';
 import { setNotePrivate } from '../record/host';
 import { RecordDialog } from './RecordDialog';
@@ -125,7 +123,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
       TrailingParagraph, Toggle, PageBreak, DateMention, InlineCheckbox, MathBlock, MathInline, AudioClip, RecordBlock, RawBlock, RawInline,
       MarkdownBulletList,
       ListItem.extend({ content: 'paragraph (bulletList | orderedList)*' }),
-      Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
+      TitledLink.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
       Placeholder.configure({ placeholder: scratch ? 'Start writing, drop a file or a picture here…' : 'Press "/" to insert an element' }),
       MarkdownTaskList, TaskItem.extend({ content: 'paragraph taskList?' }).configure({ nested: true }),
       Table.configure({ resizable: false }), TableRow, SingleParagraphHeader, SingleParagraphCell, TableKeys,
@@ -315,8 +313,8 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
       editor.view.dom.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(a => {
         const href = a.getAttribute('href') ?? '';
         const h = /^(https?:|ergo-file:|mailto:|#)/i.test(href) ? undefined : vaultPathsOf(href).map(p => byPath.get(p.toLowerCase())).find(Boolean);
-        if (h) { const c = habitChip(h); a.classList.add('habit-chip'); a.classList.toggle('met', c.met); a.dataset.habit = c.text; }
-        else if (a.classList.contains('habit-chip')) { a.classList.remove('habit-chip', 'met'); delete a.dataset.habit; }
+        if (h) { const c = habitChip(h); a.classList.add('habit-chip'); a.classList.toggle('met', c.met); a.dataset.habit = c.text; a.dataset.habitId = h.id; }
+        else if (a.classList.contains('habit-chip')) { a.classList.remove('habit-chip', 'met'); delete a.dataset.habit; delete a.dataset.habitId; }
       });
     };
     mark();
@@ -405,6 +403,8 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
       if (href.startsWith('ergo-file:')) { e.preventDefault(); app.setDialog({ kind: 'file', id: href.slice('ergo-file:'.length) }); return; }
       if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(href)) return; // a web address
       e.preventDefault();
+      const habitId = (a as HTMLElement).dataset.habitId;
+      if (habitId) { app.go({ name: 'habits', habit: habitId }); return; }
       void fresh().then(d => {
         const noteId = d?.linkMap[href];
         const fileId = d?.fileMap[href];
@@ -707,7 +707,6 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
           {!scratch && <input className="title-input" aria-label="Title" placeholder="Title" value={title} readOnly={locked || !!outside}
             onChange={e => { setTitle(e.target.value); setSaveState('saving'); saveTitle(id, e.target.value); }}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); editor.commands.focus('start'); } }} />}
-          {!scratch && !outside && app.habits.some(h => h.id === id) && <HabitPanel id={id} updated={doc.updated} />}
           <EditorContent editor={editor} />
           {!scratch && doc.backlinks.length > 0 && (
             <section aria-label="Backlinks" style={{ marginTop: 40, paddingTop: 16, borderTop: '1px solid var(--border)' }}>

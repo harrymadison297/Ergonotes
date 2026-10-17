@@ -3,7 +3,7 @@ import { renderNote, type RenderEnv } from '../src/render.ts';
 
 const env: RenderEnv = {
   resolveFile: s => `vscode-resource:/${s}`,
-  habitChip: href => (href === 'Habits/Run.md' ? { text: '5-day streak · met today', met: true } : null),
+  habitChip: href => (href === '.habits/Run.md' ? { text: '5-day streak · met today', met: true } : null),
 };
 const html = (md: string) => renderNote(md, env);
 
@@ -27,9 +27,9 @@ describe('the preview of a note', () => {
   });
 
   it('keeps a link to a note as something to open, and says where a habit stands', () => {
-    const h = html('[Plan](Projects/Plan.md) and [Run](Habits/Run.md) and [site](https://example.com)');
+    const h = html('[Plan](Projects/Plan.md) and [Run](.habits/Run.md) and [site](https://example.com)');
     expect(h).toContain('<a href="#" data-open="Projects/Plan.md">Plan</a>');
-    expect(h).toMatch(/<a href="#" data-open="Habits\/Run.md" class="habit-chip met" data-habit="5-day streak · met today">Run<\/a>/);
+    expect(h).toMatch(/<a href="#" data-open=".habits\/Run.md" class="habit-chip met" data-habit="5-day streak · met today">Run<\/a>/);
     expect(h).toContain('data-external="1"');
   });
 

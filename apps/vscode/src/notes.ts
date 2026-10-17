@@ -21,7 +21,9 @@ export function relativePath(fromDir: string, to: string): string {
 export const encodeDest = (p: string) => p.split('/').map(s => (s === '..' || s === '.' ? s : encodeURIComponent(s).replace(/%28/g, '(').replace(/%29/g, ')'))).join('/');
 
 /** `[Title](relative/Title.md)`: how the app writes a link to a note (ADR 0010). */
-export const markdownLink = (fromDir: string, n: NoteRef) => `[${n.title}](${encodeDest(relativePath(fromDir, n.path))})`;
+export const markdownLink = (fromDir: string, n: NoteRef, title?: string) => `[${n.title}](${encodeDest(relativePath(fromDir, n.path))}${title ? ` "${title}"` : ''})`;
+/** A file of the hidden `.habits/` folder: a Habit, not a Note (ADR 0014). */
+export const isHabitFile = (path: string): boolean => /^\.habits\/[^/]+\.md$/i.test(path);
 
 /** The notes that match what has been typed after `[[` or `@`: names that start with it first, then names that contain it. */
 export function matchNotes(notes: NoteRef[], query: string, limit = 30): NoteRef[] {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { asTask, chipFor, encodeDest, eventToken, habitOf, markdownLink, matchNotes, minimalEdit, newHabitText, relativePath, withCheckIn, withRemark, withToken } from '../src/notes.ts';
+import { asTask, chipFor, encodeDest, eventToken, habitOf, isHabitFile, markdownLink, matchNotes, minimalEdit, newHabitText, relativePath, withCheckIn, withRemark, withToken } from '../src/notes.ts';
 import { readFileSync } from 'node:fs';
 
 const T = '2026-10-17';
@@ -41,6 +41,20 @@ describe('the lines of a note', () => {
     expect(eventToken('2026-10-20')).toBe('@event(2026-10-20)');
     expect(eventToken('2026-10-20', '09:00')).toBe('@event(2026-10-20T09:00)');
     expect(eventToken('2026-10-20', '09:00', '10:30')).toBe('@event(2026-10-20T09:00-10:30)');
+  });
+});
+
+describe('a link to a habit', () => {
+  it('is typed with type_habit, as the app writes it', () => {
+    expect(markdownLink('', { title: 'Run', path: '.habits/Run.md' }, 'type_habit')).toBe('[Run](.habits/Run.md "type_habit")');
+    expect(markdownLink('Projects', { title: 'Drink water', path: '.habits/Drink water.md' }, 'type_habit')).toBe('[Drink water](../.habits/Drink%20water.md "type_habit")');
+    expect(markdownLink('Projects', { title: 'Plan', path: 'Areas/Plan.md' })).toBe('[Plan](../Areas/Plan.md)');
+  });
+  it('is a file of .habits, one level deep', () => {
+    expect(isHabitFile('.habits/Run.md')).toBe(true);
+    expect(isHabitFile('Habits/Run.md')).toBe(false);
+    expect(isHabitFile('.habits/sub/Run.md')).toBe(false);
+    expect(isHabitFile('Projects/.habits/Run.md')).toBe(false);
   });
 });
 

@@ -324,7 +324,7 @@ function useHabitToast() {
     if (said.current || app.items.length === 0) return;
     said.current = true;
     const top = topNudge(app.habits.filter(h => !nudgeDismissed(app.today, nudgeId(h, h.nudge ?? { key: '', tone: 'good', text: '' }))));
-    if (top) app.toast(`${top.habit.title}: ${top.nudge.text}`, 'info', { label: 'Open', run: () => app.go({ name: 'notes', note: top.habit.id }) });
+    if (top) app.toast(`${top.habit.title}: ${top.nudge.text}`, 'info', { label: 'Open', run: () => app.go({ name: 'habits', habit: top.habit.id }) });
   }, [app.items.length, app.habits]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 

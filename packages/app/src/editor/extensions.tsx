@@ -5,12 +5,13 @@ import TableHeader from '@tiptap/extension-table-header';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import Image from '@tiptap/extension-image';
+import Link from '@tiptap/extension-link';
 import BulletList from '@tiptap/extension-bullet-list';
 import TaskList from '@tiptap/extension-task-list';
 import taskListPlugin from 'markdown-it-task-lists';
 import Suggestion from '@tiptap/suggestion';
 import { useEffect, useState } from 'react';
-import type { VaultApi } from '@ergonotes/core';
+import { HABIT_LINK_TITLE, type VaultApi } from '@ergonotes/core';
 import { popupRenderer, type PopupItem } from './suggest';
 import { FileImg } from '../components/FileImg';
 import { parseDue } from '../state/util';
@@ -167,6 +168,16 @@ export const LinkSuggest = Extension.create<{ api: VaultApi | null }>({
   },
 });
 
+/** A link that keeps its title: `[Run](.habits/Run.md "type_habit")` is what marks a mention of a Habit (ADR 0014). */
+export const TitledLink = Link.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      title: { default: null, parseHTML: (el: HTMLElement) => el.getAttribute('title'), renderHTML: (a: { title?: string | null }) => (a.title ? { title: a.title } : {}) },
+    };
+  },
+});
+
 export interface MentionItem extends PopupItem { path: string }
 /**
  * `@` + a few letters: pick a Habit (first) or a note. What is written is the same standard Markdown link as `[[` makes, so a
@@ -192,7 +203,7 @@ export const MentionSuggest = Extension.create<{ api: VaultApi | null; habits: (
         return [...hs, ...notes].slice(0, 8);
       },
       command: ({ editor, range, props }) => {
-        editor.chain().focus().insertContentAt(range, [{ type: 'text', text: props.label, marks: [{ type: 'link', attrs: { href: linkTo(props.path) } }] }, { type: 'text', text: ' ' }]).run();
+        editor.chain().focus().insertContentAt(range, [{ type: 'text', text: props.label, marks: [{ type: 'link', attrs: { href: linkTo(props.path), ...(props.hint === 'Habit' ? { title: HABIT_LINK_TITLE } : {}) } }] }, { type: 'text', text: ' ' }]).run();
       },
       render: popupRenderer<MentionItem>({ hideEmpty: true }),
     })];

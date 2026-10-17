@@ -4,7 +4,7 @@
 import MarkdownIt from 'markdown-it';
 import MiniSearch from 'minisearch';
 import type {
-  CalendarData, ChatRecord, ChatSummary, ConflictChoice, ConflictDetail, EventEntry, ExportResult, FileBlob, FileInfo, HabitDayEntry, HabitDetail, HabitInfo, HeadInfo, ImportFile, ImportResult, ItemSummary, NoteDoc, RecordInfo, SearchHit,
+  CalendarData, ChatRecord, ChatSummary, ConflictChoice, ConflictDetail, EventEntry, ExportResult, FileBlob, FileInfo, HabitDayEntry, HabitDetail, HabitInfo, HabitRef, HeadInfo, ImportFile, ImportResult, ItemSummary, NoteDoc, RecordInfo, SearchHit,
   Settings, StoreConfig, SyncReport, TaskEntry, VaultApi, VaultState, VaultStatus, VersionInfo,
 } from './api.ts';
 import {
@@ -21,7 +21,7 @@ import {
   type Frontmatter, type NoteEvent, type Task,
 } from './markdown.ts';
 import {
-  HABIT_FOLDER, PERIODS, addCheckIn, dayStates, habitDef, habitStatus, nudgeFor, parseLog, setRemark,
+  HABIT_FOLDER, PERIODS, addCheckIn, dayStates, habitDef, habitStatus, isHabitPath, nudgeFor, parseLog, setRemark,
 } from './habit.ts';
 import { applyAiPatch, defaultAiConfig, normalizeAiConfig, toSettings, type AiConfig, type AiSettings, type AiSettingsPatch } from './ai/types.ts';
 import { baseText, unionText } from './merge.ts';
@@ -88,8 +88,19 @@ interface View {
   linkRefs: LinkRef[];
 }
 
+/** A Habit (CONTEXT.md, Habit; ADR 0014): not a View, so no list, search, tag or task of the Notes ever sees it. */
+interface HabitFile {
+  id: string;
+  fm: Frontmatter;
+  title: string;
+  path: string;
+  body: string;
+  trashed: string | null;
+  created: string;
+}
+
 interface IndexEntry {
-  id: string; kind: 'note' | 'file'; size: number; mtime: number; hash: string;
+  id: string; kind: 'note' | 'file' | 'habit'; size: number; mtime: number; hash: string;
   /** the item's head commit when the file was last written or read: the base of an edit made outside */
   commit?: string;
 }
@@ -179,6 +190,7 @@ export class Vault implements VaultApi {
   private vaultFile: VaultFile | null = null;
   /** notes and the folders derived from where they are */
   private views = new Map<string, View>();
+  private habitFiles = new Map<string, HabitFile>();
   private files = new Map<string, { name: string; path: string; mime: string; body: string; size: number; created: string; trashed: boolean }>();
   private fileBySha = new Map<string, string>();
   private searchIndex = new MiniSearch<{ id: string; title: string; body: string; tags: string }>({
@@ -558,12 +570,14 @@ export class Vault implements VaultApi {
     }
     const res = reservedOf(text);
     const kind = typeof res._ergo_kind === 'string' ? res._ergo_kind : 'note';
-    if (kind !== 'note' && kind !== 'file') return;
+    if (kind !== 'note' && kind !== 'file' && kind !== 'habit') return;
     let rel = typeof res._ergo_path === 'string' ? res._ergo_path : '';
     const clean = rel ? normalizePath(rel) : null;
     if (!clean || clean !== rel) {
       // a path that is empty or leaves the vault is never written; give the item a place of its own
-      rel = await this.freePath('', kind === 'note' ? safeName(basename(rel).replace(/\.\w+$/, '') || 'Untitled') : 'file', kind === 'note' ? '.md' : extOf(rel));
+      rel = kind === 'habit'
+        ? await this.freePath(HABIT_FOLDER, safeName(basename(rel).replace(/\.\w+$/, '') || 'Habit'), '.md')
+        : await this.freePath('', kind === 'note' ? safeName(basename(rel).replace(/\.\w+$/, '') || 'Untitled') : 'file', kind === 'note' ? '.md' : extOf(rel));
       await this.commitPath(id, rel);
       return;
     }
@@ -571,7 +585,7 @@ export class Vault implements VaultApi {
     const target = trashed ? `${TRASH_DIR}/${rel}` : rel;
     let bytes: Uint8Array;
     let hash: string;
-    if (kind === 'note') {
+    if (kind !== 'file') {
       const ft = toFileText(text);
       bytes = enc(ft);
       hash = sha256hex(ft);
@@ -656,10 +670,13 @@ export class Vault implements VaultApi {
       const dir = stack.pop()!;
       const ents = await this.fs.readdir(dir);
       for (const e of ents) {
-        if (e.name.startsWith('.') || IGNORED_NAMES.has(e.name) || e.name.endsWith('.tmp')) continue;
+        // the one hidden folder that is read is `.habits/` at the top (ADR 0014); in it only Markdown files count
+        const habitsDir = dir === '' && e.kind === 'dir' && e.name === HABIT_FOLDER;
+        if ((e.name.startsWith('.') && !habitsDir) || IGNORED_NAMES.has(e.name) || e.name.endsWith('.tmp')) continue;
         const p = dir ? `${dir}/${e.name}` : e.name;
+        if (dir === HABIT_FOLDER && (e.kind === 'dir' || !isNotePath(e.name))) continue;
         // a link that points back up the tree would never end: stop at a sane depth
-        if (e.kind === 'dir') { if (p.split('/').length <= 32) { dirs.add(p); stack.push(p); } continue; }
+        if (e.kind === 'dir') { if (p.split('/').length <= 32) { if (!habitsDir) dirs.add(p); stack.push(p); } continue; }
         if (files.size >= max) { truncated = true; continue; }
         files.set(p, { size: e.size, mtime: e.mtime });
       }
@@ -683,7 +700,7 @@ export class Vault implements VaultApi {
     if (files.size === 0 && live.length > 0) { this.notice = 'The vault folder looks empty or unavailable; nothing was changed.'; return 0; }
     this.notice = truncated ? `This folder has more than ${(this.opts.maxFiles ?? 20_000).toLocaleString('en')} files; only part of it is shown.` : null;
 
-    interface Cand { path: string; kind: 'note' | 'file'; size: number; mtime: number; text?: string; b64?: string; hash: string }
+    interface Cand { path: string; kind: 'note' | 'file' | 'habit'; size: number; mtime: number; text?: string; b64?: string; hash: string }
     const changed: Cand[] = [];
     const settle = this.opts.settleMs ?? 600;
     const cut = Date.now() - settle;
@@ -712,7 +729,7 @@ export class Vault implements VaultApi {
         if (text.includes('\u0000')) { skipped.push(path); continue; }
         const hash = sha256hex(text);
         if (known && known.hash === hash) { this.setIndex(path, { ...known, size: f.size, mtime: f.mtime }); continue; }
-        changed.push({ path, kind: 'note', size: f.size, mtime: f.mtime, text, hash });
+        changed.push({ path, kind: isHabitPath(path) ? 'habit' : 'note', size: f.size, mtime: f.mtime, text, hash });
       } else {
         if (!attachable(path)) continue;
         if (f.size > MAX_ATTACHMENT) { oversized.push(path); continue; } // still in the folder and readable from it, but not an item (not synced)
@@ -744,7 +761,7 @@ export class Vault implements VaultApi {
       const known = this.index.get(c.path);
       let id: string | null = known?.id ?? null;
       if (!id) {
-        const fmId = c.kind === 'note' ? parseNote(c.text!).fm.id : undefined;
+        const fmId = c.kind !== 'file' ? parseNote(c.text!).fm.id : undefined;
         const wanted = typeof fmId === 'string' || typeof fmId === 'number' ? String(fmId) : '';
         if (wanted) {
           const at = this.pathById.get(wanted);
@@ -767,6 +784,7 @@ export class Vault implements VaultApi {
       const ts = r.headId(id) ? now : Math.min(now, c.mtime || now);
       let text: string;
       if (c.kind === 'note') text = toItemText(c.text!, { path: c.path });
+      else if (c.kind === 'habit') text = setReserved(toItemText(c.text!, { path: c.path }), { _ergo_kind: 'habit' });
       else {
         const name = basename(c.path);
         const fm: Frontmatter = {
@@ -781,7 +799,7 @@ export class Vault implements VaultApi {
       this.setIndex(c.path, { id, kind: c.kind, size: c.size, mtime: c.mtime, hash: c.hash });
       const base = known?.commit;
       const head = r.headId(id);
-      if (c.kind === 'note' && base && head && base !== head && r.g.has(base) && r.text(id) !== null) {
+      if (c.kind !== 'file' && base && head && base !== head && r.g.has(base) && r.text(id) !== null) {
         // another text arrived (sync) after this file was written: the edit was made on the old one, so it is
         // recorded as a branch and joined with the new one like any two devices' edits
         await r.commitOn(id, base, text, Math.max(ts, 0));
@@ -831,7 +849,7 @@ export class Vault implements VaultApi {
       const prev = this.views.get(id);
       if (prev) { try { this.searchIndex.discard(id); } catch { /* not indexed */ } }
       if (text === null) {
-        this.views.delete(id); this.files.delete(id); this.chats.delete(id);
+        this.views.delete(id); this.files.delete(id); this.chats.delete(id); this.habitFiles.delete(id);
         if (id === AI_CONFIG_ID) this.aiBody = null;
         continue;
       }
@@ -841,6 +859,17 @@ export class Vault implements VaultApi {
       const kind = typeof res._ergo_kind === 'string' ? res._ergo_kind : 'note';
       if (kind === 'config') {
         if (id === AI_CONFIG_ID) this.aiBody = p.body;
+        this.views.delete(id);
+        continue;
+      }
+      if (kind === 'habit') {
+        const hpath = typeof res._ergo_path === 'string' && res._ergo_path ? res._ergo_path : `${HABIT_FOLDER}/Habit.md`;
+        const head = r.g.get(r.headId(id) ?? '');
+        this.habitFiles.set(id, {
+          id, fm: { ...fm }, title: titleOfPath(hpath) || 'Habit', path: hpath, body: p.body,
+          trashed: typeof res._ergo_trashed === 'string' && res._ergo_trashed ? res._ergo_trashed : null,
+          created: typeof fm.created === 'string' ? fm.created : head ? new Date(head.ts).toISOString() : '',
+        });
         this.views.delete(id);
         continue;
       }
@@ -995,6 +1024,7 @@ export class Vault implements VaultApi {
     if (!this.linkIdx) {
       const paths: string[] = [];
       for (const v of this.views.values()) if (v.type === 'note' && !v.trashed) paths.push(v.path);
+      for (const h of this.habitFiles.values()) if (!h.trashed) paths.push(h.path);
       const dirs = new Set<string>();
       for (const f of this.files.values()) {
         paths.push(f.path);
@@ -1467,9 +1497,27 @@ export class Vault implements VaultApi {
   }
 
   /** Purge items that have been in the Trash for more than 30 days. */
+  /** Two Devices that checked in at once wrote lines at the same place: both are kept, nobody has to choose (ADR 0013). */
+  private async combineHabitConflicts(): Promise<void> {
+    const r = this.replica;
+    if (!r) return;
+    for (const id of r.items()) {
+      if (!r.hasConflict(id)) continue;
+      const t = r.text(id);
+      if (t === null || this.kindOf(t) !== 'habit') continue;
+      const heads = [r.headId(id)!, ...r.otherHeads(id)];
+      if (heads.some(h => r.g.get(h)!.kind === 'purge')) continue; // deleted on one Device, changed on another: a person chooses
+      await this.resolveConflict(id, { kind: 'combine' });
+    }
+  }
+
   private async housekeeping(now: number): Promise<void> {
     await this.settleAiConfig();
+    await this.combineHabitConflicts();
     const cutoff = now - TRASH_DAYS * DAY;
+    for (const h of [...this.habitFiles.values()]) {
+      if (h.trashed && Date.parse(h.trashed) < cutoff && !this.ready().hasConflict(h.id)) { await this.ready().purge(h.id, now); this.refresh([h.id]); }
+    }
     for (const v of [...this.views.values()]) {
       if (v.type === 'note' && v.trashed && Date.parse(v.trashed) < cutoff && this.views.has(v.id) && !this.hasOpenConflict(v.id)) await this.purge(v.id);
     }
@@ -1573,7 +1621,7 @@ export class Vault implements VaultApi {
     await this.update(noteId, { body: setTaskDone(v.body, index, done) });
   }
 
-  async calendar(fromIso: string, toIso: string, today?: string): Promise<CalendarData> {
+  async calendar(fromIso: string, toIso: string): Promise<CalendarData> {
     this.ready();
     const c = this.counts();
     const from = fromIso.slice(0, 10), to = toIso.slice(0, 10);
@@ -1593,37 +1641,25 @@ export class Vault implements VaultApi {
       for (const e of v.events) if (inRange(e.date)) events.push({ ...e, noteId: v.id, noteTitle: v.title, text: e.text || v.title });
     }
     events.sort((a, b) => a.date.localeCompare(b.date) || (a.start ?? '').localeCompare(b.start ?? ''));
-    // the Habits: how each stood on the days of the range that have been judged (and today while it is open)
-    const day = today && /^\d{4}-\d{2}-\d{2}$/.test(today) ? today : isoDate(new Date(this.now()));
-    const habits: HabitDayEntry[] = [];
-    if (from <= day) {
-      for (const v of this.habitNotes()) {
-        const def = habitDef(v.fm)!;
-        if (def.archived) continue;
-        for (const d of dayStates(def, parseLog(v.body).checkIns, day, from, to < day ? to : day)) {
-          if (d.state === 'met' || d.state === 'behind' || d.state === 'pending') habits.push({ noteId: v.id, title: v.title, date: d.date, state: d.state });
-        }
-      }
-    }
-    return { tasks, notes, daily, events, habits };
+    return { tasks, notes, daily, events };
   }
 
-  // ---------- habits (ADR 0013) ----------
-  private habitNotes(): View[] {
-    return [...this.views.values()].filter(v => v.type === 'note' && !this.inTrash(v) && !v.template && habitDef(v.fm) !== null)
+  // ---------- habits (ADR 0013, 0014) ----------
+  private liveHabits(): HabitFile[] {
+    return [...this.habitFiles.values()].filter(h => !h.trashed && habitDef(h.fm) !== null)
       .sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true }));
   }
 
-  private habitInfo(v: View, today: string, span: number): HabitInfo {
-    const def = habitDef(v.fm)!;
-    const status = habitStatus(def, parseLog(v.body).checkIns, today, span);
-    return { ...def, id: v.id, title: v.title, filePath: v.path, status, nudge: def.archived ? null : nudgeFor(status) };
+  private habitInfo(h: HabitFile, today: string, span: number): HabitInfo {
+    const def = habitDef(h.fm)!;
+    const status = habitStatus(def, parseLog(h.body).checkIns, today, span);
+    return { ...def, id: h.id, title: h.title, filePath: h.path, status, nudge: def.archived ? null : nudgeFor(status) };
   }
 
-  private habitView(id: string): View {
-    const v = this.views.get(id);
-    if (!v || v.type !== 'note' || !habitDef(v.fm)) throw new Error('That note is not a habit');
-    return v;
+  private habitItem(id: string): HabitFile {
+    const h = this.habitFiles.get(id);
+    if (!h || h.trashed || !habitDef(h.fm)) throw new Error('That is not a habit');
+    return h;
   }
 
   private checkDay(day: string): string {
@@ -1631,38 +1667,78 @@ export class Vault implements VaultApi {
     return day;
   }
 
+  /** One change to one Habit file: its properties, its text or its place. Committed, and written to the folder before this returns. */
+  private async updateHabitFile(id: string, ch: { fm?: Record<string, unknown>; body?: string; path?: string }): Promise<void> {
+    const r = this.ready();
+    const cur = r.text(id);
+    if (cur === null || !this.habitFiles.has(id)) throw new Error('That is not a habit');
+    const parsed = parseNote(cur);
+    const edits: Record<string, unknown> = { ...(ch.fm ?? {}) };
+    if (!parsed.broken && (ch.body !== undefined || Object.keys(edits).length > 0) && String(parsed.fm.id ?? '') !== id) edits.id = id;
+    let t = parsed.broken ? cur : editFm(cur, edits, { top: ['id'] });
+    if (ch.body !== undefined) t = withBody(t, ch.body);
+    if (ch.path !== undefined) t = setReserved(t, { _ergo_path: ch.path });
+    const c = await r.commit(id, t, this.now());
+    if (c) this.refresh([id]);
+    await this.flushDisk();
+  }
+
   async habits(today: string): Promise<HabitInfo[]> {
     this.ready();
     this.checkDay(today);
-    return this.habitNotes().map(v => this.habitInfo(v, today, 7));
+    return this.liveHabits().map(h => this.habitInfo(h, today, 7));
   }
 
   async habit(id: string, today: string): Promise<HabitDetail | null> {
     this.ready();
     this.checkDay(today);
-    const v = this.views.get(id);
-    if (!v || v.type !== 'note' || !habitDef(v.fm)) return null;
-    const log = parseLog(v.body);
-    return { ...this.habitInfo(v, today, 84), checkIns: log.checkIns, remarks: log.remarks };
+    const h = this.habitFiles.get(id);
+    if (!h || h.trashed || !habitDef(h.fm)) return null;
+    const log = parseLog(h.body);
+    const idx = this.linkIndex();
+    const mentions = [...this.views.values()]
+      .filter(v => v.type === 'note' && !this.inTrash(v) && !v.template && v.linkRefs.some(ref => !ref.embed && resolveLink(ref, v.path, idx) === h.path))
+      .map(v => ({ id: v.id, title: v.title }));
+    return { ...this.habitInfo(h, today, 84), checkIns: log.checkIns, remarks: log.remarks, mentions };
   }
 
-  async createHabit(input: { title: string; target: number; per: number; start?: string; description?: string }): Promise<ItemSummary> {
+  async habitDays(from: string, to: string, today: string): Promise<HabitDayEntry[]> {
     this.ready();
+    this.checkDay(from); this.checkDay(to); this.checkDay(today);
+    const out: HabitDayEntry[] = [];
+    if (from > today) return out;
+    for (const h of this.liveHabits()) {
+      const def = habitDef(h.fm)!;
+      if (def.archived) continue;
+      const checkIns = parseLog(h.body).checkIns;
+      const count = new Map<string, number>();
+      for (const c of checkIns) count.set(c.date, (count.get(c.date) ?? 0) + 1);
+      for (const d of dayStates(def, checkIns, today, from, to < today ? to : today)) {
+        if (d.state !== 'future') out.push({ habitId: h.id, title: h.title, date: d.date, state: d.state, count: count.get(d.date) ?? 0 });
+      }
+    }
+    return out;
+  }
+
+  async createHabit(input: { title: string; target: number; per: number; start?: string; description?: string }): Promise<HabitRef> {
+    const r = this.ready();
     const target = Math.round(Number(input.target));
     if (!(target >= 1 && target <= 99)) throw new Error('How many times: between 1 and 99');
     if (!(PERIODS as readonly number[]).includes(input.per)) throw new Error('Choose 1, 3, 5 or 7 days');
     if (input.start !== undefined) this.checkDay(input.start);
-    let folder = [...this.views.values()].find(v => v.type === 'folder' && v.path.toLowerCase() === HABIT_FOLDER.toLowerCase() && !this.inTrash(v));
-    if (!folder) folder = await this.makeDir(null, HABIT_FOLDER);
+    const id = newId();
+    const path = await this.freePath(HABIT_FOLDER, safeName(input.title.trim() || 'Habit'), '.md');
     const text = input.description?.trim();
-    return this.createNoteRaw({
-      parent: folder.id, title: input.title, body: `${text ? text + '\n\n' : ''}## Log\n`,
-      fm: { habit: true, target, per: input.per, ...(input.start ? { start: input.start } : {}) },
-    });
+    const file = editFm(`${text ? text + '\n\n' : ''}## Log\n`, { id, habit: true, target, per: input.per, ...(input.start ? { start: input.start } : {}) }, { top: ['id'] });
+    await r.commit(id, setReserved(toItemText(file, { path }), { _ergo_kind: 'habit' }), this.now());
+    this.refresh([id]);
+    await this.flushDisk();
+    const h = this.habitFiles.get(id)!;
+    return { id, title: h.title, filePath: h.path };
   }
 
   async updateHabit(id: string, patch: { target?: number; per?: number; start?: string | null; archived?: boolean }): Promise<void> {
-    this.habitView(id);
+    this.habitItem(id);
     const fm: Record<string, unknown> = {};
     if (patch.target !== undefined) {
       const t = Math.round(Number(patch.target));
@@ -1675,31 +1751,51 @@ export class Vault implements VaultApi {
     }
     if (patch.start !== undefined) fm.start = patch.start === null ? undefined : this.checkDay(patch.start);
     if (patch.archived !== undefined) fm.archived = patch.archived ? true : undefined;
-    if (Object.keys(fm).length) await this.update(id, { fm });
+    if (Object.keys(fm).length) await this.updateHabitFile(id, { fm });
+  }
+
+  /** The Habit's file gets another name; the links that mention it follow. */
+  async renameHabit(id: string, title: string): Promise<void> {
+    const h = this.habitItem(id);
+    const name = safeName(title);
+    if (!title.trim() || name === h.title) return;
+    const to = await this.freePath(HABIT_FOLDER, name, '.md');
+    const idx = this.linkIndex();
+    await this.updateHabitFile(id, { path: to });
+    await this.followMoves(new Map([[h.path, to]]), new Set(), idx);
+  }
+
+  async deleteHabit(id: string): Promise<void> {
+    const r = this.ready();
+    this.habitItem(id);
+    if (r.hasConflict(id)) throw new Error('This habit was also changed on another device. Sync first, then delete it.');
+    await r.purge(id, this.now());
+    this.refresh([id]);
+    await this.flushDisk();
   }
 
   async checkInHabit(id: string, input: { date: string; time?: string; text?: string }): Promise<void> {
-    const v = this.habitView(id);
+    const h = this.habitItem(id);
     this.checkDay(input.date);
     if (input.time !== undefined && !/^\d{2}:\d{2}$/.test(input.time)) throw new Error('A time is written 07:42');
-    await this.update(id, { body: addCheckIn(v.body, input) });
+    await this.updateHabitFile(id, { body: addCheckIn(h.body, input) });
   }
 
   async undoCheckIn(id: string, date: string): Promise<void> {
-    const v = this.habitView(id);
+    const h = this.habitItem(id);
     this.checkDay(date);
-    const last = parseLog(v.body).checkIns.filter(c => c.date === date).sort((a, b) => a.line - b.line).at(-1);
+    const last = parseLog(h.body).checkIns.filter(c => c.date === date).sort((a, b) => a.line - b.line).at(-1);
     if (!last) return;
-    const lines = v.body.split('\n');
+    const lines = h.body.split('\n');
     lines.splice(last.line, 1);
-    await this.update(id, { body: lines.join('\n') });
+    await this.updateHabitFile(id, { body: lines.join('\n') });
   }
 
   async setHabitRemark(id: string, date: string, text: string): Promise<void> {
-    const v = this.habitView(id);
+    const h = this.habitItem(id);
     this.checkDay(date);
-    const body = setRemark(v.body, date, text);
-    if (body !== v.body) await this.update(id, { body });
+    const body = setRemark(h.body, date, text);
+    if (body !== h.body) await this.updateHabitFile(id, { body });
   }
 
   // ---------- templates & daily notes ----------

@@ -7,8 +7,6 @@ import { classNames, dueLabel } from '../state/util';
 import { Resizer } from '../components/Resizer';
 import { NoteEditor } from '../components/NoteEditor';
 import { PaneList } from '../components/RecorderPanel';
-import { HabitTaskRow } from '../components/Habit';
-import { openToday } from '../state/habits';
 
 export function TaskRow({ t, compact, active }: { t: TaskEntry; compact?: boolean; active?: boolean }) {
   const app = useApp();
@@ -39,8 +37,7 @@ export function TasksView({ noteId, taskIndex }: { noteId?: string; taskIndex?: 
     if (tab === 'due') return l.filter(t => !t.done && t.due).sort((a, b) => (a.due ?? '').localeCompare(b.due ?? ''));
     return l.filter(t => t.done);
   }, [app.tasks, tab, q]);
-  const habitRows = tab === 'open' && !q.trim() ? openToday(app.habits) : [];
-  const openCount = app.tasks.filter(t => !t.done).length + openToday(app.habits).length;
+  const openCount = app.tasks.filter(t => !t.done).length;
 
   const listPane = (
     <PaneList>
@@ -58,8 +55,7 @@ export function TasksView({ noteId, taskIndex }: { noteId?: string; taskIndex?: 
         ))}
       </div>
       <div className="list-scroll">
-        {habitRows.map(h => <HabitTaskRow key={h.id} h={h} />)}
-        {list.length === 0 && habitRows.length === 0 && <div className="empty"><h3>{tab === 'done' ? 'Nothing completed yet' : 'No tasks'}</h3><p>Add a checklist in any note and it appears here.</p></div>}
+        {list.length === 0 && <div className="empty"><h3>{tab === 'done' ? 'Nothing completed yet' : 'No tasks'}</h3><p>Add a checklist in any note and it appears here.</p></div>}
         {list.map(t => <TaskRow key={`${t.noteId}-${t.index}`} t={t} active={t.noteId === noteId && (taskIndex === undefined || t.index === taskIndex)} />)}
       </div>
     </PaneList>

@@ -127,14 +127,13 @@ export interface EventEntry extends NoteEvent {
 }
 
 /** How one Habit stood on one day (days that were judged, and today while it is open). */
-export interface HabitDayEntry { noteId: string; title: string; date: string; state: Extract<DayState, 'met' | 'behind' | 'pending'> }
+export interface HabitDayEntry { habitId: string; title: string; date: string; state: Exclude<DayState, 'future'>; /** Check-ins written that day */ count: number }
 
 export interface CalendarData {
   tasks: TaskEntry[];
   events: EventEntry[];
   notes: ItemSummary[];
   daily: ItemSummary[];
-  habits: HabitDayEntry[];
 }
 
 /** A Habit with its state today (CONTEXT.md, Habit). Everything but the definition is computed, never stored. */
@@ -147,7 +146,14 @@ export interface HabitInfo extends HabitDef {
   /** what to say about it now; none for an archived Habit */
   nudge: Nudge | null;
 }
-export interface HabitDetail extends HabitInfo { checkIns: CheckIn[]; remarks: Remark[] }
+export interface HabitDetail extends HabitInfo {
+  checkIns: CheckIn[];
+  remarks: Remark[];
+  /** the Notes that mention it with a link */
+  mentions: { id: string; title: string }[];
+}
+/** What `createHabit` hands back: where the new Habit is. */
+export interface HabitRef { id: string; title: string; filePath: string }
 
 export interface FileBlob { name: string; mime: string; data: string }
 /** A file to take into the Vault: Markdown by its text, anything else by its bytes (base64). `path` is relative to where it lands. */
@@ -235,13 +241,17 @@ export interface VaultApi {
   tags(): Promise<{ tag: string; count: number }[]>;
   tasks(): Promise<TaskEntry[]>;
   toggleTask(noteId: string, index: number, done: boolean): Promise<void>;
-  /** `today`: the person's own day (`YYYY-MM-DD`); the Habits of the days up to it are judged. */
-  calendar(fromIso: string, toIso: string, today?: string): Promise<CalendarData>;
+  calendar(fromIso: string, toIso: string): Promise<CalendarData>;
   /** Every Habit and how it stands on `today` (the person's own day). Archived ones are included. */
   habits(today: string): Promise<HabitInfo[]>;
   /** One Habit with its last 12 weeks, its Check-ins and the remarks on its days. */
   habit(id: string, today: string): Promise<HabitDetail | null>;
-  createHabit(input: { title: string; target: number; per: number; start?: string; description?: string }): Promise<ItemSummary>;
+  /** How every Habit that is not archived stood on each day from `from` to `to` (up to `today`, the person's own day). */
+  habitDays(from: string, to: string, today: string): Promise<HabitDayEntry[]>;
+  createHabit(input: { title: string; target: number; per: number; start?: string; description?: string }): Promise<HabitRef>;
+  renameHabit(id: string, title: string): Promise<void>;
+  /** Remove a Habit and its history from every Device. */
+  deleteHabit(id: string): Promise<void>;
   updateHabit(id: string, patch: { target?: number; per?: number; start?: string | null; archived?: boolean }): Promise<void>;
   /** Write one Check-in: what the person did and when. `time` is left out for one that is written afterwards. */
   checkInHabit(id: string, input: { date: string; time?: string; text?: string }): Promise<void>;
@@ -301,7 +311,7 @@ export const VAULT_METHODS = [
   'status', 'createVault', 'joinVault', 'unlock', 'lock', 'changePassword', 'removePassword', 'leaveVault', 'setDeviceName',
   'listItems', 'getNote', 'createNote', 'saveNote', 'createFolder', 'capture', 'rename', 'duplicate', 'copy', 'move', 'setTags',
   'renameTag', 'setPinned', 'setPrivate', 'trash', 'restore', 'purge', 'emptyTrash', 'search', 'searchHits', 'linkTargets', 'tags', 'tasks', 'toggleTask',
-  'calendar', 'habits', 'habit', 'createHabit', 'updateHabit', 'checkInHabit', 'undoCheckIn', 'setHabitRemark', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
+  'calendar', 'habits', 'habit', 'habitDays', 'createHabit', 'renameHabit', 'deleteHabit', 'updateHabit', 'checkInHabit', 'undoCheckIn', 'setHabitRemark', 'templates', 'createFromTemplate', 'setTemplate', 'dailyNote', 'conflicts', 'conflictDetail',
   'resolveConflict', 'history', 'versionText', 'restoreVersion', 'listChats', 'getChat', 'saveChat', 'deleteChat', 'getSettings', 'setSettings', 'getAiSettings', 'setAiSettings', 'setStore',
   'sync', 'flush', 'addFile', 'removeFiles', 'listFiles', 'listRecords', 'getRecord', 'getFile', 'getFileByPath', 'importMarkdown', 'importFiles', 'exportNote',
 ] as const satisfies readonly (keyof VaultApi)[];

@@ -72,7 +72,7 @@ export function registerCommands(ctx: vscode.ExtensionContext, refreshHabit: () 
     if (!target) return;
     const per = await vscode.window.showQuickPick(['1 day', '3 days', '5 days', '7 days'], { placeHolder: `${target} time${target === '1' ? '' : 's'} in…` });
     if (!per) return;
-    const folder = vscode.workspace.getConfiguration('ergonotes').get<string>('habitFolder', 'Habits');
+    const folder = vscode.workspace.getConfiguration('ergonotes').get<string>('habitFolder', '.habits');
     const uri = vscode.Uri.file(path.join(dir.fsPath, folder, `${title.trim()}.md`));
     try { await vscode.workspace.fs.stat(uri); void vscode.window.showWarningMessage('A note with that name already exists.'); await vscode.window.showTextDocument(uri); return; } catch { /* free */ }
     await vscode.workspace.fs.writeFile(uri, Buffer.from(newHabitText({ title, target: +target, per: parseInt(per, 10) as 1 | 3 | 5 | 7, start: dayOf(new Date()) })));

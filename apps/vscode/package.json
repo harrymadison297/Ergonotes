@@ -47,7 +47,7 @@
     "configuration": {
       "title": "Ergonotes",
       "properties": {
-        "ergonotes.habitFolder": { "type": "string", "default": "Habits", "description": "The folder of the vault where New Habit puts its note." },
+        "ergonotes.habitFolder": { "type": "string", "default": ".habits", "description": "The hidden folder of the vault where New Habit puts its file; the app reads habits from .habits only." },
         "ergonotes.showHabitInStatusBar": { "type": "boolean", "default": true, "description": "Show the streak of a habit note in the status bar." }
       }
     }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Bell, CalendarDays, CalendarPlus, Check, ChevronLeft, ChevronRight, Circle, FileText, Repeat } from 'lucide-react';
-import type { CalendarData, EventEntry, HabitDayEntry, ItemSummary, TaskEntry } from '@ergonotes/core';
+import { Bell, CalendarDays, CalendarPlus, Check, ChevronLeft, ChevronRight, Circle, FileText } from 'lucide-react';
+import type { CalendarData, EventEntry, ItemSummary, TaskEntry } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames, isoDay } from '../state/util';
@@ -10,7 +10,7 @@ import { NoteEditor } from '../components/NoteEditor';
 import { PaneList } from '../components/RecorderPanel';
 
 /** What one day of the Calendar holds: counted in its cell, listed when the day is opened. */
-interface DayContent { open: TaskEntry[]; done: TaskEntry[]; reminders: TaskEntry[]; notes: ItemSummary[]; events: EventEntry[]; habits: HabitDayEntry[] }
+interface DayContent { open: TaskEntry[]; done: TaskEntry[]; reminders: TaskEntry[]; notes: ItemSummary[]; events: EventEntry[] }
 
 export function CalendarView({ noteId }: { noteId?: string }) {
   const app = useApp();
@@ -25,21 +25,21 @@ export function CalendarView({ noteId }: { noteId?: string }) {
     setCursor(new Date(d.getFullYear(), d.getMonth(), 1));
     setSel(dayParam);
   }, [dayParam]);
-  const [data, setData] = useState<CalendarData>({ tasks: [], events: [], notes: [], daily: [], habits: [] });
+  const [data, setData] = useState<CalendarData>({ tasks: [], events: [], notes: [], daily: [] });
   const gridStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1 - cursor.getDay());
   const cells = Array.from({ length: 42 }, (_, i) => new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i));
   const from = `${isoDay(cells[0])}T00:00`, to = `${isoDay(cells[41])}T23:59`;
 
   useEffect(() => {
     let live = true;
-    void app.api.calendar(from, to, app.today).then(d => live && setData(d));
+    void app.api.calendar(from, to).then(d => live && setData(d));
     return () => { live = false; };
-  }, [app.api, from, to, app.items, app.tasks, app.habits, app.today]);
+  }, [app.api, from, to, app.items, app.tasks]);
 
   // what each day holds: a number of each thing, and the things themselves for when the day is opened
   const days = useMemo(() => {
     const m = new Map<string, DayContent>();
-    const at = (day: string) => m.get(day) ?? m.set(day, { open: [], done: [], reminders: [], notes: [], events: [], habits: [] }).get(day)!;
+    const at = (day: string) => m.get(day) ?? m.set(day, { open: [], done: [], reminders: [], notes: [], events: [] }).get(day)!;
     for (const t of data.tasks) {
       const day = (t.done ? t.doneAt ?? t.due ?? t.remind : t.due ?? t.remind)?.slice(0, 10);
       if (day) (t.done ? at(day).done : at(day).open).push(t);
@@ -49,14 +49,13 @@ export function CalendarView({ noteId }: { noteId?: string }) {
     for (const e of data.events) at(e.date).events.push(e);
     for (const n of data.notes) at(isoDay(new Date(n.created))).notes.push(n);
     for (const n of data.daily) at(n.title.slice(0, 10)).notes.push(n);
-    for (const h of data.habits) at(h.date).habits.push(h);
     return m;
   }, [data]);
 
   const openDaily = (day: string) => app.openDaily(day, 'calendar');
   const today = app.today;
   const dailyIds = new Set(data.daily.map(n => n.id));
-  const none: DayContent = { open: [], done: [], reminders: [], notes: [], events: [], habits: [] };
+  const none: DayContent = { open: [], done: [], reminders: [], notes: [], events: [] };
   const selDay = days.get(sel) ?? none;
 
   const grid = (
@@ -66,11 +65,10 @@ export function CalendarView({ noteId }: { noteId?: string }) {
         {cells.map(d => {
           const day = isoDay(d);
           const c = days.get(day) ?? none;
-          const habitsMet = c.habits.filter(h => h.state === 'met').length;
           const label = [
             c.open.length && `${c.open.length} open task${c.open.length === 1 ? '' : 's'}`, c.done.length && `${c.done.length} done`,
             c.reminders.length && `${c.reminders.length} reminder${c.reminders.length === 1 ? '' : 's'}`, c.notes.length && `${c.notes.length} note${c.notes.length === 1 ? '' : 's'}`,
-            c.events.length && `${c.events.length} event${c.events.length === 1 ? '' : 's'}`, c.habits.length && `${habitsMet} of ${c.habits.length} habits`,
+            c.events.length && `${c.events.length} event${c.events.length === 1 ? '' : 's'}`,
           ].filter(Boolean).join(', ') || 'nothing';
           return (
             <button key={day} role="gridcell" className={classNames('cal-cell', day === today && 'today', d.getMonth() !== cursor.getMonth() && 'other', day === sel && 'sel')}
@@ -82,7 +80,6 @@ export function CalendarView({ noteId }: { noteId?: string }) {
                 {c.reminders.length > 0 && <span className="cnt remind" title="Reminders"><Bell size={12} />{c.reminders.length}</span>}
                 {c.notes.length > 0 && <span className="cnt note" title="Notes"><FileText size={12} />{c.notes.length}</span>}
                 {c.events.length > 0 && <span className="cnt event" title="Events"><CalendarDays size={12} />{c.events.length}</span>}
-                {c.habits.length > 0 && <span className={classNames('cnt habit', habitsMet === c.habits.length && 'all')} title="Habits met"><Repeat size={12} />{habitsMet}/{c.habits.length}</span>}
               </span>
             </button>
           );
@@ -104,7 +101,6 @@ export function CalendarView({ noteId }: { noteId?: string }) {
         {section('Tasks not done', selDay.open.map((t, i) => noteLink(t.noteId, t.text, t.due ? 'Due' : 'Reminder', i)), selDay.open.length)}
         {section('Tasks done', selDay.done.map((t, i) => noteLink(t.noteId, t.text || t.noteTitle, t.doneAt ? `Done${t.doneAt.length > 10 ? ' at ' + t.doneAt.slice(11, 16) : ''}` : 'Done', i)), selDay.done.length)}
         {section('Reminders', selDay.reminders.map((t, i) => noteLink(t.noteId, t.text, t.remind && t.remind.length > 10 ? `At ${t.remind.slice(11, 16)}` : 'All day', i)), selDay.reminders.length)}
-        {section('Habits', selDay.habits.map((h, i) => noteLink(h.noteId, h.title, h.state === 'met' ? 'Met' : h.state === 'behind' ? 'Behind' : 'Still open today', i)), selDay.habits.length)}
         {section('Events', selDay.events.map((e, i) => noteLink(e.noteId, e.text, e.start ? (e.end ? `${e.start}–${e.end}` : e.start) : 'All day', i)), selDay.events.length)}
         {section('Notes', selDay.notes.map((n, i) => noteLink(n.id, n.title, dailyIds.has(n.id) ? 'Daily note' : 'Created', i)), selDay.notes.length)}
       </div>

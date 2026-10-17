@@ -27,8 +27,7 @@ exports.run = async function run() {
   const list = await vscode.commands.executeCommand('vscode.executeCompletionItemProvider', planDoc.uri, pos);
   const labels = list.items.map(i => (typeof i.label === 'string' ? i.label : i.label.label));
   const run = list.items.find(i => (typeof i.label === 'string' ? i.label : i.label.label) === 'Run');
-  check('[[ offers the notes of the vault', labels.includes('Run'), labels.join(','));
-  check('the completion is a relative Markdown link', run && run.insertText === '[Run](Habits/Run.md)', run && String(run.insertText));
+  check('[[ offers the notes of the vault, and not the habits', labels.length > 0 && !labels.includes('Run') && !run, labels.join(','));
   const at = await (async () => {
     await ed.edit(b => b.replace(new vscode.Range(pos.line, 0, pos.line, 999), 'Did @Ru'));
     const p2 = new vscode.Position(pos.line, 7);
@@ -36,6 +35,11 @@ exports.run = async function run() {
     return l.items.map(i => (typeof i.label === 'string' ? i.label : i.label.label));
   })();
   check('@ offers habits first', at[0] === 'Run', at.join(','));
+  const atItems = await (async () => {
+    const l = await vscode.commands.executeCommand('vscode.executeCompletionItemProvider', planDoc.uri, new vscode.Position(pos.line, 7));
+    return l.items.find(i => (typeof i.label === 'string' ? i.label : i.label.label) === 'Run');
+  })();
+  check('a habit is linked with its type, as the app writes it', atItems && atItems.insertText === '[Run](.habits/Run.md "type_habit")', atItems && String(atItems.insertText));
 
   // a task and a due date on a line
   await ed.edit(b => b.replace(new vscode.Range(pos.line, 0, pos.line, 999), 'buy milk'));
@@ -44,7 +48,7 @@ exports.run = async function run() {
   check('Insert Task makes a task of the line', planDoc.lineAt(pos.line).text === '- [ ] buy milk', planDoc.lineAt(pos.line).text);
 
   // the habit note: status context and check-in
-  const habit = await vscode.workspace.openTextDocument(path.join(ws, 'Habits', 'Run.md'));
+  const habit = await vscode.workspace.openTextDocument(path.join(ws, '.habits', 'Run.md'));
   await vscode.window.showTextDocument(habit);
   await sleep(300);
   await vscode.commands.executeCommand('ergonotes.checkIn');

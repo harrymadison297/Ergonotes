@@ -13,7 +13,7 @@ Read and edit an [Ergonotes](https://github.com/harrymadison297/Ergonotes) vault
 - **Links**: typing `[[` or `@` offers the notes of the vault (habits first after `@`) and writes a standard Markdown link
   `[Title](relative/path.md)`, as the app does.
 - **Tasks and dates**: `Insert Task` (`Ctrl+Alt+T`), `Set Due Date`, `Set Reminder`, `Insert Event`.
-- **Habits**: `New Habit` makes a note in `Habits/`; in a habit note the status bar shows the streak and `Check In` writes
+- **Habits**: `New Habit` makes a file in the hidden `.habits/` folder (a habit is not a note; `@` links to it with `"type_habit"`); in a habit file the status bar shows the streak and `Check In` writes
   `- [x] @done(2026-10-17T07:42)` into its `## Log`; `Remark on a Day` writes `- 2026-10-16: reason`.
 
 Only what you did is written to a habit note; misses, streaks and rates are computed (ADR 0013).

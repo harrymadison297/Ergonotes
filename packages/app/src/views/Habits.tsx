@@ -4,7 +4,8 @@ import type { HabitInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames } from '../state/util';
 import { describeTarget, progress } from '../state/habits';
-import { Dots, NewHabitDialog, NudgeCard, Ring, useCheckIn } from '../components/Habit';
+import { Dots, HabitPage, NewHabitDialog, NudgeCard, Ring, useCheckIn } from '../components/Habit';
+import { habitHref } from '../state/router';
 
 function HabitRow({ h }: { h: HabitInfo }) {
   const checkIn = useCheckIn();
@@ -12,7 +13,7 @@ function HabitRow({ h }: { h: HabitInfo }) {
   return (
     <li className={classNames('habit-row', h.archived && 'archived')}>
       <Ring done={h.status.inWindow} of={h.target} met={met} />
-      <a className="habit-name" href={`#/notes/${h.id}`}>
+      <a className="habit-name" href={habitHref(h.id)}>
         <b>{h.title}</b>
         <small>{describeTarget(h)} · {progress(h)} now</small>
       </a>
@@ -23,7 +24,7 @@ function HabitRow({ h }: { h: HabitInfo }) {
   );
 }
 
-export function HabitsView() {
+function HabitList() {
   const app = useApp();
   const [adding, setAdding] = useState(false);
   const active = app.habits.filter(h => !h.archived);
@@ -47,4 +48,10 @@ export function HabitsView() {
       {adding && <NewHabitDialog onClose={() => setAdding(false)} />}
     </div>
   );
+}
+
+/** The list of Habits, or the page of one (`#/habits/<id>`). */
+export function HabitsView() {
+  const app = useApp();
+  return app.route.name === 'habits' && app.route.habit ? <HabitPage key={app.route.habit} id={app.route.habit} /> : <HabitList />;
 }

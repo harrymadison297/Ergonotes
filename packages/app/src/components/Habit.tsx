@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Flame, Loader2, Plus, X } from 'lucide-react';
+import { ArrowLeft, Check, Flame, Loader2, Plus, Repeat, Trash2, X } from 'lucide-react';
 import type { HabitDay, HabitDetail, HabitInfo, Nudge } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames } from '../state/util';
 import { describeTarget, dismissNudge, hhmm, nudgeDismissed, nudgeId, progress, STATE_WORD } from '../state/habits';
+import { habitHref, href } from '../state/router';
 import { Dialog } from './ui';
 
 /** A ring of how much of today's window is done (`done` of `of`). */
@@ -50,7 +51,7 @@ export function NudgeCard({ habit, nudge, showName }: { habit: HabitInfo; nudge:
   return (
     <div className={classNames('nudge', `nudge-${nudge.tone}`)} role="status">
       {nudge.tone === 'good' ? <Flame size={16} aria-hidden /> : <span className="nudge-dot" aria-hidden />}
-      <span className="grow">{showName && <a href={`#/notes/${habit.id}`}><b>{habit.title}</b></a>}{showName ? ' · ' : ''}{nudge.text}</span>
+      <span className="grow">{showName && <a href={habitHref(habit.id)}><b>{habit.title}</b></a>}{showName ? ' · ' : ''}{nudge.text}</span>
       <button type="button" className="icon-btn" aria-label="Put this message away for today" title="Put away for today" onClick={() => { dismissNudge(app.today, id); setGone(true); }}><X size={16} /></button>
     </div>
   );
@@ -62,16 +63,15 @@ export function NewHabitDialog({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState('');
   const [target, setTarget] = useState(1);
   const [per, setPer] = useState<1 | 3 | 5 | 7>(1);
-  const [desc, setDesc] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const submit = async () => {
     setBusy(true); setErr(null);
     try {
-      const n = await app.api.createHabit({ title: title.trim(), target, per, start: app.today, description: desc });
+      const n = await app.api.createHabit({ title: title.trim(), target, per, start: app.today });
       await app.refresh();
       onClose();
-      app.go({ name: 'notes', note: n.id, folder: n.parent ?? undefined });
+      app.go({ name: 'habits', habit: n.id });
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); setBusy(false); }
   };
   return (
@@ -88,7 +88,6 @@ export function NewHabitDialog({ onClose }: { onClose: () => void }) {
         </div>
         <span className="hint">{describeTarget({ target, per })}. The app counts back from today over that many days; there is no time of day.</span>
       </div>
-      <div className="field"><label htmlFor="hb-desc">Notes <span className="hint">(optional)</span></label><textarea id="hb-desc" className="input" rows={3} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Why it matters, what counts" /></div>
       {err && <p role="alert" className="error-text">{err}</p>}
     </Dialog>
   );
@@ -108,18 +107,13 @@ export function weeksOf(days: HabitDay[]): (HabitDay | null)[][] {
   return weeks;
 }
 
-export function HabitPanel({ id, updated }: { id: string; updated: string }) {
+/** What the page of a Habit shows: its figures, the last 12 weeks and what was written on a day. No remark is asked for (CONTEXT.md, Check-in). */
+export function HabitPanel({ d }: { d: HabitDetail }) {
   const app = useApp();
-  const [d, setD] = useState<HabitDetail | null>(null);
   const [day, setDay] = useState<string | null>(null);
   const checkIn = useCheckIn();
-  useEffect(() => {
-    let live = true;
-    void app.api.habit(id, app.today).then(x => { if (live) setD(x); });
-    return () => { live = false; };
-  }, [id, updated, app.today, app.api]);
-  const weeks = useMemo(() => (d ? weeksOf(d.status.days) : []), [d]);
-  if (!d) return null;
+  const id = d.id;
+  const weeks = useMemo(() => weeksOf(d.status.days), [d]);
   const s = d.status;
   const pct = (r: number | null) => (r === null ? '–' : `${Math.round(r * 100)}%`);
   const met = s.todayState === 'met';
@@ -134,7 +128,7 @@ export function HabitPanel({ id, updated }: { id: string; updated: string }) {
         <div className="grow">
           <div className="habit-target">
             <select aria-label="Times" value={d.target} onChange={e => void app.api.updateHabit(id, { target: Number(e.target.value) }).then(() => app.refresh())}>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}
+              {Array.from({ length: Math.max(12, d.target) }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}
             </select>
             <span>time{d.target === 1 ? '' : 's'} in</span>
             <select aria-label="Days" value={d.per} onChange={e => void app.api.updateHabit(id, { per: Number(e.target.value) }).then(() => app.refresh())}>
@@ -171,13 +165,58 @@ export function HabitPanel({ id, updated }: { id: string; updated: string }) {
           <div className="habit-day-head"><b>{new Date(sel.date + 'T00:00:00').toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' })}</b><span className="muted"> · {STATE_WORD[sel.state]}</span>
             <span className="grow" /><button className="icon-btn" aria-label="Close day" onClick={() => setDay(null)}><X size={16} /></button></div>
           {ins.length > 0 && <ul className="habit-ins">{ins.map(c => <li key={c.line}><Check size={14} aria-hidden /> {c.time ?? 'logged later'}{c.text ? ` · ${c.text}` : ''}</li>)}</ul>}
-          <label className="habit-remark"><span>Remark</span>
-            <textarea key={sel.date} className="input" rows={2} defaultValue={remark} placeholder="How it went, why it was skipped…"
-              onBlur={e => { if (e.target.value.trim() !== remark) void app.api.setHabitRemark(id, sel.date, e.target.value).then(() => app.refresh()); }} /></label>
+          {remark && <p className="habit-remark-read">{remark}</p>}
           <button className="btn" onClick={() => void checkIn(d, { date: sel.date })}><Plus size={14} /> Log a check-in on this day</button>
         </div>
       )}
     </section>
+  );
+}
+
+/** The page of one Habit (`#/habits/<id>`): it is not a Note, so it has no editor (ADR 0014). */
+export function HabitPage({ id }: { id: string }) {
+  const app = useApp();
+  const [d, setD] = useState<HabitDetail | null | undefined>(undefined);
+  const [name, setName] = useState('');
+  useEffect(() => {
+    let live = true;
+    void app.api.habit(id, app.today).then(x => { if (live) { setD(x); if (x) setName(n => (n === '' || n === x.title ? x.title : n)); } });
+    return () => { live = false; };
+  }, [id, app.today, app.api, app.habits]);
+  const rename = async () => {
+    if (!d || !name.trim() || name.trim() === d.title) { if (d) setName(d.title); return; }
+    const ok = await app.run(app.api.renameHabit(id, name.trim()).then(() => true));
+    await app.refresh();
+    if (!ok && d) setName(d.title);
+  };
+  const remove = async () => {
+    if (!d || !window.confirm(`Delete “${d.title}” and everything you logged for it? This can’t be undone.`)) return;
+    if (await app.run(app.api.deleteHabit(id).then(() => true))) { await app.refresh(); app.go({ name: 'habits' }); }
+  };
+  if (d === undefined) return <div className="habits-page" aria-busy="true" />;
+  if (d === null) {
+    return (
+      <div className="habits-page">
+        <div className="empty"><Repeat size={32} /><h3>This habit is not here</h3><p>It was deleted, or it is on another device that has not synced yet.</p><a className="btn" href={href({ name: 'habits' })}>All habits</a></div>
+      </div>
+    );
+  }
+  return (
+    <div className="habits-page habit-page">
+      <div className="habits-head">
+        <a className="icon-btn" href={href({ name: 'habits' })} aria-label="All habits" title="All habits"><ArrowLeft size={20} /></a>
+        <input className="title-input habit-title" aria-label="Name" value={name} onChange={e => setName(e.target.value)} onBlur={() => void rename()}
+          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+        <button className="btn danger" onClick={() => void remove()}><Trash2 size={16} /> Delete</button>
+      </div>
+      <HabitPanel d={d} />
+      {d.mentions.length > 0 && (
+        <section aria-label="Mentioned in" className="habit-mentions">
+          <h3>Mentioned in</h3>
+          {d.mentions.map(m => <a key={m.id} href={href({ name: 'notes', note: m.id })} className="chip reminder">{m.title}</a>)}
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -188,7 +227,7 @@ export function HabitTaskRow({ h, compact }: { h: HabitInfo; compact?: boolean }
   return (
     <div className={classNames('task-row habit-task', compact && 'compact')} style={compact ? { padding: '8px 0', borderBottom: 0 } : undefined}>
       <button className="task-check habit" role="checkbox" aria-checked={false} aria-label={`Check in ${h.title}`} onClick={() => void checkIn(h)} />
-      <a className="body" href={`#/notes/${h.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
+      <a className="body" href={habitHref(h.id)} style={{ color: 'inherit', textDecoration: 'none' }}>
         <span className="tt">{h.title}</span>
         <span className="due habit-due">{progress(h)} · {left} to go{h.per > 1 ? ` in ${h.per} days` : ' today'}</span>
         {!compact && <span className="src" style={{ display: 'block' }}>Habit · {describeTarget(h)}</span>}

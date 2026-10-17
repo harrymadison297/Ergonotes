@@ -1,10 +1,14 @@
-// Habits (CONTEXT.md, Habit; ADR 0013). A Habit is a Note whose Markdown holds only what the person did and when; the
-// state of each day, the misses, the streak and the rates are computed from it. Days are `YYYY-MM-DD` strings (the person's
+// Habits (CONTEXT.md, Habit; ADR 0013, 0014). A Habit is a Markdown file in the hidden `.habits/` folder that holds only what
+// the person did and when; the state of each day, the misses, the streak and the rates are computed from it. Days are `YYYY-MM-DD` strings (the person's
 // own calendar day), so nothing here depends on a time zone.
 import type { Frontmatter } from './markdown.ts';
 import { parseTasks } from './markdown.ts';
 
-export const HABIT_FOLDER = 'Habits';
+export const HABIT_FOLDER = '.habits';
+/** The title of a Markdown link that mentions a Habit: `[Run](.habits/Run.md "type_habit")`, as `type_record` marks a Record. */
+export const HABIT_LINK_TITLE = 'type_habit';
+/** A file that is a Habit by where it is: `.habits/<name>.md`, nothing deeper. */
+export const isHabitPath = (path: string): boolean => /^\.habits\/[^/]+\.md$/i.test(path);
 export const PERIODS = [1, 3, 5, 7] as const;
 export type Period = (typeof PERIODS)[number];
 
