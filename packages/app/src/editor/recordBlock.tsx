@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Node } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
-import { RECORD_LINK_TITLE } from '@ergonotes/core';
+import { RECORD_LINK_TITLE, recordLinkMarkdown } from '@ergonotes/core';
 import { RecordPlayer } from '../components/RecordPlayer';
 import { vaultPathsOf } from '../state/noteCtx';
 
@@ -39,7 +39,7 @@ export const RecordBlock = Node.create({
     return {
       markdown: {
         serialize(state: Out, node: { attrs: { path: string; label: string } }) {
-          state.write(`[${String(node.attrs.label).replace(/[\[\]\n]/g, ' ')}](${node.attrs.path} "${RECORD_LINK_TITLE}")`);
+          state.write(recordLinkMarkdown(String(node.attrs.label), node.attrs.path));
           state.closeBlock(node);
         },
         parse: {

@@ -1,8 +1,7 @@
 // The note tools, shared by the in-app chat agent and the MCP endpoint. Private notes are invisible here.
 import type { ItemSummary, NoteDoc, VaultApi } from '../api.ts';
 import type { AgentTool } from './agent.ts';
-import { dirname, joinPath, normalizePath } from '../folder.ts';
-import { RECORD_LINK_TITLE } from '../record.ts';
+import { recordDirsIn } from '../recordlink.ts';
 
 export type ToolVault = Pick<VaultApi,
   'search' | 'listItems' | 'getNote' | 'getRecord' | 'createNote' | 'saveNote' | 'rename' | 'move' | 'setTags' | 'tasks' | 'toggleTask' | 'dailyNote'>;
@@ -113,16 +112,10 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
         const doc: NoteDoc | null = await vault.getNote(target(a));
         if (!doc || doc.private || doc.type !== 'note') throw new Error(NOT_FOUND);
         const out: { record: string; kind: string; seconds: number; frames: number; transcript: string }[] = [];
-        const link = new RegExp(`\\]\\(<?([^)\\s>]+)>?\\s+["']${RECORD_LINK_TITLE}["']\\)`, 'g');
-        for (const m of doc.body.matchAll(link)) {
-          let raw = m[1];
-          try { raw = decodeURI(raw); } catch { /* as written */ }
-          for (const p of [normalizePath(joinPath(dirname(doc.filePath), raw)), normalizePath(raw)]) {
-            const r = p ? await vault.getRecord(p) : null;
-            if (!r) continue;
-            out.push({ record: r.path, kind: r.meta?.kind ?? 'recording', seconds: r.meta?.seconds ?? 0, frames: r.frames.length, transcript: (r.transcript ?? '(no transcript yet)').slice(0, 60_000) });
-            break;
-          }
+        for (const dir of recordDirsIn(doc.body, doc.filePath)) {
+          const r = await vault.getRecord(dir);
+          if (!r) continue;
+          out.push({ record: r.path, kind: r.meta?.kind ?? 'recording', seconds: r.meta?.seconds ?? 0, frames: r.frames.length, transcript: (r.transcript ?? '(no transcript yet)').slice(0, 60_000) });
         }
         return out.length ? json(out) : 'This note shows no recordings.';
       },

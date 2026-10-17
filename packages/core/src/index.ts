@@ -22,3 +22,4 @@ export * from './ai/suggest.ts';
 export * from './ai/skill.ts';
 export * from './ai/frames.ts';
 export * from './record.ts';
+export * from './recordlink.ts';

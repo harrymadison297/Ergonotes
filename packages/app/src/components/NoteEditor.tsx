@@ -12,7 +12,7 @@ import {
   ArrowLeft, Bell, Bold, CalendarDays, CheckSquare, ChevronDown, Code, Download, FileText, Flag, Folder as FolderIcon, GitMerge, History as HistoryIcon, Italic,
   ChevronsLeft, ChevronsRight, ZoomIn, ZoomOut, EyeOff, Maximize2, Minimize2, MoveHorizontal, AlignCenter, AudioLines, Mic, Sparkles, Link2, List, ListOrdered, MoreHorizontal, Paperclip, Pencil, Pin, PinOff, Plus, Quote, Redo2, RotateCcw, Share2, Strikethrough, Table2, Tag, Trash2, Undo2, Image as ImageIcon, Minus, LayoutTemplate, TableOfContents,
 } from 'lucide-react';
-import { mergeText, preserveBlocks, toB64, type NoteDoc } from '@ergonotes/core';
+import { mergeText, preserveBlocks, recordLinkMarkdown, toB64, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, debounce, download, isoDay } from '../state/util';
 import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, TrailingParagraph } from '../editor/extensions';
@@ -520,7 +520,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask }: { id: string; on
     const now = new Date();
     const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const label = `${kind === 'meeting' ? 'Meeting' : 'Recording'} ${isoDay(now)} ${hm}`;
-    insertMarkdown(`[${label}](${linkTo(dir)} "type_record")\n`);
+    insertMarkdown(`${recordLinkMarkdown(label, linkTo(dir))}\n`);
   };
   const onMediaFile = async (f: File, setStatus: (s: string) => void) => {
     setStatus('Saving…');

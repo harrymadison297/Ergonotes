@@ -1,7 +1,7 @@
 // The recording in progress is one process of the app, not of the note it was started from: it goes on when another
 // note is opened, and is controlled from the panel that takes the place of the note list (components/RecorderPanel).
 import { useSyncExternalStore } from 'react';
-import { fmtClock, plural, type RecordKind } from '@ergonotes/core';
+import { fmtClock, plural, removeRecordLink, type RecordKind } from '@ergonotes/core';
 import { getApi } from '../state/appRef';
 import { getRecordHost, notifyRecord } from './host';
 import { RecordRun, type Heard, type RunResult } from './run';
@@ -136,16 +136,14 @@ class RecorderStore {
     const s = this.current;
     if (!s) return;
     const { noteId } = this.state;
-    const folder = s.dir.slice(s.dir.lastIndexOf('/') + 1);
+    const dir = s.dir;
     await s.discard();
     const api = getApi();
     if (api && noteId) {
       try {
         const n = await api.getNote(noteId);
-        if (n && n.body.includes(folder)) {
-          const body = n.body.split('\n').filter(l => !(l.includes('type_record') && l.includes(folder))).join('\n');
-          await api.saveNote(noteId, { body });
-        }
+        const body = n ? removeRecordLink(n.body, n.filePath, dir) : null;
+        if (n && body !== null && body !== n.body) await api.saveNote(noteId, { body });
       } catch { /* the note is gone: nothing to clean */ }
     }
     this.reset();

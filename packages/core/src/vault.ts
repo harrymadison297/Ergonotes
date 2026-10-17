@@ -22,7 +22,8 @@ import {
 } from './markdown.ts';
 import { applyAiPatch, defaultAiConfig, normalizeAiConfig, toSettings, type AiConfig, type AiSettings, type AiSettingsPatch } from './ai/types.ts';
 import { baseText, unionText } from './merge.ts';
-import { RECORD_LINK_TITLE, fmtMark, frameSecond, isPartName, isRecordDir, parseRecordMeta, parseTranscript, recordDirOf, type RecordMeta } from './record.ts';
+import { fmtMark, frameSecond, isPartName, isRecordDir, parseRecordMeta, parseTranscript, recordDirOf, type RecordMeta } from './record.ts';
+import { recordDirsIn } from './recordlink.ts';
 import type { Persist } from './persist.ts';
 import { Replica, type SyncContext } from './replica.ts';
 import type { Store } from './store.ts';
@@ -1108,15 +1109,7 @@ export class Vault implements VaultApi {
   // ---------- records (ADR 0011) ----------
   /** The record folders a note links to: `[…](attachments/record_… "type_record")`. */
   private recordDirsOf(v: View): string[] {
-    const out = new Set<string>();
-    for (const ref of v.linkRefs) {
-      if (ref.kind !== 'md' || ref.title.trim().replace(/^["']|["']$/g, '') !== RECORD_LINK_TITLE) continue;
-      let raw = ref.target;
-      try { raw = decodeURI(raw); } catch { /* as written */ }
-      const hit = [normalizePath(joinPath(dirname(v.path), raw)), normalizePath(raw)].find(p => !!p && isRecordDir(p));
-      if (hit) out.add(hit);
-    }
-    return [...out];
+    return recordDirsIn(v.linkRefs, v.path);
   }
 
   private recordFileIds(dir: string): string[] {

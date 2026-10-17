@@ -307,6 +307,21 @@ export function buildLinkIndex(paths: Iterable<string>): LinkIndex {
   return idx;
 }
 
+/**
+ * The vault paths a link destination written in a note of the folder `fromDir` can mean: next to the note first,
+ * then from the vault root (other tools write it that way). Nothing for a web address or a fragment-only link.
+ */
+export function linkTargets(fromDir: string, dest: string): string[] {
+  if (!dest || SCHEME.test(dest)) return [];
+  const raw = decodeDest(dest.replace(/[#?].*$/, ''));
+  const out: string[] = [];
+  const rel = raw.startsWith('/') ? normalizePath(raw.slice(1)) : normalizePath(joinPath(fromDir, raw));
+  if (rel) out.push(rel);
+  const root = normalizePath(raw);
+  if (root && root !== rel) out.push(root);
+  return out;
+}
+
 /** The file a link points at, as a vault path, or null when it points at nothing in the vault. */
 export function resolveLink(ref: LinkRef, fromPath: string, idx: LinkIndex): string | null {
   const raw = ref.kind === 'md' ? decodeDest(ref.target) : ref.target;
