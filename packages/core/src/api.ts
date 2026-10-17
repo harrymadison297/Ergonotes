@@ -264,3 +264,10 @@ export const VAULT_METHODS = [
   'resolveConflict', 'history', 'versionText', 'restoreVersion', 'listChats', 'getChat', 'saveChat', 'deleteChat', 'getSettings', 'setSettings', 'getAiSettings', 'setAiSettings', 'setStore',
   'sync', 'flush', 'addFile', 'removeFiles', 'listFiles', 'listRecords', 'getRecord', 'getFile', 'getFileByPath', 'importMarkdown', 'importFiles', 'exportNote',
 ] as const satisfies readonly (keyof VaultApi)[];
+
+type Unlisted = Exclude<keyof VaultApi, (typeof VAULT_METHODS)[number]>;
+/**
+ * Every method of `VaultApi` has to be in `VAULT_METHODS`, or the web build (which builds its `VaultApi` from the list) would
+ * have it as `undefined`. This stops compiling when one is left out, and the error names it: `{ unlisted: "copy" }`.
+ */
+export const VAULT_METHODS_ARE_COMPLETE: [Unlisted] extends [never] ? true : { unlisted: Unlisted } = true;

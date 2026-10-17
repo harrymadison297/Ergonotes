@@ -159,6 +159,19 @@ fn device_meta_save(app: AppHandle, root: State<VaultRoot>, json: String, key: O
     fs::rename(&tmp, &f).map_err(|e| e.to_string())
 }
 
+/// `<file>.<pid>.<n>.tmp` is a write in progress, or one an app that died left behind: not a file of the vault.
+/// The same rule as the Node adapter's (`packages/core/src/node.ts`), which the core's contract test holds both to.
+fn is_write_temp(name: &str) -> bool {
+    let Some(stem) = name.strip_suffix(".tmp") else { return false };
+    let mut parts = stem.rsplitn(3, '.');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(tag), Some(pid), Some(_)) => {
+            !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()) && !tag.is_empty() && tag.bytes().all(|b| b.is_ascii_digit() || b.is_ascii_lowercase())
+        }
+        _ => false,
+    }
+}
+
 #[tauri::command]
 fn vault_readdir(root: State<VaultRoot>, dir: String) -> Result<Vec<Entry>, String> {
     let p = resolve(&root, &dir)?;
@@ -169,6 +182,9 @@ fn vault_readdir(root: State<VaultRoot>, dir: String) -> Result<Vec<Entry>, Stri
     };
     for e in rd.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
+        if is_write_temp(&name) {
+            continue;
+        }
         // follow links so a linked folder inside the vault works
         let md = match fs::metadata(e.path()) {
             Ok(m) => m,
@@ -209,7 +225,14 @@ fn vault_write(root: State<VaultRoot>, request: Request) -> Result<(), String> {
     if let Some(dir) = p.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let tmp = p.with_extension(format!("{}.{}.tmp", std::process::id(), bytes.len()));
+    // `<file>.<pid>.<n>.tmp`: the whole name is kept, so `a.md` and `a.json` never share a temporary file
+    let tmp = {
+        static WRITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut name = p.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+        name.push(format!(".{}.{}.tmp", std::process::id(), n));
+        p.with_file_name(name)
+    };
     {
         let mut f = fs::File::create(&tmp).map_err(|e| e.to_string())?;
         f.write_all(&bytes).map_err(|e| e.to_string())?;
@@ -325,4 +348,24 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Ergonotes");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_write_temp;
+
+    #[test]
+    fn a_write_in_progress_is_not_a_vault_file() {
+        assert!(is_write_temp("a.md.4242.k3j2x.tmp"));
+        assert!(is_write_temp("a.md.4242.17.tmp"));
+        assert!(is_write_temp(".hidden.1.0.tmp"));
+    }
+
+    #[test]
+    fn the_person_s_own_files_are_kept() {
+        assert!(!is_write_temp("mine.tmp"));
+        assert!(!is_write_temp("a.b.tmp"));
+        assert!(!is_write_temp("a.md"));
+        assert!(!is_write_temp("1.a.tmp"));
+    }
 }
