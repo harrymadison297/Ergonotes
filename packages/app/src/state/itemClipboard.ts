@@ -29,7 +29,7 @@ export function useItemOps() {
     app.toast(items.length === 1 ? `Duplicated “${items[0].title}”` : `Duplicated ${count(items.length)}`);
   };
 
-  /** Put the clipboard in `target` (a folder id; null: the top of the Vault). A copy makes duplicates, a cut moves. */
+  /** Put the clipboard in `target` (a folder id; null: the top of the Vault). A copy puts a copy there, a cut moves. */
   const paste = async (target: string | null): Promise<void> => {
     const c = clip;
     if (!c) return;
@@ -41,10 +41,7 @@ export function useItemOps() {
         if ((it.parent ?? null) === target) continue;
         if (await app.run(app.api.move(id, target).then(() => true))) done++;
       } else {
-        const dup = await app.run(app.api.duplicate(id));
-        if (!dup) continue;
-        if ((dup.parent ?? null) !== target) await app.run(app.api.move(dup.id, target));
-        done++;
+        if (await app.run(app.api.copy(id, target))) done++;
       }
     }
     if (c.mode === 'cut') set(null);

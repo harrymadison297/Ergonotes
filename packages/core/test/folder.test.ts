@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildLinkIndex, denormalizeFileText, editFm, findLinks, folderIdOf, joinBlocks, normalizeFileText, parseNote, preserveBlocks, relativePath,
+  buildLinkIndex, canPlaceInto, denormalizeFileText, editFm, findLinks, folderIdOf, isBelow, joinBlocks, markdownLink, normalizeFileText, parseNote, preserveBlocks, relativePath,
   reservedOf, resolveLink, rewriteLinks, safeName, splitBlocks, toFileText, toItemText, uniquePath, withBody,
 } from '../src/folder.ts';
 
@@ -189,5 +189,55 @@ describe('blocks', () => {
     expect(out.startsWith('keep\n\n')).toBe(true);
     expect(out).toContain('last');
     expect(out).toContain('new');
+  });
+});
+
+describe('where an item may be placed', () => {
+  const parents: Record<string, string | null> = { A: null, B: 'A', C: 'B', N: 'C', M: null };
+  const parentOf = (id: string) => parents[id];
+  const note = (id: string) => ({ id, type: 'note' });
+  const folder = (id: string) => ({ id, type: 'folder' });
+
+  it('is below itself and everything under it', () => {
+    expect(isBelow(parentOf, 'C', 'A')).toBe(true);
+    expect(isBelow(parentOf, 'A', 'A')).toBe(true);
+    expect(isBelow(parentOf, 'A', 'C')).toBe(false);
+    expect(isBelow(parentOf, null, 'A')).toBe(false);
+  });
+  it('does not loop when the tree has a cycle', () => {
+    expect(isBelow(id => ({ X: 'Y', Y: 'X' } as Record<string, string>)[id], 'X', 'Z')).toBe(false);
+  });
+  it('lets a note or a folder go to another folder, or to the top', () => {
+    expect(canPlaceInto(parentOf, note('N'), 'M')).toBe(true);
+    expect(canPlaceInto(parentOf, note('N'), null)).toBe(true);
+    expect(canPlaceInto(parentOf, folder('B'), 'M')).toBe(true);
+    expect(canPlaceInto(parentOf, folder('C'), null)).toBe(true);
+  });
+  it('refuses to put an item where it already is', () => {
+    expect(canPlaceInto(parentOf, note('N'), 'C')).toBe(false);
+    expect(canPlaceInto(parentOf, folder('A'), null)).toBe(false);
+  });
+  it('refuses to put a folder into itself or below itself', () => {
+    expect(canPlaceInto(parentOf, folder('A'), 'A')).toBe(false);
+    expect(canPlaceInto(parentOf, folder('A'), 'C')).toBe(false);
+    expect(canPlaceInto(parentOf, folder('B'), 'C')).toBe(false);
+  });
+});
+
+describe('a link to a file of the vault', () => {
+  const files = ['Projects/Plan (v2).md', 'Projects/100% sure & <done>.md', 'attachments/a b.png', 'Notes/Café ☕.md'];
+  const idx = buildLinkIndex(files);
+  it.each(files)('is read back to the same file: %s', path => {
+    const link = markdownLink('label', path);
+    const [ref] = findLinks(`See ${link} now`);
+    expect(ref).toBeDefined();
+    expect(resolveLink(ref, 'Inbox/Today.md', idx)).toBe(path);
+  });
+  it('escapes what Markdown would take for the end of the link, and nothing else', () => {
+    expect(markdownLink('Plan (v2)', 'Projects/Plan (v2).md')).toBe('[Plan (v2)](Projects/Plan%20%28v2%29.md)');
+    expect(markdownLink('Café', 'Notes/Café.md')).toBe('[Café](Notes/Café.md)');
+  });
+  it('can embed, for a picture', () => {
+    expect(markdownLink('a b', 'attachments/a b.png', true)).toBe('![a b](attachments/a%20b.png)');
   });
 });

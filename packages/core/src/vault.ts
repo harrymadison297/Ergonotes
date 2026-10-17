@@ -12,7 +12,7 @@ import {
   type VaultFile,
 } from './crypto.ts';
 import {
-  basename, buildLinkIndex, dirname, editFm, extOf, findLinks, folderIdOf, isNotePath, joinPath, normalizePath, parseNote, relativePath, reservedOf,
+  basename, buildLinkIndex, dirname, editFm, extOf, findLinks, folderIdOf, isBelow, isNotePath, joinPath, normalizePath, parseNote, relativePath, reservedOf,
   resolveLink, rewriteLinks, safeName, setReserved, stripExt, stripReserved, titleOfPath, toFileText, toItemText, uniquePath, withBody,
   type LinkIndex, type LinkRef,
 } from './folder.ts';
@@ -1047,22 +1047,33 @@ export class Vault implements VaultApi {
     return this.summary(this.views.get(fresh)!, this.counts());
   }
 
-  private async copyFolderInto(from: string, to: string): Promise<void> {
-    const kids = [...this.views.values()].filter(c => c.parent === from && !c.trashed);
+  /** `skip`: the copy's own root, which can lie inside the folder being copied and must not be copied into itself. */
+  private async copyFolderInto(from: string, to: string, skip: string): Promise<void> {
+    const kids = [...this.views.values()].filter(c => c.parent === from && !c.trashed && c.id !== skip);
     for (const c of kids) {
       if (c.type === 'note') await this.copyNote(c.id, to, c.title);
-      else await this.copyFolderInto(c.id, (await this.makeDir(to, c.title)).id);
+      else await this.copyFolderInto(c.id, (await this.makeDir(to, c.title)).id, skip);
     }
+  }
+
+  async copy(id: string, parent: string | null): Promise<ItemSummary> {
+    this.ready();
+    const v = this.views.get(id);
+    if (!v || v.trashed) throw new Error('Item not found');
+    if (parent && !this.isLiveFolder(parent)) throw new Error('Destination is not a folder');
+    // next to the original it is “… copy”; in another folder it keeps its name (a number is added when that is taken)
+    const title = (v.parent ?? null) === parent ? `${v.title} copy` : v.title;
+    if (v.type === 'note') return this.copyNote(id, parent, title);
+    const copy = await this.makeDir(parent, title);
+    await this.copyFolderInto(id, copy.id, copy.id);
+    return this.summary(this.views.get(copy.id)!, this.counts());
   }
 
   async duplicate(id: string): Promise<ItemSummary> {
     this.ready();
     const v = this.views.get(id);
     if (!v || v.trashed) throw new Error('Item not found');
-    if (v.type === 'note') return this.copyNote(id, v.parent, `${v.title} copy`);
-    const copy = await this.makeDir(v.parent, `${v.title} copy`);
-    await this.copyFolderInto(id, copy.id);
-    return this.summary(this.views.get(copy.id)!, this.counts());
+    return this.copy(id, v.parent ?? null);
   }
 
   async capture(input: { text: string; title?: string }): Promise<ItemSummary> {
@@ -1198,7 +1209,7 @@ export class Vault implements VaultApi {
     if (parent) {
       const p = this.views.get(parent);
       if (!p || p.type !== 'folder') throw new Error('Destination is not a folder');
-      if (this.isDescendant(parent, id)) throw new Error('Cannot move a folder into itself');
+      if (isBelow(this.parentOf, parent, id)) throw new Error('Cannot move a folder into itself');
     }
     const dir = this.folderPath(parent);
     if (v.type === 'folder') { await this.moveDir(v, dir, basename(v.path)); return; }
@@ -1248,17 +1259,6 @@ export class Vault implements VaultApi {
     }
     for (const e of edits) await this.update(e.id, { body: e.body }, { quiet: true });
     this.emit({ type: 'items', ids: [folderIdOf(target)] });
-  }
-
-  private isDescendant(id: string, ancestor: string): boolean {
-    const seen = new Set<string>();
-    let cur: string | null = id;
-    while (cur && !seen.has(cur)) {
-      if (cur === ancestor) return true;
-      seen.add(cur);
-      cur = this.views.get(cur)?.parent ?? null;
-    }
-    return false;
   }
 
   async setTags(id: string, tags: string[]): Promise<void> {
@@ -1383,6 +1383,9 @@ export class Vault implements VaultApi {
   private folderByRole(role: string): View | undefined {
     return [...this.views.values()].find(v => v.type === 'folder' && v.role === role && !this.inTrash(v));
   }
+
+  /** An item's folder, for the helpers of folder.ts that walk up the tree. */
+  private parentOf = (id: string): string | null => this.views.get(id)?.parent ?? null;
 
   private isLiveFolder(id: string): boolean {
     const f = this.views.get(id);

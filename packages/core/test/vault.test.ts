@@ -174,6 +174,49 @@ describe('Vault', () => {
     await expect(v.duplicate('nope')).rejects.toThrow(/not found/);
   });
 
+  it('copies into a folder in one step: the name is kept there, and “… copy” is only for next to the original', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const from = await v.createFolder({ title: 'From' });
+    const to = await v.createFolder({ title: 'To' });
+    const a = await v.createNote({ parent: from.id, title: 'Alpha', body: 'alpha', tags: ['x'] });
+    const there = await v.copy(a.id, to.id);
+    expect(there.title).toBe('Alpha');
+    expect(there.parent).toBe(to.id);
+    expect((await v.copy(a.id, to.id)).title).toBe('Alpha 2'); // a number when the name is taken
+    expect((await v.copy(a.id, from.id)).title).toBe('Alpha copy'); // next to the original
+    expect((await v.copy(a.id, null)).filePath).toBe('Alpha.md'); // the top of the vault
+    // nothing was left behind in the folder it came from
+    expect((await v.listItems()).filter(i => i.parent === from.id).map(i => i.title).sort()).toEqual(['Alpha', 'Alpha copy']);
+    await expect(v.copy(a.id, 'nope')).rejects.toThrow(/not a folder/);
+    await expect(v.copy('nope', to.id)).rejects.toThrow(/not found/);
+  });
+
+  it('copies a folder into a folder below it without copying the copy into itself', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const a = await v.createFolder({ title: 'A' });
+    const sub = await v.createFolder({ title: 'Sub', parent: a.id });
+    await v.createNote({ parent: a.id, title: 'One', body: '1' });
+    await v.createNote({ parent: sub.id, title: 'Two', body: '2' });
+    const copy = await v.copy(a.id, sub.id);
+    expect(copy.filePath).toBe('A/Sub/A');
+    const paths = (await v.listItems()).map(i => i.filePath).sort();
+    expect(paths).toEqual(expect.arrayContaining(['A/One.md', 'A/Sub/Two.md', 'A/Sub/A', 'A/Sub/A/One.md', 'A/Sub/A/Sub', 'A/Sub/A/Sub/Two.md']));
+    expect(paths.filter(p => p.startsWith('A/Sub/A/Sub/A'))).toEqual([]);
+  });
+
+  it('refuses to move a folder into itself or below itself, and lets it go to the top', async () => {
+    const v = await open('A');
+    await v.createVault(PASSWORD);
+    const a = await v.createFolder({ title: 'A' });
+    const b = await v.createFolder({ title: 'B', parent: a.id });
+    await expect(v.move(a.id, b.id)).rejects.toThrow(/into itself/);
+    await expect(v.move(a.id, a.id)).rejects.toThrow(/into itself/);
+    await v.move(b.id, null);
+    expect((await v.listItems()).find(i => i.title === 'B')!.filePath).toBe('B'); // a folder's id follows its path
+  });
+
   it('daily note is created once per date from the daily template', async () => {
     const v = await open('A', () => Date.parse('2026-10-14T09:30:00'));
     await v.createVault(PASSWORD);

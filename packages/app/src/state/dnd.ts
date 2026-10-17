@@ -1,4 +1,5 @@
 import { useState, type DragEvent } from 'react';
+import { canPlaceInto } from '@ergonotes/core';
 import { useApp } from './app';
 import { hasOsFiles, readDropped } from './dropImport';
 
@@ -73,18 +74,14 @@ export function useDropState(): DropState {
 /** Whether dropping `d` into the folder `target` (null = top level) would change anything: not where it already is, not into itself or below itself. */
 export function useCanMoveInto() {
   const app = useApp();
-  return (target: string | null) => (d: Dragged): boolean => {
-    if (d.id === target || (app.byId.get(d.id)?.parent ?? null) === target) return false;
-    if (d.type === 'folder') for (let id = target; id; id = app.byId.get(id)?.parent ?? null) if (id === d.id) return false;
-    return true;
-  };
+  return (target: string | null) => (d: Dragged): boolean => canPlaceInto(id => app.byId.get(id)?.parent, d, target);
 }
 
 /** The handler every drop target uses to move a dragged item into a folder (null = top level). */
 export function useMoveInto() {
   const app = useApp();
   return (target: string | null) => async (d: Dragged) => {
-    if (d.id === target || (app.byId.get(d.id)?.parent ?? null) === target) return;
+    if (!canPlaceInto(id => app.byId.get(id)?.parent, d, target)) return;
     await app.run(app.api.move(d.id, target));
     await app.refresh();
   };

@@ -1,7 +1,7 @@
 // What the right-click menu of a Note or a Folder offers: one list for every place an item is shown (the Explorer, the
 // sidebar tree, the note list, the cards), so they never disagree.
 import { ClipboardPaste, Copy, CopyPlus, ExternalLink, FilePlus2, FolderOpen, FolderPlus, Link2, Pin, PinOff, Scissors, Trash2 } from 'lucide-react';
-import type { ItemSummary } from '@ergonotes/core';
+import { markdownLink, type ItemSummary } from '@ergonotes/core';
 import type { MenuEntry } from '../components/ui';
 import { canRevealInFolder, revealInFolder } from '../backend/tauriFs';
 import { useApp } from './app';
@@ -9,9 +9,9 @@ import { useItemClip, useItemOps } from './itemClipboard';
 
 const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
 
-/** `[Title](Folder/Note.md)`: the standard Markdown link the app itself writes (spaces escaped). */
+/** `[Title](Folder/Note.md)`: the standard Markdown link the app itself writes; a folder is just its path. */
 export const markdownLinkTo = (it: Pick<ItemSummary, 'title' | 'filePath' | 'type'>): string =>
-  it.type === 'note' ? `[${it.title}](${it.filePath.split('/').map(encodeURIComponent).join('/')})` : it.filePath;
+  it.type === 'note' ? markdownLink(it.title, it.filePath) : it.filePath;
 
 export function useItemMenu() {
   const app = useApp();

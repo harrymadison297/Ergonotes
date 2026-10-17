@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Check, Copy, FileDown, FileUp, Plus, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
-import { applyHunks, completeText, PROVIDER_LABEL, THINKING_LEVELS, ERGONOTES_SKILL_MD, joinDoc, lineDiff, splitDoc, type AiConnectionInfo, type AiProvider, type ThinkingLevel, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
+import { applyHunks, canPlaceInto, completeText, PROVIDER_LABEL, THINKING_LEVELS, ERGONOTES_SKILL_MD, joinDoc, lineDiff, splitDoc, type AiConnectionInfo, type AiProvider, type ThinkingLevel, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, download, relTime } from '../state/util';
 import { Dialog, IconBtn } from './ui';
@@ -181,7 +181,7 @@ export function MoveDialog({ id, onClose }: { id: string; onClose: () => void })
     <Dialog title={`Move “${item?.title ?? ''}”`} onClose={onClose}>
       <input className="input" placeholder="Find a folder" aria-label="Find a folder" value={q} onChange={e => setQ(e.target.value)} style={{ marginBottom: 10 }} />
       <div style={{ maxHeight: '50vh', overflow: 'auto' }}>
-        {item?.type === 'folder' && <button className="menu-item" onClick={() => void go(null)}>Top level</button>}
+        {item && canPlaceInto(pid => app.byId.get(pid)?.parent, item, null) && <button className="menu-item" onClick={() => void go(null)}>Top level</button>}
         {folders.filter(x => !q || x.f.title.toLowerCase().includes(q.toLowerCase())).map(({ f, depth }) => (
           <button key={f.id} className="menu-item" style={{ paddingLeft: 10 + (q ? 0 : depth * 18) }} onClick={() => void go(f.id)}>{f.title}{item?.parent === f.id && <Check size={14} />}</button>
         ))}

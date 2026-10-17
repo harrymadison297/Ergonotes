@@ -33,6 +33,25 @@ export function relativePath(fromDir: string, to: string): string {
   return [...Array(a.length - i).fill('..'), ...b.slice(i)].join('/');
 }
 
+/** True when `id` is `ancestor` or lies somewhere below it; `parentOf` gives an item's folder (null: the top). */
+export function isBelow(parentOf: (id: string) => string | null | undefined, id: string | null, ancestor: string): boolean {
+  const seen = new Set<string>();
+  for (let cur = id; cur && !seen.has(cur); cur = parentOf(cur) ?? null) {
+    if (cur === ancestor) return true;
+    seen.add(cur);
+  }
+  return false;
+}
+
+/**
+ * Whether moving `item` into the folder `target` (null: the top) would change something and be allowed: it is not
+ * where it already is, and a folder is not put into itself or below itself.
+ */
+export function canPlaceInto(parentOf: (id: string) => string | null | undefined, item: { id: string; type: string }, target: string | null): boolean {
+  if (item.id === target || (parentOf(item.id) ?? null) === target) return false;
+  return !(item.type === 'folder' && isBelow(parentOf, target, item.id));
+}
+
 /** A folder's id: the same path always gives the same id, so folders need no stored identity. */
 export function folderIdOf(path: string): string {
   const h = sha256hex(`ergonotes-folder:${path.toLowerCase()}`);
@@ -285,6 +304,9 @@ function decodeDest(s: string): string {
 export function encodeDest(p: string): string {
   return p.replace(/%/g, '%25').replace(/ /g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/</g, '%3C').replace(/>/g, '%3E');
 }
+
+/** A standard Markdown link to a file of the vault, `[label](Folder/Note.md)`, as the app itself writes it. */
+export const markdownLink = (label: string, vaultPath: string, embed = false): string => `${embed ? '!' : ''}[${label}](${encodeDest(vaultPath)})`;
 
 /** Names the links of a vault can point at: every note and attachment path, and notes by title. */
 export interface LinkIndex {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AudioLines, Copy, Download, ExternalLink, File as FileIcon, FileSpreadsheet, FileText, Image as ImageIcon, Music, Presentation, Search, Trash2, Video } from 'lucide-react';
-import { fmtClock, recordFilePaths, type FileInfo, type RecordInfo } from '@ergonotes/core';
+import { fmtClock, markdownLink, recordFilePaths, type FileInfo, type RecordInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
 import { classNames } from '../state/util';
@@ -80,7 +80,7 @@ export function FilesView({ fileId }: { fileId?: string }) {
     { label: 'Open', icon: <FileIcon size={16} />, onClick: () => app.go({ name: 'files', file: f.id }) },
     ...(f.noteId ? [{ label: 'Open the note', onClick: () => app.go({ name: 'notes', note: f.noteId! }) }] : []),
     { sep: true },
-    { label: 'Copy link', icon: <Copy size={16} />, onClick: () => void copyText(`${f.mime.startsWith('image/') ? '!' : ''}[${f.name}](${f.path.split('/').map(encodeURIComponent).join('/')})`, 'Link') },
+    { label: 'Copy link', icon: <Copy size={16} />, onClick: () => void copyText(markdownLink(f.name, f.path, f.mime.startsWith('image/')), 'Link') },
     ...(canRevealInFolder() ? [{ label: 'Show in folder', icon: <ExternalLink size={16} />, onClick: () => void reveal(f.path) }] : []),
     { sep: true },
     { label: 'Delete…', icon: <Trash2 size={16} />, danger: true, onClick: async () => {
