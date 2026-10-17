@@ -322,22 +322,21 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
     return () => { editor.off('transaction', mark); };
   }, [editor, app.habits, doc?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // paste / drop pictures and files
+  // paste / drop pictures and files. The listeners are put on once and run before the editor's own: ProseMirror moves the focus
+  // to a hidden box while it handles a paste, which re-renders this component, and a listener taken off and put back by that
+  // re-render is never called for the paste that caused it.
+  const attachRef = useRef(attach);
+  attachRef.current = attach;
   useEffect(() => {
     if (!editor) return;
     const dom = editor.view.dom;
-    const onPaste = (e: ClipboardEvent) => {
-      const files = pastedFiles(e.clipboardData);
-      if (files.length) { e.preventDefault(); void attach(files); }
-    };
-    const onDrop = (e: DragEvent) => {
-      const files = Array.from(e.dataTransfer?.files ?? []);
-      if (files.length) { e.preventDefault(); void attach(files); }
-    };
-    dom.addEventListener('paste', onPaste);
-    dom.addEventListener('drop', onDrop);
-    return () => { dom.removeEventListener('paste', onPaste); dom.removeEventListener('drop', onDrop); };
-  });
+    const take = (e: Event, files: File[]) => { if (files.length) { e.preventDefault(); e.stopImmediatePropagation(); void attachRef.current(files); } };
+    const onPaste = (e: ClipboardEvent) => take(e, pastedFiles(e.clipboardData));
+    const onDrop = (e: DragEvent) => take(e, Array.from(e.dataTransfer?.files ?? []));
+    dom.addEventListener('paste', onPaste, true);
+    dom.addEventListener('drop', onDrop, true);
+    return () => { dom.removeEventListener('paste', onPaste, true); dom.removeEventListener('drop', onDrop, true); };
+  }, [editor]);
 
   // opened from a task: scroll to it and let it show for a moment
   useEffect(() => {
