@@ -46,8 +46,10 @@ async function picture(node: Element): Promise<ImageRun | null> {
   if (node instanceof SVGElement || node.tagName.toLowerCase() === 'svg') {
     const svg = node.cloneNode(true) as SVGElement;
     const vb = svg.getAttribute('viewBox')?.split(/[\s,]+/).map(Number);
-    w = Number.parseFloat(svg.getAttribute('width') ?? '') || vb?.[2] || 600;
-    h = Number.parseFloat(svg.getAttribute('height') ?? '') || vb?.[3] || 400;
+    // a width written as a percentage (a diagram that fills its box) says nothing about size: the viewBox does
+    const abs = (v: string | null) => (v && !v.includes('%') ? Number.parseFloat(v) : NaN);
+    w = abs(svg.getAttribute('width')) || vb?.[2] || 600;
+    h = abs(svg.getAttribute('height')) || vb?.[3] || 400;
     if (!svg.getAttribute('xmlns')) svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     svg.setAttribute('width', String(w));
     svg.setAttribute('height', String(h));
@@ -89,7 +91,7 @@ async function inline(node: Node, st: Style, out: ParagraphChild[]): Promise<voi
   if (tag === 'IMG') { const p = await picture(node); if (p) out.push(p); return; }
   if (tag.toLowerCase() === 'svg') { const p = await picture(node); if (p) out.push(p); return; }
   if (cls.contains('pr-check')) { out.push(run(cls.contains('on') ? '☑ ' : '☐ ', { ...st, size: 24 })); return; }
-  if (cls.contains('katex') || cls.contains('math-out')) { const l = latexOf(node); if (l) out.push(run(l, { ...st, italics: true })); return; }
+  if (cls.contains('katex') || cls.contains('math-out')) { const l = latexOf(node); if (l) out.push(run(l, { ...st, code: true })); return; }
   let next = st;
   if (tag === 'STRONG' || tag === 'B') next = { ...next, bold: true };
   else if (tag === 'EM' || tag === 'I') next = { ...next, italics: true };
@@ -202,7 +204,7 @@ async function blocks(parent: Element, ctx: Ctx): Promise<Block[]> {
       const p = await paragraph(Array.from(n.childNodes), ctx);
       out.push(p ?? new Paragraph({ children: [], spacing: { after: 120 } }));
     } else if (tag === 'UL' || tag === 'OL') out.push(...await listBlocks(n, ctx));
-    else if (tag === 'BLOCKQUOTE') out.push(...await blocks(n, { ...ctx, indent: ctx.indent + 360, quote: true }));
+    else if (tag === 'BLOCKQUOTE') out.push(...await blocks(calloutLabel(n), { ...ctx, indent: ctx.indent + 360, quote: true }));
     else if (tag === 'PRE') {
       for (const line of (n.textContent ?? '').replace(/\n$/, '').split('\n')) {
         out.push(new Paragraph({ children: [new TextRun({ text: line, font: MONO, size: 20 })], shading: { type: ShadingType.CLEAR, fill: 'F0EFEE' }, spacing: { after: 0 }, indent: ctx.indent ? { left: ctx.indent } : undefined }));
@@ -224,11 +226,26 @@ async function blocks(parent: Element, ctx: Ctx): Promise<Block[]> {
       if (body) out.push(...await blocks(body, { ...ctx, indent: ctx.indent + 360 }));
     } else if (cls.contains('math-block') || n.hasAttribute('data-math-block')) {
       const l = latexOf(n) || n.getAttribute('data-math-block') || '';
-      if (l) out.push(new Paragraph({ children: [run(l, { italics: true })], alignment: AlignmentType.CENTER, spacing: { after: 160 } }));
+      if (l) out.push(new Paragraph({ children: [run(l, { code: true })], alignment: AlignmentType.CENTER, spacing: { after: 160 } }));
     } else if (tag === 'DIV' || tag === 'SECTION' || tag === 'ASIDE' || tag === 'FIGURE' || tag === 'DETAILS' || tag === 'LI') out.push(...await blocks(n, ctx));
   }
   await flush();
   return out;
+}
+
+/** `> [!note] Title`: the marker is not shown to a reader; its kind opens the quote in bold instead. */
+function calloutLabel(q: Element): Element {
+  const first = q.querySelector('p');
+  const text = first?.firstChild;
+  const m = text && text.nodeType === Node.TEXT_NODE ? /^\s*\[!([A-Za-z]+)\][+-]?\s*/.exec(text.textContent ?? '') : null;
+  if (!first || !text || !m) return q;
+  const copy = q.cloneNode(true) as Element;
+  const p = copy.querySelector('p')!;
+  p.firstChild!.textContent = (p.firstChild!.textContent ?? '').slice(m[0].length);
+  const label = document.createElement('strong');
+  label.textContent = m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() + '. ';
+  p.insertBefore(label, p.firstChild);
+  return copy;
 }
 
 const NUMBER_FORMATS = [LevelFormat.DECIMAL, LevelFormat.LOWER_LETTER, LevelFormat.LOWER_ROMAN];
