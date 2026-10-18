@@ -1,6 +1,6 @@
 // The small charts of the Widgets, drawn in SVG with the colours of the app (no chart library: the app stays small and offline).
 // Each has a text label for a screen reader; the figures are in the tooltips (`<title>`).
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { classNames } from '../state/util';
 
 /** A ring around a day of the habit calendar: the share of habits met (1 = all of them). `share` null draws nothing around it. */
@@ -86,8 +86,11 @@ export function Line({ values, max = 1, height = 56, label, empty = 'Nothing yet
 
 /** The year as columns of days; `level` 0..4 (darker is more), -1 draws nothing. */
 export function HeatGrid({ weeks, label, onPick }: { weeks: { date: string; level: number }[][]; label: string; onPick?: (date: string) => void }) {
+  // the year is wider than a column of Home: it opens at today, the end of it
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { const e = box.current; if (e) e.scrollLeft = e.scrollWidth; }, [weeks]);
   return (
-    <div className="heatgrid" role="img" aria-label={label}>
+    <div className="heatgrid" role="img" aria-label={label} ref={box}>
       {weeks.map((w, i) => (
         <div className="col" key={i}>
           {w.map(c => <i key={c.date} className={classNames('cell', `l${c.level}`)} title={c.date} onClick={onPick ? () => onPick(c.date) : undefined} />)}
