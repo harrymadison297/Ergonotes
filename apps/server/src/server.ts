@@ -338,8 +338,10 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
       res.setHeader('x-frame-options', 'DENY');
       res.setHeader('referrer-policy', 'no-referrer');
       if (url.pathname === '/mcp') {
+        // MCP transport rule: a browser page must not be able to talk to the endpoint (DNS rebinding, CSRF)
+        if (!sameOrigin(req)) return json(res, 403, { error: 'Cross-origin request refused' });
         const bearer = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1];
-        if (!bearer || !(await tokens.check(bearer))) return json(res, 401, { error: 'A valid API token is required' }, { 'www-authenticate': 'Bearer' });
+        if (!bearer || !(await tokens.check(bearer))) return json(res, 401, { error: 'A valid agent token is required' }, { 'www-authenticate': 'Bearer' });
         if (req.method !== 'POST') return json(res, 405, { error: 'POST JSON-RPC messages to this endpoint' });
         let body: unknown;
         try { body = JSON.parse(await readBody(req, 4 * 1024 * 1024)); } catch { return json(res, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }); }

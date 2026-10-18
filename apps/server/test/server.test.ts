@@ -121,6 +121,11 @@ describe('MCP endpoint', () => {
     expect(token).toMatch(/^ergo_/);
   });
 
+  it('refuses a request that comes from a web page of another origin', async () => {
+    const r = await post('/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/list' }, { authorization: `Bearer ${token}`, origin: 'https://evil.example' });
+    expect(r.status).toBe(403);
+  });
+
   it('initialises and lists the tools', async () => {
     const init = await mcp('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
     expect(init.body.result.serverInfo.name).toBe('ergonotes');

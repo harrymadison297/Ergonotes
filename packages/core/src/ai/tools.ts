@@ -82,13 +82,38 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
     if (!n) throw new Error(NOT_FOUND);
     return n;
   };
+  const hiddenIds = async () => new Set((await vault.listItems()).filter(i => i.private).map(i => i.id));
   const idArg = { id: { ...str, description: 'Note id. Optional when a note is open.' } };
 
   const all: (AgentTool & { vaultOnly?: boolean; write?: boolean })[] = [
     {
       vaultOnly: true,
-      spec: { name: 'search_notes', description: 'Full-text search over note titles, text and tags.', parameters: obj({ query: str }, ['query']) },
-      run: async a => json((await vault.search(String(a.query ?? ''))).filter(visible).map(brief)),
+      spec: {
+        name: 'search_notes',
+        description: 'Full-text search over note titles, text and tags. Optional filters narrow it (or replace the query): `folder` (a folder id from list_folders, subfolders included), `tag` (a tag, or a parent such as "work" for "work/acme"), `since` / `until` (YYYY-MM-DD, on the day the note last changed). At most `limit` results (default 20, up to 50).',
+        parameters: obj({
+          query: { ...str, description: 'Words to look for. May be empty when a filter is given.' },
+          folder: str, tag: str, since: str, until: str, limit: { type: 'number' },
+        }),
+      },
+      run: async a => {
+        const query = String(a.query ?? '').trim();
+        const folder = a.folder ? String(a.folder) : '';
+        const tag = a.tag ? String(a.tag).replace(/^#/, '').toLowerCase() : '';
+        const since = a.since ? String(a.since) : '';
+        const until = a.until ? String(a.until) : '';
+        if (!query && !folder && !tag && !since && !until) throw new Error('Give a query, or at least one filter (folder, tag, since, until).');
+        const items = await vault.listItems();
+        const inFolder = folder ? descendantsOf(items, folder) : null;
+        const pool = query ? await vault.search(query) : items.filter(i => !i.template).sort((x, y) => y.updated.localeCompare(x.updated));
+        return json(pool
+          .filter(i => i.type === 'note' && !i.inTrash && visible(i))
+          .filter(i => !inFolder || (i.parent !== null && inFolder.has(i.parent)))
+          .filter(i => !tag || i.tags.some(t => t.toLowerCase() === tag || t.toLowerCase().startsWith(`${tag}/`)))
+          .filter(i => !since || i.updated.slice(0, 10) >= since)
+          .filter(i => !until || i.updated.slice(0, 10) <= until)
+          .slice(0, Math.min(Math.max(Number(a.limit ?? 20) || 20, 1), 50)).map(brief));
+      },
     },
     {
       vaultOnly: true,
@@ -97,13 +122,29 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
         .sort((x, y) => y.updated.localeCompare(x.updated)).slice(0, Math.min(Number(a.limit ?? 10), 50)).map(brief)),
     },
     {
-      spec: { name: 'read_note', description: 'Read one note as Markdown, with its folder path, tags and links.', parameters: obj(idArg) },
+      spec: {
+        name: 'read_note',
+        description: 'Read one note as Markdown, with its folder path, tags and backlinks (get_links also gives the notes it links to). Give `heading` to read only the section under that heading (cheaper for a long note).',
+        parameters: obj({ ...idArg, heading: { ...str, description: 'Heading text without the #. Optional.' } }),
+      },
       run: async a => {
         const id = target(a);
         const n = ctx.io ? await readOrThrow(id) : null;
         const doc: NoteDoc | null = await vault.getNote(id);
         if (!doc || doc.private || doc.type !== 'note') throw new Error(NOT_FOUND);
-        return json({ id: doc.id, title: n?.title ?? doc.title, folder: doc.path.map(p => p.title).join(' / '), tags: doc.tags, updated: doc.updated, body: n?.body ?? doc.body, backlinks: doc.backlinks });
+        let body = n?.body ?? doc.body;
+        let section: string | undefined;
+        if (a.heading) {
+          const r = sectionRange(body, String(a.heading));
+          if (!r) throw new Error(`No heading "${String(a.heading)}". Headings in this note: ${sectionHeadings(body).join(' | ') || '(none)'}.`);
+          body = body.split('\n').slice(r.start, r.end).join('\n');
+          section = String(a.heading);
+        }
+        const hidden = await hiddenIds();
+        return json({
+          id: doc.id, title: n?.title ?? doc.title, folder: doc.path.map(p => p.title).join(' / '), tags: doc.tags, updated: doc.updated,
+          ...(section ? { section } : {}), body, backlinks: doc.backlinks.filter(b => !hidden.has(b.id)),
+        });
       },
     },
     {
@@ -124,8 +165,13 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
       write: true,
       spec: { name: 'create_note', description: 'Create a NEW note (in the Inbox unless a folder id is given). Use it only when the user asks for a new or separate note, or when no note is open. To write into an existing note use append_to_note, insert_after_heading or replace_text.', parameters: obj({ title: str, body: { ...str, description: 'Markdown' }, folder: str, tags: { type: 'array', items: str } }, ['title']) },
       run: async a => {
-        const n = await vault.createNote({ title: String(a.title), body: String(a.body ?? ''), parent: whole && a.folder ? String(a.folder) : undefined, tags: Array.isArray(a.tags) ? a.tags.map(String) : undefined });
-        return json({ id: n.id, title: n.title });
+        const title = String(a.title);
+        const same = (await vault.listItems()).filter(i => i.type === 'note' && !i.inTrash && !i.template && !i.private && i.title.trim().toLowerCase() === title.trim().toLowerCase());
+        const n = await vault.createNote({ title, body: String(a.body ?? ''), parent: whole && a.folder ? String(a.folder) : undefined, tags: Array.isArray(a.tags) ? a.tags.map(String) : undefined });
+        return json({
+          id: n.id, title: n.title,
+          ...(same.length ? { warning: `A note titled "${same[0].title}" already exists (id ${same[0].id}). Read it, and append to it if this is the same subject; the new note was still created.` } : {}),
+        });
       },
     },
     {
@@ -217,8 +263,36 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
     },
     {
       vaultOnly: true,
+      spec: { name: 'list_tags', description: 'Every tag in use with how many notes carry it (private notes are not counted). Look here before tagging so an existing tag is reused.', parameters: obj({}) },
+      run: async () => {
+        const m = new Map<string, number>();
+        for (const i of await vault.listItems()) {
+          if (i.type !== 'note' || i.inTrash || i.template || !visible(i)) continue;
+          for (const t of i.tags) m.set(t, (m.get(t) ?? 0) + 1);
+        }
+        return json([...m.entries()].map(([tag, notes]) => ({ tag, notes })).sort((x, y) => x.tag.localeCompare(y.tag)));
+      },
+    },
+    {
+      spec: { name: 'get_links', description: 'The notes that link to this note (`backlinks`) and the notes it links to (`links`), without reading the bodies.', parameters: obj(idArg) },
+      run: async a => {
+        const doc: NoteDoc | null = await vault.getNote(target(a));
+        if (!doc || doc.private || doc.type !== 'note') throw new Error(NOT_FOUND);
+        const hidden = await hiddenIds();
+        const keep = (l: { id: string; title: string }) => !hidden.has(l.id);
+        return json({ id: doc.id, title: doc.title, backlinks: doc.backlinks.filter(keep), links: doc.links.filter(keep) });
+      },
+    },
+    {
+      vaultOnly: true,
       spec: { name: 'list_folders', description: 'All folders with their ids and parents.', parameters: obj({}) },
-      run: async () => json((await vault.listItems()).filter(i => i.type === 'folder' && !i.inTrash).map(f => ({ id: f.id, title: f.title, parent: f.parent, notes: f.childCount }))),
+      run: async () => {
+        const items = await vault.listItems();
+        // the app's own count includes private notes; an agent must not be able to tell they are there
+        const shown = new Map<string, number>();
+        for (const i of items) if (i.parent && !i.inTrash && visible(i)) shown.set(i.parent, (shown.get(i.parent) ?? 0) + 1);
+        return json(items.filter(i => i.type === 'folder' && !i.inTrash).map(f => ({ id: f.id, title: f.title, parent: f.parent, notes: shown.get(f.id) ?? 0 })));
+      },
     },
     {
       vaultOnly: true,
@@ -253,6 +327,16 @@ export function buildTools(ctx: ToolContext): AgentTool[] {
   ];
   const own = all.filter(t => (whole || !t.vaultOnly) && !(ctx.readOnly && t.write)).map(({ vaultOnly: _v, write: _w, ...t }) => t);
   return [...own, ...(ctx.readOnly ? [] : ctx.extra ?? [])];
+}
+
+/** The folder with this id and every folder below it. */
+function descendantsOf(items: ItemSummary[], folder: string): Set<string> {
+  const out = new Set([folder]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const i of items) if (i.type === 'folder' && i.parent && out.has(i.parent) && !out.has(i.id)) { out.add(i.id); grew = true; }
+  }
+  return out;
 }
 
 function sectionHeadings(body: string): string[] {

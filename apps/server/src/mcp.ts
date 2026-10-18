@@ -1,10 +1,9 @@
-// A small MCP (Model Context Protocol) endpoint so AI agents can search, read and write notes.
+// The HTTP side of the MCP (Model Context Protocol) endpoint so AI agents can search, read and write notes: API tokens.
 // Transport: JSON-RPC 2.0 over HTTP POST (the "streamable HTTP" transport without server push).
 // Auth: `Authorization: Bearer <token>` with tokens created in Settings -> AI & agents.
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { buildTools, type Vault } from '@ergonotes/core';
 
 export interface TokenRecord { id: string; name: string; hash: string; created: string; lastUsed: string | null }
 
@@ -50,38 +49,5 @@ export class TokenStore {
 }
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 
-type Json = Record<string, unknown>;
-
-/** The same note tools the in-app chat uses; private notes are invisible to MCP agents too. */
-function tools(vault: Vault) {
-  return buildTools({ vault, scope: { kind: 'vault' } }).map(t => ({ name: t.spec.name, description: t.spec.description, inputSchema: t.spec.parameters, run: t.run }));
-}
-
-/** Handle one JSON-RPC message. Returns the response object, or null for notifications. */
-export async function handleRpc(vault: Vault, msg: Json): Promise<Json | null> {
-  const id = msg.id as string | number | undefined;
-  const reply = (result: unknown) => ({ jsonrpc: '2.0', id, result });
-  const fail = (code: number, message: string) => ({ jsonrpc: '2.0', id, error: { code, message } });
-  const method = String(msg.method ?? '');
-  if (id === undefined) return null; // notification
-  switch (method) {
-    case 'initialize':
-      return reply({
-        protocolVersion: '2025-03-26',
-        capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'ergonotes', version: '0.1.0' },
-        instructions: 'Ergonotes notes. Notes are Markdown. Use search_notes/read_note before writing; new captures go to the Inbox.',
-      });
-    case 'ping': return reply({});
-    case 'tools/list': return reply({ tools: tools(vault).map(({ run: _r, ...t }) => t) });
-    case 'tools/call': {
-      const params = (msg.params ?? {}) as Json;
-      const tool = tools(vault).find(t => t.name === params.name);
-      if (!tool) return fail(-32602, `Unknown tool ${String(params.name)}`);
-      if ((await vault.status()).state !== 'ready') return reply({ isError: true, content: [{ type: 'text', text: 'The vault is locked. Sign in to the server once to unlock it.' }] });
-      try { return reply({ content: [{ type: 'text', text: await tool.run((params.arguments ?? {}) as Json) }] }); }
-      catch (e) { return reply({ isError: true, content: [{ type: 'text', text: e instanceof Error ? e.message : String(e) }] }); }
-    }
-    default: return fail(-32601, `Method not found: ${method}`);
-  }
-}
+// The protocol itself (tools, resources, prompts) lives in the core so the desktop app serves exactly the same.
+export { handleRpc } from '@ergonotes/core';
