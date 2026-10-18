@@ -10,6 +10,10 @@ use std::{
     time::UNIX_EPOCH,
 };
 
+mod mcp;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod shell;
+
 use serde::Serialize;
 use tauri::{
     ipc::{InvokeBody, Request, Response},
@@ -515,6 +519,33 @@ fn ext_reveal(path: String) -> Result<(), String> {
     reveal(Path::new(&path))
 }
 
+/// Start with the system (the desktop apps only).
+#[tauri::command]
+fn desktop_autostart_get(app: AppHandle) -> bool {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        shell::desktop_autostart_get(app)
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = app;
+        false
+    }
+}
+
+#[tauri::command]
+fn desktop_autostart_set(app: AppHandle, on: bool) -> Result<bool, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        shell::desktop_autostart_set(app, on)
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = (app, on);
+        Err("Starting with the system is not available on this device".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -526,17 +557,43 @@ pub fn run() {
             app.state::<OpenQueue>().0.lock().unwrap().extend(files);
             let _ = app.emit("open-with", ());
         }
-        if let Some(w) = app.get_webview_window("main") {
-            let _ = w.unminimize();
-            let _ = w.set_focus();
-        }
+        shell::show_main(app);
     }));
+    // start with the system (a person's choice in Settings -> Agents); the system starts it with --hidden, to stay in the tray
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let builder = builder
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
+        // closing the window hides it to the tray (when there is one and the person left that on): the endpoint keeps running
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" && window.app_handle().state::<mcp::McpState>().close_to_tray() {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        });
     builder
         .manage(VaultRoot::default())
         .manage(OpenQueue(Mutex::new(openable_args(&std::env::args().skip(1).collect::<Vec<_>>()))))
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let handle = app.handle().clone();
+            mcp::manage(&handle);
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            {
+                let tray_ok = shell::setup_tray(&handle);
+                handle.state::<mcp::McpState>().set_tray_ok(tray_ok);
+                if tray_ok && shell::started_hidden() {
+                    if let Some(w) = handle.get_webview_window("main") {
+                        let _ = w.hide();
+                    }
+                }
+                mcp::start(&handle);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             vault_root,
             vault_default_dir,
@@ -560,6 +617,16 @@ pub fn run() {
             ext_write_beside,
             ext_reveal,
             save_download,
+            mcp::mcp_get,
+            mcp::mcp_configure,
+            mcp::mcp_token_create,
+            mcp::mcp_token_set,
+            mcp::mcp_token_regenerate,
+            mcp::mcp_token_revoke,
+            mcp::mcp_respond,
+            mcp::mcp_ready,
+            desktop_autostart_get,
+            desktop_autostart_set,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Ergonotes");

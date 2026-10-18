@@ -1433,3 +1433,11 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .demo-bar-star { background: var(--green-fill); }
 .demo-bar-star:hover { background: var(--green-fill-hover); }
 @media (max-width: 720px) { .demo-bar-long { display: none; } .demo-bar { bottom: 74px; right: 10px; } }
+
+/* Settings gear and the agent endpoint's state (ADR 0015) */
+.gear { position: relative; display: inline-flex; }
+.red-dot { position: absolute; top: -2px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 2px var(--bg); }
+.tab .red-dot { position: static; display: inline-block; margin-left: 6px; vertical-align: middle; box-shadow: none; }
+.mcp-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-2); flex: none; }
+.mcp-dot.running { background: var(--green-fill); }
+.mcp-dot.error { background: var(--danger); }

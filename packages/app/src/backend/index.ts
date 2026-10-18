@@ -175,6 +175,8 @@ export async function createBackend(): Promise<Backend> {
     const { fs, folder, meta } = await tauriFolder();
     // no password needed (ADR 0012), and the folder is read while the app is already showing
     const vault = await Vault.open({ fs, persist: new FsPersist(fs, { local: meta }), fetchImpl, defaultDeviceName: guessDeviceName(), passwordOptional: true, backgroundScan: true });
+    // the desktop apps also answer agents (Claude Code...) on a local port, with this vault (ADR 0015)
+    if (!/Android|iPhone|iPad/i.test(navigator.userAgent)) void import('./desktopMcp').then(m => m.startMcpBridge(vault, fetchImpl)).catch(e => console.error('The agent endpoint could not start:', e));
     return new LocalBackend(vault, fetchImpl, folder);
   }
   // a browser with no server: the vault lives in this browser (IndexedDB) and its folder is only in memory

@@ -3,7 +3,7 @@ import { DemoBar } from '../demo/DemoBar';
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, Cloud, FilePlus2, FileText, Folder as FolderIcon, Home as HomeIcon, Keyboard, LayoutTemplate,
-  MoreHorizontal, Paperclip, Search, Settings as SettingsIcon, Tag as TagIcon, Trash2,
+  MoreHorizontal, Paperclip, Search, Tag as TagIcon, Trash2,
 } from 'lucide-react';
 import { useApp } from '../state/app';
 import { href } from '../state/router';
@@ -23,6 +23,7 @@ import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, Se
 import { Sidebar } from './Sidebar';
 import { RightSidebar, useAsideVisible } from './RightSidebar';
 import { IconBtn, TagLink, Toasts } from './ui';
+import { SettingsGear } from './SettingsGear';
 import { CurveLoader } from './CurveLoader';
 import { TabBar, useTabsFollowRoute } from './TabBar';
 import { openInNewTabNext, tabFor } from '../state/tabs';
@@ -188,7 +189,7 @@ function MoreView() {
     { icon: <AlertTriangle size={20} />, label: 'Conflicts', to: href({ name: 'conflicts' }), badge: app.conflicts.length },
     { icon: <Trash2 size={20} />, label: 'Trash', to: href({ name: 'trash' }) },
     { icon: <Cloud size={20} />, label: 'Sync now', onClick: () => void sync.run() },
-    { icon: <SettingsIcon size={20} />, label: 'Settings', onClick: () => app.setDialog({ kind: 'settings' }) },
+    { icon: <SettingsGear size={20} />, label: 'Settings', onClick: () => app.setDialog({ kind: 'settings' }) },
     { icon: <Keyboard size={20} />, label: 'Keyboard shortcuts', onClick: () => app.setDialog({ kind: 'shortcuts' }) },
   ];
   return (
@@ -216,7 +217,7 @@ function MobileShell() {
     <div className="mobile">
       <div className="m-top">
         <button className="m-search" onClick={() => app.setDialog({ kind: 'search' })}><Search size={18} />Search notes and folders</button>
-        <IconBtn label="Settings" icon={<SettingsIcon size={20} />} onClick={() => app.setDialog({ kind: 'settings' })} />
+        <IconBtn label="Settings" icon={<SettingsGear size={20} />} onClick={() => app.setDialog({ kind: 'settings' })} />
       </div>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <RouteView />

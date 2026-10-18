@@ -13,6 +13,8 @@ import { StoreForm, formFromStore, storeFromForm, type StoreFormState } from './
 import { askConfirm } from '../state/confirm';
 import { DEMO } from '../demo/flag';
 import { DemoNotice } from '../demo/DemoBar';
+import { DesktopAgentsPanel } from './DesktopAgents';
+import { isDesktopApp, mcpNeedsAttention, useMcpInfo } from '../backend/desktopMcp';
 
 /** The parts of Settings that need an installed app: they are explained, not shown, in the web demo. */
 const DEMO_BLOCKED: Record<string, string> = { sync: 'Sync & storage', ai: 'AI connections', security: 'Security', data: 'Data' };
@@ -280,6 +282,9 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
   const [confirmRemove, setConfirmRemove] = useState(false);
   const folders = app.items.filter(i => i.type === 'folder' && !i.inTrash);
   const remote = app.mode === 'remote';
+  // the installed apps for a computer run an agent endpoint of their own (ADR 0015)
+  const desktop = !remote && isDesktopApp();
+  const attention = mcpNeedsAttention(useMcpInfo());
   const blocked = DEMO ? DEMO_BLOCKED[tab] : undefined;
 
   useEffect(() => { setName(app.status.deviceName); }, [app.status.deviceName]);
@@ -298,8 +303,8 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
   return (
     <Dialog title="Settings" wide onClose={onClose}>
       <div className="tabs" role="tablist" style={{ margin: '0 -8px 14px' }}>
-        {[['general', 'General'], ['sync', 'Sync & storage'], ['ai', 'AI'], ...(remote ? [['agents', 'Agents (MCP)']] : []), ['keyboard', 'Keyboard'], ['security', 'Security'], ['data', 'Data']].map(([k, l]) =>
-          <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}
+        {[['general', 'General'], ['sync', 'Sync & storage'], ['ai', 'AI'], ...(remote || desktop ? [['agents', 'Agents (MCP)']] : []), ['keyboard', 'Keyboard'], ['security', 'Security'], ['data', 'Data']].map(([k, l]) =>
+          <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}{k === 'agents' && attention && <i className="red-dot" aria-label="needs attention" />}</button>)}
       </div>
       {blocked && <DemoNotice what={blocked} />}
       {tab === 'general' && (
@@ -364,6 +369,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
       {!blocked && tab === 'ai' && <AiSettings />}
       {tab === 'keyboard' && <KeyboardSettings />}
       {tab === 'agents' && remote && <AgentsPanel />}
+      {tab === 'agents' && !remote && desktop && <DesktopAgentsPanel />}
       {!blocked && tab === 'security' && (
         <div style={{ maxWidth: 480 }}>
           {!app.status.hasPassword ? (
