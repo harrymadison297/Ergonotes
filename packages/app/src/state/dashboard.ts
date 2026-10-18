@@ -50,12 +50,12 @@ export const columnsFor = (width: number): ColumnCount => (width >= 940 ? 3 : wi
 // ---------------------------------------------------------------- the default
 const DEFAULT: { kind: WidgetKind; size: WidgetSize }[] = [
   { kind: 'greeting', size: 'S' }, { kind: 'scratch', size: 'M' }, { kind: 'tasks-due', size: 'M' }, { kind: 'habits-today', size: 'M' }, { kind: 'notes', size: 'M' },
-  { kind: 'habit-calendar', size: 'M' }, { kind: 'habit-rate', size: 'S' }, { kind: 'pinned', size: 'S' }, { kind: 'reminders', size: 'S' }, { kind: 'habit-bars', size: 'M' },
+  { kind: 'habit-calendar', size: 'M' }, { kind: 'pinned', size: 'S' }, { kind: 'reminders', size: 'S' }, { kind: 'events', size: 'M' }, { kind: 'notes-edited', size: 'M' },
 ];
 const DEFAULT_LAYOUT: Record<ColumnCount, WidgetKind[][]> = {
-  1: [['greeting', 'scratch', 'tasks-due', 'habits-today', 'notes', 'habit-calendar', 'habit-rate', 'pinned', 'reminders', 'habit-bars']],
-  2: [['greeting', 'notes', 'scratch', 'pinned'], ['tasks-due', 'habits-today', 'reminders', 'habit-calendar', 'habit-rate', 'habit-bars']],
-  3: [['greeting', 'habit-calendar', 'habit-rate'], ['notes', 'scratch', 'pinned'], ['tasks-due', 'reminders', 'habits-today', 'habit-bars']],
+  1: [['greeting', 'scratch', 'tasks-due', 'habits-today', 'notes', 'habit-calendar', 'pinned', 'reminders', 'events', 'notes-edited']],
+  2: [['greeting', 'notes', 'scratch', 'pinned', 'notes-edited'], ['tasks-due', 'habits-today', 'reminders', 'events', 'habit-calendar']],
+  3: [['greeting', 'pinned', 'habit-calendar'], ['tasks-due', 'reminders', 'habits-today', 'events'], ['notes', 'scratch', 'notes-edited']],
 };
 
 export function defaultDashboard(): Dashboard {

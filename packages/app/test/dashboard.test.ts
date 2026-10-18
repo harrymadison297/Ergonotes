@@ -18,14 +18,14 @@ describe('the default', () => {
   it('has the Widgets of the plan, in three columns, in two and in one', () => {
     const d = defaultDashboard();
     consistent(d);
-    expect(ids(d, 3)).toEqual([['greeting', 'habit-calendar', 'habit-rate'], ['notes', 'scratch', 'pinned'], ['tasks-due', 'reminders', 'habits-today', 'habit-bars']]);
-    expect(ids(d, 1)).toEqual([['greeting', 'scratch', 'tasks-due', 'habits-today', 'notes', 'habit-calendar', 'habit-rate', 'pinned', 'reminders', 'habit-bars']]);
-    expect(d.widgets.map(w => w.kind).sort()).toEqual(['greeting', 'habit-bars', 'habit-calendar', 'habit-rate', 'habits-today', 'notes', 'pinned', 'reminders', 'scratch', 'tasks-due']);
+    expect(ids(d, 3)).toEqual([['greeting', 'pinned', 'habit-calendar'], ['tasks-due', 'reminders', 'habits-today', 'events'], ['notes', 'scratch', 'notes-edited']]);
+    expect(ids(d, 1)).toEqual([['greeting', 'scratch', 'tasks-due', 'habits-today', 'notes', 'habit-calendar', 'pinned', 'reminders', 'events', 'notes-edited']]);
+    expect(d.widgets.map(w => w.kind).sort()).toEqual(['events', 'greeting', 'habit-calendar', 'habits-today', 'notes', 'notes-edited', 'pinned', 'reminders', 'scratch', 'tasks-due']);
   });
   it('leaves the other Widgets for the gallery', () => {
     const d = defaultDashboard();
     const out = CATALOGUE.map(c => c.kind).filter(k => !d.widgets.some(w => w.kind === k));
-    expect(out).toEqual(['tags', 'recent-files', 'events', 'calendar', 'habit-streaks', 'habit-heat', 'notes-edited', 'tasks-done']);
+    expect(out).toEqual(['tags', 'recent-files', 'calendar', 'habit-rate', 'habit-bars', 'habit-streaks', 'habit-heat', 'tasks-done']);
   });
   it('is a copy each time', () => {
     const a = defaultDashboard();
@@ -78,9 +78,9 @@ describe('changing it', () => {
   it('adds a Widget at the end of the shortest column, in every layout, and may add the same kind twice', () => {
     let d = defaultDashboard();
     d = addWidget(d, 'tags', 'tags-1');
-    expect(d.layouts[3][0]).toEqual(['greeting', 'habit-calendar', 'habit-rate', 'tags-1']);
+    expect(d.layouts[3][0]).toEqual(['greeting', 'pinned', 'habit-calendar', 'tags-1']);
     d = addWidget(d, 'tags', 'tags-2');
-    expect(d.layouts[3][1]).toEqual(['notes', 'scratch', 'pinned', 'tags-2']);
+    expect(d.layouts[3][2]).toEqual(['notes', 'scratch', 'notes-edited', 'tags-2']);
     expect(d.layouts[1][0].slice(-2)).toEqual(['tags-1', 'tags-2']);
     expect(d.widgets.filter(w => w.kind === 'tags')).toHaveLength(2);
     expect(d.widgets.find(w => w.id === 'tags-1')!.size).toBe('S');
@@ -101,9 +101,9 @@ describe('changing it', () => {
   });
   it('moves a Widget before another, into another column, or to the end', () => {
     const a = defaultDashboard();
-    expect(moveWidget(a, 3, 'habit-bars', 0, 'habit-calendar').layouts[3][0]).toEqual(['greeting', 'habit-bars', 'habit-calendar', 'habit-rate']);
-    expect(moveWidget(a, 3, 'greeting', 2, null).layouts[3]).toEqual([['habit-calendar', 'habit-rate'], ['notes', 'scratch', 'pinned'], ['tasks-due', 'reminders', 'habits-today', 'habit-bars', 'greeting']]);
-    expect(moveWidget(a, 3, 'greeting', 1, 'ghost').layouts[3][1]).toEqual(['notes', 'scratch', 'pinned', 'greeting']);
+    expect(moveWidget(a, 3, 'events', 0, 'pinned').layouts[3][0]).toEqual(['greeting', 'events', 'pinned', 'habit-calendar']);
+    expect(moveWidget(a, 3, 'greeting', 2, null).layouts[3]).toEqual([['pinned', 'habit-calendar'], ['tasks-due', 'reminders', 'habits-today', 'events'], ['notes', 'scratch', 'notes-edited', 'greeting']]);
+    expect(moveWidget(a, 3, 'greeting', 1, 'ghost').layouts[3][1]).toEqual(['tasks-due', 'reminders', 'habits-today', 'events', 'greeting']);
     consistent(moveWidget(a, 3, 'greeting', 2, 'habits-today'));
   });
   it('changes only the layout it was made in', () => {
@@ -121,13 +121,13 @@ describe('changing it', () => {
   });
   it('is moved a step at a time', () => {
     const a = defaultDashboard();
-    expect(nudgeWidget(a, 3, 'habit-calendar', 'up').layouts[3][0]).toEqual(['habit-calendar', 'greeting', 'habit-rate']);
-    expect(nudgeWidget(a, 3, 'habit-calendar', 'down').layouts[3][0]).toEqual(['greeting', 'habit-rate', 'habit-calendar']);
+    expect(nudgeWidget(a, 3, 'pinned', 'up').layouts[3][0]).toEqual(['pinned', 'greeting', 'habit-calendar']);
+    expect(nudgeWidget(a, 3, 'greeting', 'down').layouts[3][0]).toEqual(['pinned', 'greeting', 'habit-calendar']);
     expect(nudgeWidget(a, 3, 'greeting', 'up')).toBe(a);
-    expect(nudgeWidget(a, 3, 'habit-rate', 'down')).toBe(a);
-    expect(nudgeWidget(a, 3, 'habit-calendar', 'right').layouts[3]).toEqual([['greeting', 'habit-rate'], ['notes', 'habit-calendar', 'scratch', 'pinned'], ['tasks-due', 'reminders', 'habits-today', 'habit-bars']]);
+    expect(nudgeWidget(a, 3, 'habit-calendar', 'down')).toBe(a);
+    expect(nudgeWidget(a, 3, 'pinned', 'right').layouts[3]).toEqual([['greeting', 'habit-calendar'], ['tasks-due', 'pinned', 'reminders', 'habits-today', 'events'], ['notes', 'scratch', 'notes-edited']]);
     expect(nudgeWidget(a, 3, 'greeting', 'left')).toBe(a);
-    expect(nudgeWidget(a, 3, 'tasks-due', 'right')).toBe(a);
+    expect(nudgeWidget(a, 3, 'notes', 'right')).toBe(a);
     expect(nudgeWidget(a, 1, 'scratch', 'up').layouts[1][0].slice(0, 2)).toEqual(['scratch', 'greeting']);
     expect(nudgeWidget(a, 1, 'scratch', 'right')).toBe(a);
     for (const dir of ['up', 'down', 'left', 'right'] as const) consistent(nudgeWidget(a, 3, 'scratch', dir));
@@ -135,12 +135,13 @@ describe('changing it', () => {
   it('knows which steps are possible', () => {
     const a = defaultDashboard();
     expect(canMove(a, 3, 'greeting')).toEqual({ up: false, down: true, left: false, right: true });
-    expect(canMove(a, 3, 'habit-bars')).toEqual({ up: true, down: false, left: true, right: false });
+    expect(canMove(a, 3, 'notes-edited')).toEqual({ up: true, down: false, left: true, right: false });
+    expect(canMove(a, 3, 'events')).toEqual({ up: true, down: false, left: true, right: true });
     expect(canMove(a, 1, 'greeting')).toEqual({ up: false, down: true, left: false, right: false });
     expect(canMove(a, 3, 'ghost')).toEqual({ up: false, down: false, left: false, right: false });
   });
   it('lists the columns with their Widgets', () => {
     const cols = columnsOf(defaultDashboard(), 2);
-    expect(cols.map(c => c.map(w => w.kind))).toEqual([['greeting', 'notes', 'scratch', 'pinned'], ['tasks-due', 'habits-today', 'reminders', 'habit-calendar', 'habit-rate', 'habit-bars']]);
+    expect(cols.map(c => c.map(w => w.kind))).toEqual([['greeting', 'notes', 'scratch', 'pinned', 'notes-edited'], ['tasks-due', 'habits-today', 'reminders', 'events', 'habit-calendar']]);
   });
 });
