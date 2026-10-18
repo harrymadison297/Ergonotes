@@ -175,6 +175,14 @@ tools/build-android.sh                              # signed release APK -> dist
 
 Android releases are signed with `KEYSTORE`/`KEYSTORE_PASS`/`KEY_ALIAS` when set, otherwise with a throw-away key.
 
+### About the installers and "unknown publisher"
+
+The Windows installer and the programs in it name their publisher (*Ergonotes*) in their file properties and in Apps & features,
+but they are **not code-signed**: signing needs a certificate that a certificate authority issues to a verified person or
+company, and Windows SmartScreen only shows a publisher name for a signed file. Until then Windows may ask you to confirm
+(*More info*, then *Run anyway*). Every release lists a SHA-256 checksum for each file in `SHA256SUMS`, and the whole source is here.
+To sign a build yourself, set `bundle.windows.certificateThumbprint` (or a `signCommand`) in `apps/desktop/src-tauri/tauri.conf.json`.
+
 ## Develop & test
 
 ```sh

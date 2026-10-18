@@ -32,8 +32,13 @@
       { "ext": ["md", "markdown", "mdown"], "name": "Markdown document", "mimeType": "text/markdown", "role": "Editor" },
       { "ext": ["txt"], "name": "Text document", "mimeType": "text/plain", "role": "Editor" }
     ],
+    "publisher": "Ergonotes",
+    "copyright": "Copyright 2026 harrymadison297. Apache-2.0 licence.",
+    "homepage": "https://ergonotes.vercel.app",
+    "license": "Apache-2.0",
     "shortDescription": "Offline-first notes",
-    "windows": { "nsis": { "installMode": "currentUser" } },
+    "longDescription": "Ergonotes keeps your notes as plain Markdown files in a folder on your device, works offline, and syncs end to end encrypted through storage you own. Free and open source.",
+    "windows": { "nsis": { "installMode": "currentUser", "installerHooks": "windows/hooks.nsh" } },
     "android": { "minSdkVersion": 24 }
   }
 }

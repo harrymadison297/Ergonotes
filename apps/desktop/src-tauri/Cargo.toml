@@ -2,6 +2,9 @@
 name = "ergonotes"
 version = "1.0.1"
 description = "Offline-first notes that sync through storage you own"
+authors = ["Ergonotes"]
+license = "Apache-2.0"
+repository = "https://github.com/harrymadison297/Ergonotes"
 edition = "2021"
 rust-version = "1.77"
 
