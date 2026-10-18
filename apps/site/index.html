@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ergonotes: notes that stay yours</title>
+    <meta name="description" content="Offline-first notes in plain Markdown files, synced end-to-end encrypted through storage you own. Habits, tasks, calendar, a Home you arrange, and an optional AI assistant. Free and open source." />
+    <meta name="theme-color" content="#f6f5f4" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Ergonotes: notes that stay yours" />
+    <meta property="og:description" content="A folder of Markdown files, a fast editor, habits, tasks and a Home you arrange. Offline first, synced through storage you own." />
+    <meta property="og:image" content="/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="/og.png" />
+    <script>
+      // the saved theme before the first paint, so there is no flash
+      try { var t = localStorage.getItem('ergo-site-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -10,7 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build:app": "npm -w @ergonotes/app run build",
-    "start:server": "node apps/server/src/main.ts"
+    "start:server": "node apps/server/src/main.ts",
+    "build:site": "npm -w @ergonotes/app run build:demo && npm -w @ergonotes/site run build"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
