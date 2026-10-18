@@ -170,6 +170,7 @@ await page.locator('.conn-form').getByRole('button', { name: 'Save', exact: true
 check('a connection can be renamed and given a new key', !!(await until(async () => { const c = (await rpc('getAiSettings')).connections[1]; return c.name === 'Work (new key)' && c.keyHint === '2222'; })));
 await page.addLocatorHandler(page.getByRole('dialog', { name: /^(Are you sure\?|Please confirm)$/ }), async d => { await d.locator('footer button').last().click(); });
 await page.getByRole('button', { name: 'Remove Home Ollama' }).click();
+await page.getByRole('dialog', { name: /^(Are you sure\?|Please confirm)$/ }).locator('footer button').last().click({ timeout: 3000 }).catch(() => {}); // the handler above may have answered it already
 check('a connection can be removed', !!(await until(async () => (await rpc('getAiSettings')).connections.length === 2)));
 check('and the jobs that used it move to another', (await rpc('getAiSettings')).suggestModel.connection !== ollamaId);
 await rpc('setAiSettings', { chatModel: { connection: firstId, model: 'google/gemma-4-31b-it:free' } });
