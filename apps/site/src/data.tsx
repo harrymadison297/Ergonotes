@@ -6,23 +6,25 @@ import {
 
 export type Tone = 'green' | 'indigo' | 'purple' | 'orange' | 'pink';
 
-export interface Feature { icon: LucideIcon; title: string; text: string; tone: Tone; tag?: string; size?: 'wide' | 'big' | 'full' }
+export interface Story {
+  id: string; kicker: string; icon: LucideIcon; tone: Tone;
+  /** `*accent*` words get the gradient */
+  headline: string; text: string; chips: string[];
+  /** the words that orbit the visual */
+  words: string[];
+}
 
-export const FEATURES: Feature[] = [
-  { icon: FolderOpen, size: 'big', tone: 'green', title: 'Plain Markdown files in a folder', text: 'Your vault is a folder. Every note is a .md file you can open with any other editor, and uninstalling the app never takes a note with it.', tag: 'Like an Obsidian vault' },
-  { icon: Wifi, tone: 'indigo', title: 'Offline first', text: 'Everything works with no connection. Sync is optional and catches up when you are back.' },
-  { icon: HomeIcon, size: 'wide', tone: 'orange', title: 'A Home you arrange', text: '18 widgets: tasks due, habits, events, pinned notes, a scratch pad and charts. Arranged per device, never synced.', tag: 'Drag, resize, make it yours' },
-  { icon: Repeat2, size: 'wide', tone: 'green', title: 'Habits that record only what you did', text: 'Streaks, misses, 7, 30 and 90 day rates and a heat map are worked out, never stored. A hand-drawn face cheers you on, quietly.', tag: 'Run · Water · Read · Journal' },
-  { icon: Lock, tone: 'purple', title: 'End-to-end encrypted sync', text: 'Sync through an S3 bucket, a WebDAV share or a plain folder. Notes are sealed on your device before they leave it.' },
-  { icon: SquareCheckBig, tone: 'purple', title: 'Tasks and reminders', text: 'Any checkbox in any note is a task. Add @due and @remind and it shows up on Home, in Tasks and on the Calendar.' },
-  { icon: CalendarDays, tone: 'orange', title: 'Calendar', text: 'Each day shows tasks done and open, reminders, notes and events at a glance.' },
-  { icon: Mic, size: 'wide', tone: 'indigo', title: 'Meetings and recordings', text: 'Keep the audio of a call, pictures of the shared screen and a transcript in one folder, played back with the pictures marked on the timeline.', tag: 'Desktop and Android' },
-  { icon: Bot, size: 'wide', tone: 'green', title: 'An assistant that respects privacy', text: 'Optional chat that answers, writes, edits and draws in your notes. Bring your own OpenRouter or Anthropic key. Off until you add one, and notes marked private are never sent.', tag: 'Your key, your model' },
-  { icon: Shapes, tone: 'pink', title: 'Insert almost anything', text: 'Toggles, Mermaid diagrams, formulas, Excalidraw sketches, tables, dates and events. All stored as standard Markdown.' },
-  { icon: FileDown, tone: 'orange', title: 'Export anywhere', text: 'Markdown, HTML, PDF and Word (.docx), made right in the app.' },
-  { icon: Network, tone: 'indigo', title: 'MCP for AI agents', text: 'The optional server peer speaks MCP over HTTP, with revocable tokens, so agents can read and write your notes.' },
-  { icon: Terminal, size: 'full', tone: 'purple', title: 'VS Code extension', text: 'Read and edit the same files in VS Code, with syntax, preview, links, snippets and habit check-ins.' },
+export const STORY: Story[] = [
+  { id: 'write', kicker: 'Write', icon: FileText, tone: 'green', headline: 'Notion-style writing, *plain Markdown* underneath', text: 'Type / for headings, toggles, tasks, tables, diagrams and formulas. Every block is saved as standard Markdown you can open anywhere.', chips: ['Slash menu', '.md files', 'Mermaid · KaTeX'], words: ['# heading', '/toggle', '- [ ] task', '[[link]]', '$E=mc^2$', 'mermaid', '@due(fri)', '| table |', '**bold**', '> quote'] },
+  { id: 'record', kicker: 'Record', icon: Mic, tone: 'pink', headline: 'Record the meeting, *keep the whole story*', text: 'Audio, pictures of the shared screen and a transcript, kept in one folder and played back with the pictures marked on the timeline.', chips: ['Speech to text', 'Screen frames', 'Desktop and Android'], words: ['audio', 'transcript', '[12:04]', 'screen frames', 'timeline', 'speakers', 'search it', 'replay', '00:42:17', 'summary'] },
+  { id: 'assist', kicker: 'Assist', icon: Sparkles, tone: 'indigo', headline: 'An AI that *writes with you*', text: 'Grey next-word suggestions as you type. A chat that answers, edits and draws in your notes, and shows every change before you accept it.', chips: ['Suggestions', 'Chat that edits', 'Private notes never sent'], words: ['suggest', 'Tab to accept', 'rewrite', 'summarise', 'draw a diagram', 'review changes', 'ask anything', 'your key', 'private stays private', 'thinking'] },
+  { id: 'connect', kicker: 'Connect', icon: Network, tone: 'purple', headline: 'Configure it yourself: *any model, MCP and skills*', text: 'Bring OpenRouter, Anthropic or a local server. Run the optional server peer and any MCP client can read and write your notes; hand agents the Ergonotes skill.', chips: ['OpenRouter · Anthropic · local', 'MCP over HTTP', 'Skill file'], words: ['MCP', 'SKILL.md', 'Claude Code', 'OpenRouter', 'Anthropic', 'Ollama', 'bearer token', 'revoke', 'tools', 'agents'] },
+  { id: 'track', kicker: 'Track', icon: Repeat2, tone: 'orange', headline: 'Habits that *never nag*', text: 'Check in when you do it. Streaks, misses and the 7, 30 and 90 day rates are worked out, never stored, with a hand-drawn face and a quiet word.', chips: ['Streaks', '12 week heat map', 'Mention with @'], words: ['Run', 'Drink water', 'Read 20 pages', 'Journal', 'streak', '3 in 7 days', 'heat map', 'check in', 'fresh start', '86%'] },
+  { id: 'para', kicker: 'Organise', icon: FolderOpen, tone: 'green', headline: '*PARA* is ready on day one', text: 'Projects, Areas, Resources, Archive and an Inbox to triage. Link notes with [[ ]], follow the backlinks and let tags do the rest.', chips: ['Inbox first', 'Backlinks', 'Real folders'], words: ['Projects', 'Areas', 'Resources', 'Archive', 'Inbox', '[[backlink]]', '#tags', 'pinned', 'triage', 'Zettelkasten'] },
+  { id: 'code', kicker: 'For coders', icon: Terminal, tone: 'indigo', headline: 'It lives in *VS Code* too', text: 'The same vault in your editor: syntax, a live preview, links, snippets and habit check-ins. It is just files, so Git works.', chips: ['Extension (.vsix)', 'Preview and links', 'Git friendly'], words: ['syntax', 'preview', 'snippets', 'Ctrl+Click', 'git diff', 'frontmatter', '.habits/', 'extension', 'commit', 'markdownlint'] },
 ];
+
+export const ALSO = ['Tasks and reminders', 'Calendar', 'A Home you arrange', 'Excalidraw sketches', 'Export to PDF, Word, HTML', 'Tabs and Open with', 'End-to-end encrypted sync', 'Works offline'];
 
 export interface Slide { id: string; icon: LucideIcon; tone: Tone; title: string; text: string; light: string; dark?: string }
 export const SLIDES: Slide[] = [
