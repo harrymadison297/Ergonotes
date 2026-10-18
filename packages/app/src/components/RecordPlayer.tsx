@@ -7,6 +7,7 @@ import { getRecordHost, isNotePrivate, notifyRecord, onRecord } from '../record/
 import { useRecorder } from '../record/recorder';
 import { proposeFrameCuts, recordAudio, transcribeRecord, type FrameProposal } from '../record/tools';
 import { classNames } from '../state/util';
+import { askConfirm } from '../state/confirm';
 
 /** The folder of the record being made right now by this app, or ''. */
 function useRecorderDir(): string {
@@ -136,7 +137,7 @@ export function RecordPlayer({ paths, label, insertAfter }: RecordPlayerProps) {
 
   const doTranscribe = async () => {
     if (!host || !sttOk) return;
-    if (info.transcript && !confirm('Write the transcript again? The one that is there, with any changes you made, is replaced.')) return;
+    if (info.transcript && !(await askConfirm('Write the transcript again? The one that is there, with any changes you made, is replaced.', { ok: 'Write it again' }))) return;
     setErr(''); setBusy('Writing it out…');
     try {
       await transcribeRecord({ api, dir: info.path, transcribe: host.transcribe, onStatus: setBusy });

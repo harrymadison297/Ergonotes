@@ -168,7 +168,7 @@ await page.getByLabel('Name', { exact: true }).fill('Work (new key)');
 await page.getByLabel('API key', { exact: true }).fill('sk-or-work-2222');
 await page.locator('.conn-form').getByRole('button', { name: 'Save', exact: true }).click();
 check('a connection can be renamed and given a new key', !!(await until(async () => { const c = (await rpc('getAiSettings')).connections[1]; return c.name === 'Work (new key)' && c.keyHint === '2222'; })));
-page.once('dialog', d => void d.accept());
+await page.addLocatorHandler(page.getByRole('dialog', { name: /^(Are you sure\?|Please confirm)$/ }), async d => { await d.locator('footer button').last().click(); });
 await page.getByRole('button', { name: 'Remove Home Ollama' }).click();
 check('a connection can be removed', !!(await until(async () => (await rpc('getAiSettings')).connections.length === 2)));
 check('and the jobs that used it move to another', (await rpc('getAiSettings')).suggestModel.connection !== ollamaId);

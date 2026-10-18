@@ -6,6 +6,7 @@ import { isBusy, recorder, useRecorder } from '../record/recorder';
 import type { Heard } from '../record/run';
 import { classNames } from '../state/util';
 import { Resizer } from './Resizer';
+import { askConfirm } from '../state/confirm';
 
 const heardText = (h: Heard) =>
   h === 'both' ? 'the microphone and the shared sound' : h === 'shared' ? 'the shared sound only' : 'the microphone';
@@ -14,8 +15,8 @@ function Meter({ level, on }: { level: number; on: boolean }) {
   return <span className="rec-meter" aria-hidden><i style={{ transform: `scaleX(${on ? Math.max(0.03, level) : 0.03})` }} /></span>;
 }
 
-const discard = () => {
-  if (recorder.get().seconds > 5 && !confirm('Throw this recording away? Its audio and frames are deleted.')) return;
+const discard = async () => {
+  if (recorder.get().seconds > 5 && !(await askConfirm('Throw this recording away? Its audio and frames are deleted.', { ok: 'Throw away', danger: true }))) return;
   void recorder.discard();
 };
 

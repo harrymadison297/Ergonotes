@@ -5,6 +5,7 @@ import { fmtSecs } from '../editor/blocks';
 import { classNames } from '../state/util';
 import { recordingUnavailable } from '../record/run';
 import { openMixer, pickAudioMime } from '../record/capture';
+import { askConfirm } from '../state/confirm';
 
 export interface Recording { blob: Blob; mime: string; seconds: number }
 
@@ -110,9 +111,9 @@ export function DictateDialog({ sttReady, privateNote, onFinish, onClose }: {
     else if (r.state === 'paused') { r.resume(); started.current = Date.now(); setPhase('recording'); }
   };
   const stop = () => { if (rec.current && rec.current.state !== 'inactive') { if (rec.current.state === 'paused') started.current = 0; rec.current.stop(); } };
-  const close = () => {
+  const close = async () => {
     if (phase === 'working') return;
-    if ((phase === 'recording' || phase === 'paused') && secs > 5 && !confirm('Discard this recording?')) return;
+    if ((phase === 'recording' || phase === 'paused') && secs > 5 && !(await askConfirm('Discard this recording?', { ok: 'Discard', danger: true }))) return;
     onClose();
   };
 

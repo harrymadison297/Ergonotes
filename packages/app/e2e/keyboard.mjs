@@ -20,7 +20,8 @@ const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-page.on('dialog', d => void d.accept());
+// the app asks its own questions (state/confirm.tsx); answer OK
+await page.addLocatorHandler(page.getByRole('dialog', { name: /^(Are you sure\?|Please confirm)$/ }), async d => { await d.locator('footer button').last().click(); });
 await page.goto(base);
 const fresh = await page.getByRole('heading', { name: 'Set up Ergonotes' }).waitFor({ timeout: 6000 }).then(() => true, () => false);
 if (fresh) {
@@ -120,6 +121,7 @@ await page.getByRole('button', { name: /^Put the keys of Focus on the note back$
 await page.getByRole('button', { name: /^Put the keys of Go to Files back$/ }).click();
 check('reset puts a command’s own keys back', (await row('view.focus').innerText()).includes('Ctrl+Shift+F') && !(await row('view.focus').innerText()).includes('Ctrl+K'));
 await page.getByRole('button', { name: 'Reset all' }).click();
+await page.getByRole('dialog', { name: /^(Are you sure\?|Please confirm)$/ }).locator('footer button').last().click({ timeout: 2000 }).catch(() => {}); // the handler above may have answered it already
 check('reset all puts them all back', (await stored()) && Object.keys(await stored()).length === 0, JSON.stringify(await stored()));
 check('the original keys are shown again', (await row('search.open').innerText()).includes('Ctrl+K') && (await row('view.sidebar').innerText()).includes('Ctrl+\\') && !(await row('view.sidebar').innerText()).includes('Shift+B'));
 await page.keyboard.press('Escape');

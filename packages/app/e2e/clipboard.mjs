@@ -20,7 +20,8 @@ const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-page.on('dialog', d => void d.accept());
+// the app asks its own questions (state/confirm.tsx); answer OK
+await page.addLocatorHandler(page.getByRole('dialog', { name: /^(Are you sure\?|Please confirm)$/ }), async d => { await d.locator('footer button').last().click(); });
 await page.goto(base);
 const fresh = await page.getByRole('heading', { name: 'Set up Ergonotes' }).waitFor({ timeout: 6000 }).then(() => true, () => false);
 if (fresh) {

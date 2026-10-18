@@ -59,10 +59,10 @@ const mobile = (await ev('window.innerWidth')) < 768;
 // A fresh install makes its own vault with no password and shows Home (ADR 0012). This test is about joining another
 // vault through a Store, so it takes the way the app offers: Settings, Sync & storage, "Join an existing vault…".
 await waitFor(`document.querySelector('.home')`, 120000, 'Home after the first start');
-await ev(`window.confirm = () => true`); // the app asks before it leaves the empty vault
 await click('Settings');
 await click('Sync & storage');
 await click('Join an existing vault…');
+await click('Join another vault'); // the app asks before it leaves the empty vault
 await waitFor(`document.body.innerText.includes('Welcome to Ergonotes')`, 60000, 'the join screen');
 await click('Join existing');
 await fill('Endpoint URL', s3Endpoint);

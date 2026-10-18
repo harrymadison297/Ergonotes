@@ -11,6 +11,7 @@ import { setPrefs, usePrefs } from '../state/prefs';
 import { classNames } from '../state/util';
 import { Resizer } from '../components/Resizer';
 import { PaneList } from '../components/RecorderPanel';
+import { askConfirm } from '../state/confirm';
 
 
 type Sort = 'updated' | 'created' | 'title';
@@ -147,7 +148,7 @@ export function TrashView({ noteId }: { noteId?: string }) {
   const folders = app.items.filter(i => i.type === 'folder' && i.trashed);
   const rows = [...folders, ...list];
   const emptyAll = async () => {
-    if (!confirm('Delete everything in the Trash forever? This can’t be undone.')) return;
+    if (!(await askConfirm('Delete everything in the Trash forever? This can’t be undone.', { ok: 'Delete forever', danger: true }))) return;
     await app.run(app.api.emptyTrash());
     await app.refresh();
   };

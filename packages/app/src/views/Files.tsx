@@ -10,6 +10,7 @@ import { Resizer } from '../components/Resizer';
 import { PaneList } from '../components/RecorderPanel';
 import { useMenu, type MenuEntry } from '../components/ui';
 import { canRevealInFolder, revealInFolder } from '../backend/tauriFs';
+import { askConfirm } from '../state/confirm';
 
 type Tab = 'all' | 'media' | 'docs' | 'records';
 const isMedia = (f: FileInfo) => /^(image|video|audio)\//.test(f.mime);
@@ -65,7 +66,7 @@ export function FilesView({ fileId }: { fileId?: string }) {
     return () => { live = false; };
   }, [app.api, app.items, reload]);
   const removeRecord = async (r: RecordInfo) => {
-    if (!confirm(`Delete this record for good? Its audio, ${r.frames.length} frame${r.frames.length === 1 ? '' : 's'} and transcript are removed${r.noteTitle ? `, and the player in “${r.noteTitle}” will say it is missing` : ''}.`)) return;
+    if (!(await askConfirm(`Delete this record for good? Its audio, ${r.frames.length} frame${r.frames.length === 1 ? '' : 's'} and transcript are removed${r.noteTitle ? `, and the player in “${r.noteTitle}” will say it is missing` : ''}.`, { ok: 'Delete', danger: true }))) return;
     await app.run(app.api.removeFiles(recordFilePaths(r)));
     setReload(n => n + 1);
   };
@@ -84,7 +85,7 @@ export function FilesView({ fileId }: { fileId?: string }) {
     ...(canRevealInFolder() ? [{ label: 'Show in folder', icon: <ExternalLink size={16} />, onClick: () => void reveal(f.path) }] : []),
     { sep: true },
     { label: 'Delete…', icon: <Trash2 size={16} />, danger: true, onClick: async () => {
-      if (!confirm(`Delete “${f.name}” for good?${f.noteId ? ` The note “${f.noteTitle}” uses it and will show it as missing.` : ''}`)) return;
+      if (!(await askConfirm(`Delete “${f.name}” for good?${f.noteId ? ` The note “${f.noteTitle}” uses it and will show it as missing.` : ''}`, { ok: 'Delete', danger: true }))) return;
       await app.run(app.api.removeFiles([f.path]));
       setReload(n => n + 1);
     } },

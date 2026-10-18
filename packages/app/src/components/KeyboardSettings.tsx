@@ -5,6 +5,7 @@ import { Plus, RotateCcw, X } from 'lucide-react';
 import { COMMANDS, boundCommands, commandById, keysFor, type Command, type CommandGroup } from '../state/commands';
 import { chordOf, conflicts, formatBinding, normalizeBinding, reasonNotAllowed } from '../state/keymap';
 import { setPrefs, usePrefs } from '../state/prefs';
+import { askConfirm } from '../state/confirm';
 
 const GROUPS: CommandGroup[] = ['General', 'Navigate', 'View', 'Items'];
 const GROUP_LABEL: Record<CommandGroup, string> = { General: 'General', Navigate: 'Go to', View: 'View', Items: 'Notes and folders in a list' };
@@ -95,7 +96,7 @@ export function KeyboardSettings() {
     <div className="kbd-settings">
       <div className="kbd-head">
         <input className="input" type="search" placeholder="Find a command or a key" aria-label="Find a command or a key" value={q} onChange={e => setQ(e.target.value)} />
-        <button className="btn" disabled={!changed} onClick={() => { if (confirm('Put every shortcut back the way it came?')) setPrefs({ keys: {} }); }}><RotateCcw size={15} /> Reset all</button>
+        <button className="btn" disabled={!changed} onClick={async () => { if (await askConfirm('Put every shortcut back the way it came?', { ok: 'Reset all' })) setPrefs({ keys: {} }); }}><RotateCcw size={15} /> Reset all</button>
       </div>
       <p className="hint">Click “Add key”, then press the keys. A key with Ctrl or Alt works anywhere, even while writing; two plain keys one after the other (like <kbd>g</kbd> then <kbd>h</kbd>) work when you are not typing. These are kept on this device.</p>
       {problem && <p role="alert" className="error-text">{problem}</p>}

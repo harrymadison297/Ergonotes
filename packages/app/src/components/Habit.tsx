@@ -8,6 +8,7 @@ import { habitHref, href } from '../state/router';
 import { moodForNudge } from '../state/mood';
 import { Mood } from './Mood';
 import { Dialog } from './ui';
+import { askConfirm } from '../state/confirm';
 
 /** A ring of how much of today's window is done (`done` of `of`). */
 export function Ring({ done, of, size = 36, met }: { done: number; of: number; size?: number; met?: boolean }) {
@@ -192,7 +193,7 @@ export function HabitPage({ id }: { id: string }) {
     if (!ok && d) setName(d.title);
   };
   const remove = async () => {
-    if (!d || !window.confirm(`Delete “${d.title}” and everything you logged for it? This can’t be undone.`)) return;
+    if (!d || !(await askConfirm(`Delete “${d.title}” and everything you logged for it? This can’t be undone.`, { ok: 'Delete', danger: true }))) return;
     if (await app.run(app.api.deleteHabit(id).then(() => true))) { await app.refresh(); app.go({ name: 'habits' }); }
   };
   if (d === undefined) return <div className="habits-page" aria-busy="true" />;

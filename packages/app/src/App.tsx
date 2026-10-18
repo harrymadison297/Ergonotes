@@ -6,6 +6,7 @@ import { LoadingScreen } from './components/CurveLoader';
 import { Shell } from './components/Shell';
 import { AppProvider } from './state/app';
 import { JOIN_FLAG } from './state/firstRun';
+import { ConfirmHost } from './state/confirm';
 
 /**
  * A first launch on an installed app (desktop, Android) opens a vault with no password in the default folder and shows the
@@ -40,11 +41,12 @@ export function App() {
 
   const ready = status.state === 'ready' && (!status.remote || status.authenticated);
   if (!ready) {
-    return <Gate backend={backend} status={status} onReady={async () => setStatus(await backend.api.status())} />;
+    return <><Gate backend={backend} status={status} onReady={async () => setStatus(await backend.api.status())} /><ConfirmHost /></>;
   }
   return (
     <AppProvider backend={backend} status={status}>
       <Shell />
+      <ConfirmHost />
     </AppProvider>
   );
 }

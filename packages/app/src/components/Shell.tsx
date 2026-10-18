@@ -35,6 +35,7 @@ import { setPrefs, usePrefs } from '../state/prefs';
 import { boundGlobal, useCommands } from '../state/commands';
 import { chordOf } from '../state/keymap';
 import { ShortcutMatcher } from '../state/shortcuts';
+import { askConfirm } from '../state/confirm';
 
 function RouteView() {
   const { route } = useApp();
@@ -251,7 +252,8 @@ function RecordingDock() {
     if ('__TAURI_INTERNALS__' in window) {
       void import(/* @vite-ignore */ '@tauri-apps/api/window').then(async w => {
         const off = await w.getCurrentWindow().onCloseRequested(async e => {
-          if (!confirm('A recording is running. Stop it, save what was recorded and close the app?')) { e.preventDefault(); return; }
+          e.preventDefault();
+          if (!(await askConfirm('A recording is running. Stop it, save what was recorded and close the app?', { ok: 'Stop and close' }))) return;
           recorder.stop();
           // the window closes when this returns: let the save finish first (a long recording takes a moment)
           for (let i = 0; i < 600 && recorder.active; i++) await new Promise(r => setTimeout(r, 200));

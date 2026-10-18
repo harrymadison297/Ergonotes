@@ -21,7 +21,8 @@ const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-page.on('dialog', d => void d.accept());
+// the app asks its own questions (state/confirm.tsx); answer OK
+await page.addLocatorHandler(page.getByRole('dialog', { name: /^(Are you sure\?|Please confirm)$/ }), async d => { await d.locator('footer button').last().click(); });
 await page.goto(base);
 const fresh = await page.getByRole('heading', { name: 'Set up Ergonotes' }).waitFor({ timeout: 6000 }).then(() => true, () => false);
 if (fresh) {
@@ -98,6 +99,7 @@ await page.getByRole('menuitem', { name: 'Copy link' }).click();
 check('its link is an image link to the file', (await page.evaluate(() => navigator.clipboard.readText())).startsWith('![photo.png](attachments/photo'), await page.evaluate(() => navigator.clipboard.readText()));
 await page.locator('.file-card', { hasText: 'photo.png' }).click({ button: 'right' });
 await page.getByRole('menuitem', { name: 'Delete…' }).click();
+await page.getByRole('dialog', { name: /^(Are you sure\?|Please confirm)$/ }).locator('footer button').last().click({ timeout: 2000 }).catch(() => {}); // the handler above may have answered it already
 check('delete removes the file (after the question)', !!(await until(async () => !(await rpc('listFiles')).some(f => f.name === 'photo.png'), 8000)));
 
 check('no console errors', errors.filter(x => !/Failed to load resource|status of 400/.test(x)).length === 0, errors.slice(0, 3).join(' | '));

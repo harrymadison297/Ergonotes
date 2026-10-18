@@ -35,6 +35,7 @@ import { Dialog, IconBtn, TagBar, useMenu, type MenuEntry } from './ui';
 import { href } from '../state/router';
 import { pastedFiles } from '../state/paste';
 import { ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, clampZoom, setPrefs, usePrefs, usePrefsNow } from '../state/prefs';
+import { askConfirm } from '../state/confirm';
 
 type SaveState = 'saved' | 'saving' | 'error';
 
@@ -619,7 +620,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
         <div className="banner info" role="status">
           <Trash2 size={16} /><span className="grow">This note is in the Trash.</span>
           <button className="btn" onClick={async () => { await app.run(api.restore(id)); await app.refresh(); }}><RotateCcw size={14} /> Restore</button>
-          <button className="btn danger" onClick={async () => { if (confirm('Delete this note forever? This can’t be undone.')) { await app.run(api.purge(id)); await app.refresh(); app.go({ name: 'trash' }); } }}>Delete forever</button>
+          <button className="btn danger" onClick={async () => { if (await askConfirm('Delete this note forever? This can’t be undone.', { ok: 'Delete forever', danger: true })) { await app.run(api.purge(id)); await app.refresh(); app.go({ name: 'trash' }); } }}>Delete forever</button>
         </div>
       )}
       {external && (

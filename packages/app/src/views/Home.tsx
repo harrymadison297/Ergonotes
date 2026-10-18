@@ -10,6 +10,7 @@ import { FirstRunBanner } from '../components/FirstRunBanner';
 import { WIDGETS } from '../components/widgets';
 import { Dialog } from '../components/ui';
 import { Mood } from '../components/Mood';
+import { askConfirm } from '../state/confirm';
 
 const DRAG = 'text/x-ergo-widget';
 
@@ -138,7 +139,7 @@ export function Home() {
         {editing ? (
           <>
             <button className="btn" onClick={() => setGallery(true)}><Plus size={16} /> Add widget</button>
-            <button className="btn" onClick={() => { if (window.confirm('Put Home back as it was at the start?')) resetDashboard(); }}><RotateCcw size={16} /> Reset</button>
+            <button className="btn" onClick={async () => { if (await askConfirm('Put Home back as it was at the start?', { ok: 'Reset' })) resetDashboard(); }}><RotateCcw size={16} /> Reset</button>
             <button className="btn primary" onClick={() => setEditing(false)}>Done</button>
           </>
         ) : (

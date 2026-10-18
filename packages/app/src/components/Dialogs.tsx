@@ -10,6 +10,7 @@ import { setPrefs, usePrefs } from '../state/prefs';
 import { setWantsToJoin } from '../state/firstRun';
 import { warnNoPassword } from '../state/noPassword';
 import { StoreForm, formFromStore, storeFromForm, type StoreFormState } from './StoreForm';
+import { askConfirm } from '../state/confirm';
 
 // ---------------------------------------------------------------- conflicted revision
 export function ConflictDialog({ id, onClose }: { id: string; onClose: () => void }) {
@@ -345,7 +346,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
               <label>Already have a vault on another device?</label>
               <span className="hint">Join it instead of connecting this one. The notes in this folder stay and are added to that vault; this device’s history and assistant conversations are dropped.</span>
               <div><button className="btn" style={{ marginTop: 8 }} onClick={async () => {
-                if (!confirm('Join an existing vault? This empty vault is left behind; your notes stay in the folder.')) return;
+                if (!(await askConfirm('Join an existing vault? This empty vault is left behind; your notes stay in the folder.', { ok: 'Join another vault' }))) return;
                 setWantsToJoin(true);
                 try { await app.run(app.api.leaveVault()); location.reload(); } catch (e) { setWantsToJoin(false); setMsg(e instanceof Error ? e.message : String(e)); }
               }}><Link2 size={16} /> Join an existing vault…</button></div>
@@ -418,7 +419,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
           <button className="btn" onClick={() => { onClose(); app.setDialog({ kind: 'import' }); }}><FileUp size={16} /> Import Markdown files…</button>
           <p className="hint">Export any note from its Export menu (Markdown, HTML, PDF).</p>
           <button className="btn danger" onClick={async () => {
-            if (!confirm('Delete everything in the Trash forever? This can’t be undone.')) return;
+            if (!(await askConfirm('Delete everything in the Trash forever? This can’t be undone.', { ok: 'Delete forever', danger: true }))) return;
             await app.run(app.api.emptyTrash()); await app.refresh(); app.toast('Trash emptied');
           }}>Empty trash now</button>
         </div>
@@ -511,7 +512,7 @@ function AiSettings() {
               <button className="btn" onClick={() => startEdit(c)}>Edit</button>
               <IconBtn label={`Remove ${c.name}`} icon={<Trash2 size={16} />} onClick={async () => {
                 const used = ai.chatModel.connection === c.id || ai.suggestModel.connection === c.id;
-                if (!confirm(`Remove “${c.name}”?${used ? ' It is used by the chat or the suggestions; they will move to another connection.' : ''}`)) return;
+                if (!(await askConfirm(`Remove “${c.name}”?${used ? ' It is used by the chat or the suggestions; they will move to another connection.' : ''}`, { ok: 'Remove', danger: true }))) return;
                 if (await save({ removeConnection: c.id })) app.toast('Connection removed');
               }} />
             </div>
