@@ -9,7 +9,7 @@ page breaks, dates, events, formulas, Mermaid diagrams, recordings and meetings 
 them is stored as standard Markdown (docs/adr/0009). A meeting is the audio of a call, pictures of the shared screen
 and a transcript, kept in one folder and played with the pictures marked on the timeline (docs/adr/0011).
 
-**[Download](https://github.com/harrymadison297/Ergonotes/releases/latest)** (Windows installer and portable, Linux `.deb` and AppImage, Android, server, VS Code). If it is useful to you, a ★ on GitHub helps others find it.
+**[Try the live demo](https://ergonotes.vercel.app/demo/)** · **[Website](https://ergonotes.vercel.app)** · **[Download](https://github.com/harrymadison297/Ergonotes/releases/latest)** (Windows installer and portable, Linux `.deb` and AppImage, Android, server, VS Code). If it is useful to you, a ★ on GitHub helps others find it.
 
 ![Ergonotes on Windows and Android](docs/media/hero.png)
 

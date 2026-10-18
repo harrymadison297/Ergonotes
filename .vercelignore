@@ -1,0 +1,11 @@
+# what `vercel` (the CLI) must not upload: build output, caches, big sources of the other apps
+temp/
+dist/
+**/dist/
+**/dist-demo/
+**/node_modules/
+**/src-tauri/target/
+**/src-tauri/gen/
+apps/vscode/*.vsix
+docs/media/
+*.zip
