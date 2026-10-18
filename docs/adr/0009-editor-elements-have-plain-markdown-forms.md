@@ -1,5 +1,7 @@
 # Editor elements beyond CommonMark keep a plain, readable Markdown form
 
+*Amended by ADR 0015: agents may also draw an Excalidraw drawing directly (the `draw` tool and Excalidraw libraries), not only Mermaid; a drawing is still the `ergonote-excalidraw` block.*
+
 The Insert menu offers more than Markdown has syntax for: a collapsible toggle, a contents box, a page break, a date,
 an event, a tick box, a formula, a diagram, a voice note. A note is a Markdown file (ADR 0002, 0010) that other tools, the
 MCP endpoint and the three-way merge (ADR 0001) all read as text, so each element must be written as text a person or

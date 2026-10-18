@@ -32,7 +32,7 @@ A free, open-source alternative to Obsidian and Evernote.</p>
 - **Offline first, private by design.** Everything works with no connection. Sync is optional and goes through storage you own (S3, WebDAV or a folder), sealed on your device before it leaves it. No account, no always-on server.
 - **Notion-style writing on standard Markdown.** Type `/` for headings, toggles, tasks, tables, Mermaid diagrams and formulas; every block has a plain Markdown form.
 - **More than notes.** Habits with streaks and a heat map, tasks with reminders, a calendar, a Home dashboard you arrange, and meeting recording with a transcript.
-- **AI on your terms.** Next-word suggestions and a chat that edits your notes (you review every change), with your own OpenRouter, Anthropic or local server key. Notes marked private are never sent. An MCP endpoint and a skill file let agents such as Claude Code work with your notes.
+- **AI on your terms.** Next-word suggestions and a chat that edits your notes (you review every change), with your own OpenRouter, Anthropic or local server key. Notes marked private are never sent. The desktop app also runs a local MCP endpoint and ships a Claude Code plugin, so agents such as Claude Code can read, write and draw in your notes.
 - **Everywhere you work.** Windows, Linux and Android apps, a web UI from the optional server peer, and a VS Code extension for the same files.
 
 ## Highlights
@@ -42,7 +42,7 @@ A free, open-source alternative to Obsidian and Evernote.</p>
 | **Write** | Slash menu, toggles, tables, Mermaid diagrams, KaTeX formulas, Excalidraw sketches and tabs; export to Markdown, HTML, PDF and Word. |
 | **Record** | Audio of a call, pictures of the shared screen and a transcript in one folder, played back with the pictures marked on the timeline (docs/adr/0011). |
 | **Assist** | Grey next-word suggestions and a chat that answers, edits and draws; the model is yours to configure, per job. |
-| **Connect** | MCP over HTTP with revocable tokens on the server peer, and the Ergonotes skill file for agents. |
+| **Connect** | A local MCP endpoint in the desktop app (and on the server peer) with revocable tokens, and a Claude Code plugin with skills for writing, tags, drawing and more (docs/adr/0015). |
 | **Track** | Habits that record only what you did; streaks, misses and 7, 30 and 90 day rates are worked out, never stored (docs/adr/0013, 0014). |
 | **Organise** | PARA folders and an Inbox out of the box, `[[links]]` and backlinks, tags, pinned notes. |
 | **Code** | `apps/vscode`: syntax, preview, links, snippets and habit check-ins for the same vault. |
@@ -111,7 +111,7 @@ The raw screenshots (real Windows and Android apps, light and dark) are in [docs
 | **Android, Windows, Linux** | Tauri 2 apps. Notes are files in a folder on the device (default `Documents/Ergonotes`, changed in Settings or from the first-run note); sync is optional. |
 | **Web** | The same UI served by the optional Linux *server peer* (no offline mode). |
 | **Sync** | End-to-end encrypted objects in an S3-compatible bucket, WebDAV share, or plain folder. |
-| **Agents** | MCP over HTTP on the server peer, with revocable API tokens. |
+| **Agents** | MCP at `http://127.0.0.1:7424/mcp` while the desktop app runs (tray and start-with-system optional), or over HTTP on the server peer; revocable tokens; Claude Code plugin in `plugins/ergonotes/`. |
 | **Assistant** | Optional chat that answers, writes, edits and draws in your notes, and a next-words suggestion. Bring your own OpenRouter or Anthropic key; off until you add one; notes marked private are never sent. |
 
 ## Quick start
@@ -145,11 +145,18 @@ node dist/server/server.mjs            # PORT, HOST, ERGONOTES_DATA, ERGONOTES_V
 * The vault is unlocked at the first sign-in and the key stays in memory. `ERGONOTES_PASSWORD` unlocks at start-up
   (unattended restarts) at the cost of keeping the password in the environment.
 * The vault is a folder of Markdown files, `$ERGONOTES_VAULT_DIR` (default `$ERGONOTES_DATA/vault`): put files there and they are notes; edit them with any other program and the app picks the change up within seconds.
-* Agents: *Settings → Agents (MCP)* creates a token and shows the command for Claude Code; point any MCP client at
-  `https://your-host/mcp` with `Authorization: Bearer <token>`. Tools: `search_notes`, `list_recent`, `read_note`,
-  `create_note`, `append_to_note`, `replace_text`, `insert_after_heading`, `update_note`, `rename_note`, `add_tags`,
-  `move_note`, `list_folders`, `list_tasks`, `complete_task`, `daily_note`. Notes marked private are invisible to agents.
-  The skill that teaches Claude Code to use them is `docs/agents/ergonotes-skill/SKILL.md` (also a download button).
+* Agents on the desktop app: the endpoint is on while the app runs (`http://127.0.0.1:7424/mcp`; *Settings → Agents (MCP)*
+  changes the port, shows the tokens, and offers a tray icon and start-with-system). For Claude Code install the plugin,
+  which finds the address and the token by itself and brings the skills:
+  `claude plugin marketplace add harrymadison297/Ergonotes` then `claude plugin install ergonotes@ergonotes`.
+  Without the plugin: `claude mcp add --transport http ergonotes http://127.0.0.1:7424/mcp --header "Authorization: Bearer <token>"`.
+* Agents on the server peer: *Settings → Agents (MCP)* creates a token; point any MCP client at
+  `https://your-host/mcp` with `Authorization: Bearer <token>`.
+* Tools: `search_notes`, `list_recent`, `read_note`, `get_links`, `read_record`, `create_note`, `append_to_note`, `replace_text`,
+  `insert_after_heading`, `update_note`, `rename_note`, `add_tags`, `move_note`, `list_folders`, `list_tags`, `list_tasks`,
+  `complete_task`, `daily_note`; on the desktop also `draw`, `insert_diagram`, `read_drawing`, `search_libraries`,
+  `browse_library`, `import_library_item`. Notes marked private are invisible to agents. The skill that teaches an agent to
+  use them without the plugin is `docs/agents/ergonotes-skill/SKILL.md` (also a download button).
 * Assistant: *Settings → AI* holds any number of connections: OpenRouter or Anthropic keys, or the address of your own
   OpenAI-compatible server such as Ollama (`http://localhost:11434`; key optional). Pick the chat model (also from the
   chat) and a separate suggestion model, each on any connection. Keys are stored encrypted in the vault. On the server the

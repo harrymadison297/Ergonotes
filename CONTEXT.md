@@ -24,7 +24,19 @@ _Avoid_: Hidden, locked, secret
 
 **Assistant**:
 The AI chat in the right sidebar. It answers, and proposes changes to Notes that the person accepts or rejects. Past conversations are kept in its History.
-_Avoid_: Bot, copilot, agent (an agent is something outside the app that uses the MCP endpoint)
+_Avoid_: Bot, copilot, agent (an Agent is something outside the app that uses the MCP endpoint)
+
+**Agent**:
+A program outside the app, such as Claude Code, that works on the Vault through the MCP endpoint. Not the Assistant.
+_Avoid_: Bot, assistant (the Assistant is the AI chat inside the app)
+
+**MCP endpoint**:
+The address where the desktop app, while it runs, lets an Agent search, read and write Notes (`http://127.0.0.1:7424/mcp` by default; the Server peer has one too). An Agent needs a token. Private notes and Habits do not exist for it. See ADR 0015.
+_Avoid_: API, server (the Server peer is a Device)
+
+**Agent token**:
+The secret an Agent presents to the MCP endpoint. One per Agent, kept on the Device outside the Vault, and revocable.
+_Avoid_: API key (that is the AI provider's key)
 
 **Suggestion**:
 The grey next-words text shown after the cursor while typing; accepted with Tab, dismissed with Esc.
@@ -187,7 +199,7 @@ One installation of the app that holds a copy of the Vault folder and has a frie
 _Avoid_: Client, node, machine
 
 **Server peer**:
-An optional Device that runs headless on a Linux machine, serves the web UI and the agent endpoint, and takes part in sync like any other Device. No Device depends on it.
+An optional Device that runs headless on a Linux machine, serves the web UI and an MCP endpoint, and takes part in sync like any other Device. No Device depends on it.
 _Avoid_: Backend, hub, master
 
 **Store**:

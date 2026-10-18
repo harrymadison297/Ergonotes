@@ -1,5 +1,7 @@
 # AI is opt-in, uses the person's own provider key, and private notes never reach it
 
+*Amended by ADR 0015: the desktop apps now serve the MCP endpoint too, with the same private-note rule.*
+
 Ergonotes is offline-first and keeps plaintext on the person's devices. An AI assistant is the first feature that sends
 note text to a third party (OpenRouter or Anthropic), which is outside that promise. We add it as an explicit,
 reversible exception with these rules, so the exception stays small and visible.
