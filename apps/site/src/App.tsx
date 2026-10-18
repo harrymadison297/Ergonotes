@@ -7,6 +7,7 @@ import { Hero } from './components/Hero';
 import { Nav } from './components/Nav';
 import { Showcase } from './components/Showcase';
 import { StarCta } from './components/StarCta';
+import { Switch } from './components/Switch';
 import { Sync } from './components/Sync';
 
 export function App() {
@@ -21,6 +22,7 @@ export function App() {
         <Files />
         <Sync />
         <Demo />
+        <Switch />
         <Download />
         <StarCta />
       </main>

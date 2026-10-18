@@ -1,19 +1,87 @@
-# Ergonotes
+<p align="center">
+  <img src="docs/logo/svg/mark.svg" width="72" alt="Ergonotes logo">
+</p>
 
-Offline-first personal notes that sync between your devices through storage you own, with no always-on server.
-PARA folders + Inbox + Zettelkasten links, Evernote-style editor, tasks and calendar, Excalidraw drawings,
-Markdown/HTML/PDF export, and an MCP endpoint for AI agents. **Your notes are plain Markdown files in a folder you
-choose**, like an Obsidian vault: put a pile of `.md` files there and they are notes; edit them with any other program
-and Ergonotes follows; what it does not understand is never rewritten (docs/adr/0010). The Insert menu puts toggles,
-page breaks, dates, events, formulas, Mermaid diagrams, recordings and meetings into a note, and every one of
-them is stored as standard Markdown (docs/adr/0009). A meeting is the audio of a call, pictures of the shared screen
-and a transcript, kept in one folder and played with the pictures marked on the timeline (docs/adr/0011).
+<h1 align="center">Ergonotes</h1>
 
-**[Try the live demo](https://ergonotes.vercel.app/demo/)** · **[Website](https://ergonotes.vercel.app)** · **[Download](https://github.com/harrymadison297/Ergonotes/releases/latest)** (Windows installer and portable, Linux `.deb` and AppImage, Android, server, VS Code). If it is useful to you, a ★ on GitHub helps others find it.
+<p align="center"><b>Your notes, on every device, readable by nobody else.</b><br>
+Offline-first notes in plain Markdown files, with a Notion-style editor, habits, tasks, a calendar, meeting recording and an optional AI assistant.
+A free, open-source alternative to Obsidian and Evernote.</p>
+
+<p align="center">
+  <a href="https://ergonotes.vercel.app/demo/"><b>Try the live demo</b></a> ·
+  <a href="https://ergonotes.vercel.app">Website</a> ·
+  <a href="https://github.com/harrymadison297/Ergonotes/releases/latest">Download</a> ·
+  <a href="#alternative-to-obsidian-and-evernote">Coming from Obsidian or Evernote?</a>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-2dbe60"></a>
+  <a href="https://github.com/harrymadison297/Ergonotes/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/harrymadison297/Ergonotes?color=4d64ff"></a>
+  <a href="https://github.com/harrymadison297/Ergonotes/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/harrymadison297/Ergonotes?style=flat&color=f5a623"></a>
+  <img alt="Platforms: Windows, Linux, Android, Web, VS Code" src="https://img.shields.io/badge/platforms-Windows%20%C2%B7%20Linux%20%C2%B7%20Android%20%C2%B7%20Web%20%C2%B7%20VS%20Code-7d3ebe">
+</p>
 
 ![Ergonotes on Windows and Android](docs/media/hero.png)
 
-## What is in it
+> If Ergonotes is useful to you, a ★ at the top of the page helps other people find it.
+
+## Why Ergonotes
+
+- **Plain files, no lock-in.** A vault is a folder of Markdown files. Open it with any editor, put it in Git, delete the app and keep every note.
+- **Offline first, private by design.** Everything works with no connection. Sync is optional and goes through storage you own (S3, WebDAV or a folder), sealed on your device before it leaves it. No account, no always-on server.
+- **Notion-style writing on standard Markdown.** Type `/` for headings, toggles, tasks, tables, Mermaid diagrams and formulas; every block has a plain Markdown form.
+- **More than notes.** Habits with streaks and a heat map, tasks with reminders, a calendar, a Home dashboard you arrange, and meeting recording with a transcript.
+- **AI on your terms.** Next-word suggestions and a chat that edits your notes (you review every change), with your own OpenRouter, Anthropic or local server key. Notes marked private are never sent. An MCP endpoint and a skill file let agents such as Claude Code work with your notes.
+- **Everywhere you work.** Windows, Linux and Android apps, a web UI from the optional server peer, and a VS Code extension for the same files.
+
+## Highlights
+
+| | |
+|---|---|
+| **Write** | Slash menu, toggles, tables, Mermaid diagrams, KaTeX formulas, Excalidraw sketches and tabs; export to Markdown, HTML, PDF and Word. |
+| **Record** | Audio of a call, pictures of the shared screen and a transcript in one folder, played back with the pictures marked on the timeline (docs/adr/0011). |
+| **Assist** | Grey next-word suggestions and a chat that answers, edits and draws; the model is yours to configure, per job. |
+| **Connect** | MCP over HTTP with revocable tokens on the server peer, and the Ergonotes skill file for agents. |
+| **Track** | Habits that record only what you did; streaks, misses and 7, 30 and 90 day rates are worked out, never stored (docs/adr/0013, 0014). |
+| **Organise** | PARA folders and an Inbox out of the box, `[[links]]` and backlinks, tags, pinned notes. |
+| **Code** | `apps/vscode`: syntax, preview, links, snippets and habit check-ins for the same vault. |
+
+## Alternative to Obsidian and Evernote
+
+Ergonotes is for people who like **Obsidian**'s files-in-a-folder honesty or **Evernote**'s "everything in one place" feel, and want the two together, free and open source.
+
+| | Ergonotes | Obsidian | Evernote |
+|---|---|---|---|
+| Notes are stored as | plain `.md` files in a folder | plain `.md` files in a folder | the service's own database |
+| Account needed | no | no (for local use) | yes |
+| Source | Apache-2.0, open source | closed source, free for personal use | closed source |
+| Sync | end-to-end encrypted through your own S3, WebDAV or folder | paid Obsidian Sync, or your own tools | the service's cloud |
+| Tasks and calendar | built in | checkboxes; more through community plugins | built in |
+| Habit tracking | built in, with streaks and a heat map | through community plugins | no |
+| Plugins and themes | none yet | a very large ecosystem | no |
+
+Ergonotes also has meeting recording with a transcript, an optional AI assistant on your own key, and an MCP endpoint for agents; compare those with the other tools' own documentation, as they change quickly.
+
+**Where the others are ahead, honestly:** Obsidian has a huge plugin and theme ecosystem, a graph view, Canvas and years of polish. Evernote has a web clipper, shared notebooks and team features. Ergonotes is young: it has no plugin system, no web clipper, no real-time collaboration and no macOS build yet.
+
+### Moving from Obsidian
+
+An Obsidian vault is already a folder of Markdown, and Ergonotes works on such a folder directly (docs/adr/0010):
+
+1. Copy your vault first, as you would before trying any new tool.
+2. In the desktop or Android app choose that folder in *Settings* (or put the files in `Documents/Ergonotes`).
+3. Frontmatter `tags`, `[[wiki links]]` and folders are read as they are. What Ergonotes does not understand (`![[embeds]]`, `%%comments%%`, callouts, Dataview and Canvas blocks, odd list markers) is kept byte for byte and never rewritten.
+
+Plugins do not carry over, and there is no graph view yet.
+
+### Moving from Evernote
+
+1. In Evernote, export your notebooks as `.enex` files.
+2. `.enex` import is not built in yet (see docs/implementation-notes.md). Convert the export to Markdown with a converter such as [evernote2md](https://github.com/wormi4ok/evernote2md), which writes one `.md` file per note and keeps the attachments.
+3. Put the resulting folder in your vault. Every note is a file, so the notebooks become folders and the tags become frontmatter.
+
+## In detail
 
 | | |
 |---|---|
@@ -94,7 +162,7 @@ The toolchain (Node, Rust + Windows/Android targets, JDK, Android SDK/NDK, NSIS)
 
 ```sh
 docker build -t ergonotes-builder tools/builder     # once, ~16 GB
-tools/release.sh                                    # Windows installer, Linux .deb, server bundle, VS Code extension -> dist/release
+tools/release.sh                                    # Windows installer + portable zip, Linux .deb + AppImage, server bundle, VS Code extension -> dist/release
 tools/build-android.sh                              # signed release APK -> dist/release
 ```
 

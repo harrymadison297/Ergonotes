@@ -1,29 +1,55 @@
-import { AnimatePresence, motion, useAnimationFrame, useMotionValue, useMotionValueEvent, useReducedMotion, useScroll, useTransform, type MotionValue } from 'motion/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { motion, useAnimationFrame, useMotionValueEvent, useReducedMotion, useScroll, useTransform, type MotionValue } from 'motion/react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { STORY, type Story as StoryT } from '../data';
 import { VISUALS } from './StoryVisuals';
 
 const N = STORY.length;
+const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const rand = (seed: number) => { const x = Math.sin(seed * 12.9898) * 43758.5453; return x - Math.floor(x); };
 
-/** The headline, one word at a time: each flies in from its own direction; `*words*` carry the gradient. */
-function FlyWords({ text, seed }: { text: string; seed: number }) {
-  const words = useMemo(() => text.split(/(\*[^*]+\*)/).flatMap(part => (part.startsWith('*') ? part.slice(1, -1).split(' ').map(w => ({ w, a: true })) : part.split(' ').filter(Boolean).map(w => ({ w, a: false })))), [text]);
-  return (
-    <h2 className="story-h">
-      {words.map(({ w, a }, i) => (
-        <motion.span key={i} className={a ? 'gradient-text' : undefined} style={{ display: 'inline-block', marginRight: '0.28em' }}
-          initial={{ opacity: 0, x: (rand(seed * 31 + i) - 0.5) * 220, y: 40 + rand(seed * 17 + i) * 60, rotate: (rand(seed * 7 + i) - 0.5) * 30, filter: 'blur(8px)' }}
-          animate={{ opacity: 1, x: 0, y: 0, rotate: 0, filter: 'blur(0px)' }}
-          exit={{ opacity: 0, y: -40, filter: 'blur(6px)', transition: { duration: 0.25, delay: i * 0.015 } }}
-          transition={{ type: 'spring', stiffness: 130, damping: 15, delay: 0.05 + i * 0.045 }}>{w}</motion.span>
-      ))}
-    </h2>
-  );
+/**
+ * Everything on a slide is a function of the scroll position, not of a timer: a swipe moves the words and the picture
+ * as far as the finger went, nothing waits for an animation to finish, and nothing restarts when the finger is quick.
+ * `t` is where the page is on this slide (0 to 1 while it is the one shown); `enter` and `exit` are the short
+ * stretches at either end where it comes in and goes out; `vis` is how much of it can be seen.
+ */
+interface Phase { t: MotionValue<number>; enter: MotionValue<number>; exit: MotionValue<number>; vis: MotionValue<number> }
+
+function usePhase(p: MotionValue<number>, i: number): Phase {
+  const t = useTransform(p, v => v - i);
+  const enter = useTransform(t, v => (i === 0 ? 1 : clamp((v + 0.12) / 0.3)));
+  const exit = useTransform(t, v => (i === N - 1 ? 0 : clamp((v - 0.88) / 0.3)));
+  const vis = useTransform([enter, exit], ([e, x]: number[]) => Math.min(e, 1 - x));
+  return { t, enter, exit, vis };
+}
+
+/** A block of the copy that rises into place a little after the one before it (`k` is its place in the order). */
+function Staged({ ph, k, children, className, as = 'div' }: { ph: Phase; k: number; children: ReactNode; className?: string; as?: 'div' | 'p' | 'ul' | 'span' }) {
+  const own = (e: number) => clamp(e * 1.6 - k * 0.14);
+  const opacity = useTransform([ph.enter, ph.exit], ([e, x]: number[]) => own(e) * (1 - x));
+  const y = useTransform([ph.enter, ph.exit], ([e, x]: number[]) => (1 - own(e)) * 28 - x * 20);
+  const M = motion[as] as typeof motion.div;
+  return <M className={className} style={{ opacity, y }}>{children}</M>;
+}
+
+/** One word of the headline: it flies in from its own direction as the slide comes in. */
+function Word({ ph, i, seed, accent, children }: { ph: Phase; i: number; seed: number; accent: boolean; children: string }) {
+  const own = (e: number) => clamp(e * 1.9 - i * 0.075);
+  const dx = (rand(seed * 31 + i) - 0.5) * 220, dy = 40 + rand(seed * 17 + i) * 60, dr = (rand(seed * 7 + i) - 0.5) * 30;
+  const x = useTransform(ph.enter, e => (1 - own(e)) * dx);
+  const y = useTransform([ph.enter, ph.exit], ([e, o]: number[]) => (1 - own(e)) * dy - o * 36);
+  const rotate = useTransform(ph.enter, e => (1 - own(e)) * dr);
+  const opacity = useTransform([ph.enter, ph.exit], ([e, o]: number[]) => own(e) * (1 - o));
+  return <motion.span className={accent ? 'gradient-text' : undefined} style={{ display: 'inline-block', marginRight: '0.28em', x, y, rotate, opacity }}>{children}</motion.span>;
+}
+
+function Headline({ text, ph, seed }: { text: string; ph: Phase; seed: number }) {
+  const words = text.split(/(\*[^*]+\*)/).flatMap(part => (part.startsWith('*') ? part.slice(1, -1).split(' ').map(w => ({ w, a: true })) : part.split(' ').filter(Boolean).map(w => ({ w, a: false }))));
+  return <h2 className="story-h">{words.map(({ w, a }, i) => <Word key={i} ph={ph} i={i} seed={seed} accent={a}>{w}</Word>)}</h2>;
 }
 
 /** Words that circle the picture. Scrolling turns them; the ones at the back are smaller and sit behind the card. */
-function Orbit({ words, local, seed }: { words: string[]; local: MotionValue<number>; seed: number }) {
+function Orbit({ words, ph, seed }: { words: string[]; ph: Phase; seed: number }) {
   const box = useRef<HTMLDivElement>(null);
   const els = useRef<(HTMLSpanElement | null)[]>([]);
   const size = useRef({ w: 600, h: 500 });
@@ -34,73 +60,70 @@ function Orbit({ words, local, seed }: { words: string[]; local: MotionValue<num
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  useAnimationFrame(t => {
+  useAnimationFrame(time => {
+    const vis = ph.vis.get();
+    if (vis < 0.01) return; // a slide that is not on screen does not move
     const { w, h } = size.current;
-    const turn = local.get() * Math.PI * 1.4 + (t / 1000) * 0.14;
+    const turn = clamp(ph.t.get(), -0.3, 1.3) * Math.PI * 1.4 + (time / 1000) * 0.14;
+    const enter = ph.enter.get(), exit = ph.exit.get();
     words.forEach((_, i) => {
       const el = els.current[i];
       if (!el) return;
       const ring = i % 2; // two rings, so the words do not queue up on one line
       const a = (i / words.length) * Math.PI * 2 + turn * (ring ? -0.8 : 1) + seed;
-      const x = Math.cos(a) * w * (ring ? 0.48 : 0.41);
-      const y = Math.sin(a) * h * (ring ? 0.46 : 0.4);
+      const grow = clamp(enter * 1.7 - i * 0.07) * (1 - exit * 0.5);
+      const x = Math.cos(a) * w * (ring ? 0.48 : 0.41) * (0.5 + 0.5 * grow);
+      const y = Math.sin(a) * h * (ring ? 0.46 : 0.4) * (0.5 + 0.5 * grow);
       const depth = (Math.sin(a) + 1) / 2;
-      el.style.transform = `translate(-50%, -50%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${(0.78 + depth * 0.3).toFixed(3)})`;
-      el.style.opacity = String(0.66 + depth * 0.34);
+      el.style.transform = `translate(-50%, -50%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${((0.78 + depth * 0.3) * (0.3 + 0.7 * grow)).toFixed(3)})`;
+      el.style.opacity = String((0.66 + depth * 0.34) * grow * (1 - exit));
       el.style.zIndex = depth > 0.5 ? '3' : '0';
-      el.style.filter = depth < 0.3 ? 'blur(0.8px)' : 'none';
     });
   });
   return (
     <div className="orbit" ref={box} aria-hidden>
       {words.map((w, i) => (
         <span key={w} className="orb" ref={el => { els.current[i] = el; }}>
-          <motion.i initial={{ opacity: 0, scale: 0.2 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.4 }} transition={{ type: 'spring', stiffness: 150, damping: 14, delay: 0.3 + i * 0.06 }} className={`t-${['green', 'indigo', 'purple', 'orange', 'pink'][(i + seed) % 5]}`}>{w}</motion.i>
+          <i className={`t-${['green', 'indigo', 'purple', 'orange', 'pink'][(i + seed) % 5]}`}>{w}</i>
         </span>
       ))}
     </div>
   );
 }
 
-function Slide({ s, i, local, scrollTo }: { s: StoryT; i: number; local: MotionValue<number>; scrollTo: (i: number) => void }) {
+const Slide = memo(function Slide({ s, i, p }: { s: StoryT; i: number; p: MotionValue<number> }) {
   const Visual = VISUALS[s.id];
-  const rotateY = useTransform(local, [0, 1], [-9, 9]);
-  const rotateX = useTransform(local, [0, 1], [4, -4]);
-  const y = useTransform(local, [0, 1], [22, -22]);
+  const ph = usePhase(p, i);
   const Icon = s.icon;
+  const opacity = ph.vis;
+  const visibility = useTransform(ph.vis, v => (v > 0.01 ? 'visible' : 'hidden'));
+  const scale = useTransform([ph.enter, ph.exit], ([e, x]: number[]) => 0.86 + 0.14 * e - 0.06 * x);
+  const y = useTransform([ph.enter, ph.exit, ph.t], ([e, x, t]: number[]) => (1 - e) * 70 - x * 60 - (clamp(t) - 0.5) * 44);
+  const rotateY = useTransform(ph.t, t => (clamp(t, -0.3, 1.3) - 0.5) * 18);
+  const rotateX = useTransform(ph.t, t => -(clamp(t, -0.3, 1.3) - 0.5) * 8);
   return (
-    <motion.div className={`story-slide tone-${s.tone}`} key={s.id} exit={{ opacity: 1 }}>
+    <motion.div className={`story-slide tone-${s.tone}`} style={{ opacity, visibility }} aria-hidden>
       <div className="story-copy">
-        <motion.span className="story-num" initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 30 }} transition={{ duration: 0.5 }}>{String(i + 1).padStart(2, '0')}<small>/{String(N).padStart(2, '0')}</small></motion.span>
-        <motion.span className="story-kicker" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ delay: 0.05 }}><Icon size={16} aria-hidden /> {s.kicker}</motion.span>
-        <FlyWords text={s.headline} seed={i + 1} />
-        <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ delay: 0.35, duration: 0.5 }}>{s.text}</motion.p>
-        <motion.ul className="story-chips" initial="h" animate="s" exit="x" variants={{ s: { transition: { staggerChildren: 0.08, delayChildren: 0.55 } }, x: {} }}>
-          {s.chips.map(c => <motion.li key={c} variants={{ h: { opacity: 0, y: 14, scale: 0.9 }, s: { opacity: 1, y: 0, scale: 1 }, x: { opacity: 0 } }}>{c}</motion.li>)}
-        </motion.ul>
+        <Staged ph={ph} k={0} as="span" className="story-num">{String(i + 1).padStart(2, '0')}<small>/{String(N).padStart(2, '0')}</small></Staged>
+        <Staged ph={ph} k={1} as="span" className="story-kicker"><Icon size={16} aria-hidden /> {s.kicker}</Staged>
+        <Headline text={s.headline} ph={ph} seed={i + 1} />
+        <Staged ph={ph} k={5} as="p">{s.text}</Staged>
+        <Staged ph={ph} k={6} as="ul" className="story-chips">{s.chips.map(c => <li key={c}>{c}</li>)}</Staged>
       </div>
       <div className="story-visual">
-        <Orbit words={s.words} local={local} seed={i} />
-        <motion.div className="story-card" style={{ rotateY, rotateX, y, transformPerspective: 1100 }} initial={{ opacity: 0, scale: 0.86, y: 60 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94, y: -50 }} transition={{ type: 'spring', stiffness: 110, damping: 16 }}>
-          <Visual />
-        </motion.div>
+        <Orbit words={s.words} ph={ph} seed={i} />
+        <motion.div className="story-card" style={{ scale, y, rotateY, rotateX, transformPerspective: 1100 }}><Visual /></motion.div>
       </div>
-      <button className="sr-only" onClick={() => scrollTo(i)}>{s.kicker}</button>
     </motion.div>
   );
-}
+});
 
 function Pinned() {
   const ref = useRef<HTMLElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end end'] });
+  const p = useTransform(scrollYProgress, v => clamp(v) * N);
   const [i, setI] = useState(0);
-  const local = useMotionValue(0);
-  useMotionValueEvent(scrollYProgress, 'change', v => {
-    const x = Math.min(N - 0.001, Math.max(0, v * N));
-    const idx = Math.floor(x);
-    local.set(x - idx);
-    setI(idx);
-  });
+  useMotionValueEvent(p, 'change', v => { const n = Math.min(N - 1, Math.floor(v)); setI(prev => (prev === n ? prev : n)); });
   const scrollTo = (n: number) => {
     const el = ref.current;
     if (!el) return;
@@ -111,11 +134,7 @@ function Pinned() {
     <section className="story" ref={ref} id="features" aria-label="What Ergonotes is good at" style={{ ['--n' as string]: N }}>
       <div className="story-stick">
         <div className="story-bg" aria-hidden>{STORY.map((s, n) => <i key={s.id} className={`tone-${s.tone}`} style={{ opacity: n === i ? 1 : 0 }} />)}</div>
-        <div className="wrap story-grid">
-          <AnimatePresence mode="wait">
-            <Slide key={STORY[i].id} s={STORY[i]} i={i} local={local} scrollTo={scrollTo} />
-          </AnimatePresence>
-        </div>
+        <div className="wrap story-grid">{STORY.map((s, n) => <Slide key={s.id} s={s} i={n} p={p} />)}</div>
         <nav className="story-rail" aria-label="Feature slides">
           {STORY.map((s, n) => (
             <button key={s.id} className={n === i ? 'on' : ''} onClick={() => scrollTo(n)} aria-label={s.kicker} aria-current={n === i}><span>{s.kicker}</span><i /></button>
