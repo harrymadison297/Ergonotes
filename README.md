@@ -9,6 +9,8 @@ page breaks, dates, events, formulas, Mermaid diagrams, recordings and meetings 
 them is stored as standard Markdown (docs/adr/0009). A meeting is the audio of a call, pictures of the shared screen
 and a transcript, kept in one folder and played with the pictures marked on the timeline (docs/adr/0011).
 
+**[Download](https://github.com/harrymadison297/Ergonotes/releases/latest)** (Windows installer and portable, Linux `.deb` and AppImage, Android, server, VS Code). If it is useful to you, a ★ on GitHub helps others find it.
+
 ![Ergonotes on Windows and Android](docs/media/hero.png)
 
 ## What is in it
@@ -119,3 +121,11 @@ source format, passive Store, password-wrapped master key, ...). `docs/issues/` 
 ## Brand and UI
 
 Colours, type, components and voice are in [docs/brand-guidelines.md](docs/brand-guidelines.md); the CSS tokens that implement them are in `packages/app/src/styles/tokens.css`.
+
+## Website and demo
+
+`apps/site` is the landing page (React, Vite, `motion`); the demo at `/demo/` is the real app built with `vite build --mode demo`, which opens a made-up vault (`packages/app/src/demo`) in memory with no server. `npm run build:site` builds both into `apps/site/dist`; `vercel.json` makes Vercel do the same on every push.
+
+## License
+
+[Apache License 2.0](LICENSE), see also [NOTICE](NOTICE).
