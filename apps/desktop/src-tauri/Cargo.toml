@@ -1,6 +1,6 @@
 [package]
 name = "ergonotes"
-version = "0.1.0"
+version = "1.0.1"
 description = "Offline-first notes that sync through storage you own"
 edition = "2021"
 rust-version = "1.77"
