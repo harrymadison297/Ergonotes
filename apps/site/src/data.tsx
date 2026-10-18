@@ -35,13 +35,13 @@ export const SLIDES: Slide[] = [
   { id: 'tasks', icon: CheckCircle2, tone: 'pink', title: 'Tasks from anywhere', text: 'A checkbox in a meeting note and a checkbox in a recipe land in the same list, with their reminders.', light: 'tasks' },
 ];
 
-export interface Dl { icon: LucideIcon; tone: Tone; title: string; sub: string; file?: string; os?: 'windows' | 'linux' | 'android' }
+export interface Dl { icon: LucideIcon; tone: Tone; title: string; sub: string; file?: string }
 export const DOWNLOADS: Dl[] = [
-  { icon: Monitor, tone: 'indigo', title: 'Windows installer', sub: 'Windows 10 and 11 · x64 · .exe', file: 'Ergonotes-windows-x64-setup.exe', os: 'windows' },
+  { icon: Monitor, tone: 'indigo', title: 'Windows installer', sub: 'Windows 10 and 11 · x64 · .exe', file: 'Ergonotes-windows-x64-setup.exe' },
   { icon: Usb, tone: 'indigo', title: 'Windows portable', sub: 'No install, run from any folder · .zip', file: 'Ergonotes-windows-x64-portable.zip' },
-  { icon: Package, tone: 'orange', title: 'Linux .deb', sub: 'Debian, Ubuntu and friends · amd64', file: 'Ergonotes-linux-amd64.deb', os: 'linux' },
+  { icon: Package, tone: 'orange', title: 'Linux .deb', sub: 'Debian, Ubuntu and friends · amd64', file: 'Ergonotes-linux-amd64.deb' },
   { icon: Package, tone: 'orange', title: 'Linux AppImage', sub: 'Portable, runs on most distros · x86_64', file: 'Ergonotes-linux-x86_64.AppImage' },
-  { icon: Smartphone, tone: 'green', title: 'Android', sub: 'Android 7+ · signed .apk', file: 'Ergonotes-android.apk', os: 'android' },
+  { icon: Smartphone, tone: 'green', title: 'Android', sub: 'Android 7+ · signed .apk', file: 'Ergonotes-android.apk' },
   { icon: Server, tone: 'purple', title: 'Server peer', sub: 'Web UI and MCP for your own Linux box · .tgz', file: 'ergonotes-server.tgz' },
   { icon: Terminal, tone: 'pink', title: 'VS Code extension', sub: 'Read and edit your vault in VS Code · .vsix', file: 'ergonotes-vscode.vsix' },
   { icon: Apple, tone: 'pink', title: 'macOS', sub: 'Coming soon' },
