@@ -1335,13 +1335,13 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .widget.editing.dragging { opacity: .45; }
 .widget.editing.over { box-shadow: 0 -4px 0 0 var(--sel), 0 0 0 1.5px var(--border-field, var(--border)); }
 .w-body.inert { pointer-events: none; user-select: none; opacity: .72; }
-.w-edit { display: flex; align-items: center; gap: 2px; margin: -6px -6px 10px; padding: 4px; background: var(--bg-soft, var(--bg-sidebar)); border-radius: var(--radius); flex-wrap: wrap; cursor: default; }
+.w-edit { display: flex; align-items: center; gap: 0; margin: -6px -6px 10px; padding: 4px; background: var(--bg-soft, var(--bg-sidebar)); border-radius: var(--radius); flex-wrap: wrap; cursor: default; }
 .w-edit .grow { flex: 1; }
-.w-edit .icon-btn { width: 28px; height: 28px; }
+.w-edit .icon-btn { width: 24px; height: 28px; }
 .w-edit .icon-btn:disabled { opacity: .3; }
-.w-edit .seg { margin-left: 6px; }
-.w-edit .seg button { padding: 2px 8px; font-size: var(--fs-xs); }
-.w-grip { display: inline-grid; place-items: center; width: 24px; color: var(--text-3); cursor: grab; }
+.w-edit .seg { margin-left: 4px; }
+.w-edit .seg button { padding: 2px 6px; font-size: var(--fs-xs); }
+.w-grip { display: inline-grid; place-items: center; width: 18px; color: var(--text-3); cursor: grab; }
 
 .w-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 6px 4px; text-align: center; color: var(--text-2); }
 .w-empty p { margin: 0; font-size: var(--fs-s); }
@@ -1368,10 +1368,10 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .widget.w-scratch.size-M .scratch-box { height: 340px; }
 .widget.w-scratch.size-L .scratch-box { height: 480px; }
 
-.w-greeting { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; }
-.w-greeting h3 { margin: 0; font-size: var(--fs-title); line-height: 1.15; color: var(--text-strong); }
-.w-greeting p { margin: 4px 0 0; font-size: var(--fs-s); }
-.w-greeting .mood { color: var(--text-2); }
+.greet { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; }
+.greet h3 { margin: 0; font-size: var(--fs-title); line-height: 1.15; color: var(--text-strong); }
+.greet p { margin: 4px 0 0; font-size: var(--fs-s); }
+.greet .mood { color: var(--text-2); }
 .g-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 
 .hcal .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px 0; text-align: center; }
@@ -1421,4 +1421,4 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .gallery li { display: flex; align-items: center; gap: 12px; padding: 9px 2px; border-bottom: 1px solid var(--border); }
 .gallery .info { flex: 1; display: grid; gap: 2px; min-width: 0; }
 .gallery .info span { color: var(--text-2); font-size: var(--fs-s); }
-@media (max-width: 767px) { .widget { padding: 14px; } .widget.headless { padding: 16px; } .w-greeting h3 { font-size: 24px; } }
+@media (max-width: 767px) { .widget { padding: 14px; } .widget.headless { padding: 16px; } .greet h3 { font-size: 24px; } }

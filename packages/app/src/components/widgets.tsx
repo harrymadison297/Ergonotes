@@ -85,7 +85,7 @@ function Greeting() {
   const live = app.habits.filter(h => !h.archived);
   const allMet = live.length > 0 && live.every(h => h.status.todayState === 'met');
   return (
-    <div className="w-greeting">
+    <div className="greet">
       <div className="g-text">
         <h3>Happy {now.toLocaleDateString('en', { weekday: 'long' })}</h3>
         <p className="muted">{now.toLocaleDateString('en', { day: 'numeric', month: 'long', year: 'numeric' })}, {now.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' })}</p>
