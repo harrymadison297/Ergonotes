@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ergonotes.vercel.app/sitemap.xml
