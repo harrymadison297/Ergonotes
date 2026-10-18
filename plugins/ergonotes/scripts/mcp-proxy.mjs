@@ -33,7 +33,7 @@ function whileDown(msg, why) {
   const note = `${DOWN_NOTE} (${why})`;
   switch (msg.method) {
     case 'initialize':
-      return { jsonrpc: '2.0', id: msg.id, result: { protocolVersion: msg.params?.protocolVersion ?? '2025-06-18', capabilities: { tools: { listChanged: true } }, serverInfo: { name: 'ergonotes', title: 'Ergonotes', version: '1.0.1' }, instructions: note } };
+      return { jsonrpc: '2.0', id: msg.id, result: { protocolVersion: msg.params?.protocolVersion ?? '2025-06-18', capabilities: { tools: { listChanged: true } }, serverInfo: { name: 'ergonotes', title: 'Ergonotes', version: '1.0.2' }, instructions: note } };
     case 'tools/list': staleList = true; return { jsonrpc: '2.0', id: msg.id, result: { tools: [] } };
     case 'ping': return { jsonrpc: '2.0', id: msg.id, result: {} };
     case 'tools/call': return { jsonrpc: '2.0', id: msg.id, result: { isError: true, content: [{ type: 'text', text: note }] } };
