@@ -1,0 +1,15 @@
+{
+  "name": "ergonotes",
+  "description": "The Ergonotes plugin for Claude Code",
+  "owner": { "name": "Ergonotes", "url": "https://github.com/harrymadison297/Ergonotes" },
+  "plugins": [
+    {
+      "name": "ergonotes",
+      "source": "./plugins/ergonotes",
+      "description": "Work on your Ergonotes notes from Claude Code: local MCP endpoint, and skills for writing, capturing, planning, tagging, drawing and keeping the vault tidy.",
+      "version": "1.0.1",
+      "category": "productivity",
+      "keywords": ["notes", "markdown", "mcp", "excalidraw"]
+    }
+  ]
+}

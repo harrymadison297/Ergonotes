@@ -1,0 +1,10 @@
+{
+  "name": "ergonotes",
+  "version": "1.0.1",
+  "description": "Work on your Ergonotes notes from Claude Code: the local MCP endpoint of the desktop app, and skills for writing, capturing, planning, tagging, drawing and keeping the vault tidy.",
+  "author": { "name": "Ergonotes", "url": "https://github.com/harrymadison297/Ergonotes" },
+  "homepage": "https://github.com/harrymadison297/Ergonotes",
+  "repository": "https://github.com/harrymadison297/Ergonotes",
+  "license": "Apache-2.0",
+  "keywords": ["notes", "markdown", "mcp", "excalidraw", "zettelkasten", "para", "obsidian-alternative"]
+}
