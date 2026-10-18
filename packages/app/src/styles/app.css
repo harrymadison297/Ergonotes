@@ -599,6 +599,8 @@ html.kbd .resizer:focus-visible { outline: none; }
 .card .t { font-size: var(--fs-s); font-weight: 700; }
 .card .s { white-space: normal; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; font-size: var(--fs-s); }
 .card .foot { flex-wrap: wrap; font-size: var(--fs-2xs); }
+.card > .crumb, .card > .t, .card > .foot { flex: none; }
+.card > .s { flex: 1 1 0; min-height: 0; }
 .card .foot .date { color: var(--text-2); margin-top: 4px; flex-basis: 100%; }
 .card.create { align-items: center; justify-content: center; gap: 12px; cursor: pointer; font-size: var(--fs-s); color: var(--text-strong); }
 .create-dot { width: 40px; height: 40px; border-radius: 50%; background: var(--green-fill); color: var(--on-green); display: grid; place-items: center; }
