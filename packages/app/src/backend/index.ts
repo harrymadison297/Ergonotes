@@ -1,6 +1,7 @@
 import { FsPersist, listModels, MemFs, streamChat, transcribeAudio, transcribeTimed, Vault, VAULT_METHODS, type AiEvent, type AiTransport, type AudioFile, type ModelInfo, type TimedTranscript, type VaultApi, type VaultEvent, type VaultStatus } from '@ergonotes/core';
 import { IdbPersist } from '@ergonotes/core/browser';
 import { tauriFolder, type VaultFolder } from './tauriFs';
+import { DEMO } from '../demo/flag';
 
 export interface Backend {
   api: VaultApi;
@@ -155,6 +156,8 @@ class LocalBackend implements Backend {
 }
 
 export async function createBackend(): Promise<Backend> {
+  // the public demo (`vite build --mode demo`): a made-up vault in memory
+  if (DEMO) return (await import('../demo/backend')).createDemoBackend();
   const inTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
   if (!inTauri) {
     try {

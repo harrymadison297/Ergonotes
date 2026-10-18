@@ -1,3 +1,5 @@
+import { DEMO } from '../demo/flag';
+import { DemoBar } from '../demo/DemoBar';
 import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, CheckCircle2, ChevronRight, Cloud, FilePlus2, FileText, Folder as FolderIcon, Home as HomeIcon, Keyboard, LayoutTemplate,
@@ -364,7 +366,7 @@ export function Shell() {
   const focus = prefs.focus && app.route.name === 'notes' && !!app.route.note;
   useLeaveFocusOnEscape(focus);
   if (app.isMobile) {
-    return <><MobileShell /><RightSidebar /><RecordingDock /><DialogHost /><ScanPill /><Toasts toasts={app.toasts} /></>;
+    return <><MobileShell /><RightSidebar /><RecordingDock /><DialogHost /><ScanPill /><Toasts toasts={app.toasts} />{DEMO && <DemoBar />}</>;
   }
   return (
     <>
@@ -377,6 +379,7 @@ export function Shell() {
       <DialogHost />
       <ScanPill />
       <Toasts toasts={app.toasts} />
+      {DEMO && <DemoBar />}
     </>
   );
 }

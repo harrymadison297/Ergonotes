@@ -1422,3 +1422,14 @@ button, a, input, select, textarea, summary, [role='button'], [role='tab'] { tou
 .gallery .info { flex: 1; display: grid; gap: 2px; min-width: 0; }
 .gallery .info span { color: var(--text-2); font-size: var(--fs-s); }
 @media (max-width: 767px) { .widget { padding: 14px; } .widget.headless { padding: 16px; } .greet h3 { font-size: 24px; } }
+
+/* ---- the public demo (src/demo) ---- */
+.demo-bar { position: fixed; right: 14px; bottom: 14px; z-index: 70; display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 14px; border-radius: 999px; background: var(--toast-bg); color: #fff; box-shadow: var(--shadow-pop); font-size: 13px; }
+.demo-bar-text { padding-right: 6px; }
+.demo-bar-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.12); color: #fff; font: inherit; cursor: pointer; text-decoration: none; transition: background var(--t-fast, 120ms) ease-out, transform var(--t-fast, 120ms) ease-out; }
+.demo-bar-btn:hover { background: rgba(255, 255, 255, 0.22); }
+.demo-bar-btn:active { transform: scale(0.96); }
+.demo-bar-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.demo-bar-star { background: var(--green-fill); }
+.demo-bar-star:hover { background: var(--green-fill-hover); }
+@media (max-width: 720px) { .demo-bar-long { display: none; } .demo-bar { bottom: 74px; right: 10px; } }

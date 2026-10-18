@@ -11,6 +11,11 @@ import { setWantsToJoin } from '../state/firstRun';
 import { warnNoPassword } from '../state/noPassword';
 import { StoreForm, formFromStore, storeFromForm, type StoreFormState } from './StoreForm';
 import { askConfirm } from '../state/confirm';
+import { DEMO } from '../demo/flag';
+import { DemoNotice } from '../demo/DemoBar';
+
+/** The parts of Settings that need an installed app: they are explained, not shown, in the web demo. */
+const DEMO_BLOCKED: Record<string, string> = { sync: 'Sync & storage', ai: 'AI connections', security: 'Security', data: 'Data' };
 
 // ---------------------------------------------------------------- conflicted revision
 export function ConflictDialog({ id, onClose }: { id: string; onClose: () => void }) {
@@ -275,6 +280,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
   const [confirmRemove, setConfirmRemove] = useState(false);
   const folders = app.items.filter(i => i.type === 'folder' && !i.inTrash);
   const remote = app.mode === 'remote';
+  const blocked = DEMO ? DEMO_BLOCKED[tab] : undefined;
 
   useEffect(() => { setName(app.status.deviceName); }, [app.status.deviceName]);
 
@@ -295,6 +301,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
         {[['general', 'General'], ['sync', 'Sync & storage'], ['ai', 'AI'], ...(remote ? [['agents', 'Agents (MCP)']] : []), ['keyboard', 'Keyboard'], ['security', 'Security'], ['data', 'Data']].map(([k, l]) =>
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>)}
       </div>
+      {blocked && <DemoNotice what={blocked} />}
       {tab === 'general' && (
         <div style={{ maxWidth: 520 }}>
           <div className="field"><label htmlFor="s-name">This device’s name</label>
@@ -327,7 +334,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
               {folders.map(f => <option key={f.id} value={f.id}>{f.title}</option>)}</select></div>
         </div>
       )}
-      {tab === 'sync' && (
+      {!blocked && tab === 'sync' && (
         <div style={{ maxWidth: 560 }}>
           {app.status.store && (
             <p style={{ marginTop: 0 }}>Syncing with <b>{app.status.store.label}</b> ({app.status.store.type}).{' '}
@@ -354,10 +361,10 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
           )}
         </div>
       )}
-      {tab === 'ai' && <AiSettings />}
+      {!blocked && tab === 'ai' && <AiSettings />}
       {tab === 'keyboard' && <KeyboardSettings />}
       {tab === 'agents' && remote && <AgentsPanel />}
-      {tab === 'security' && (
+      {!blocked && tab === 'security' && (
         <div style={{ maxWidth: 480 }}>
           {!app.status.hasPassword ? (
             <>
@@ -404,7 +411,7 @@ export function SettingsDialog({ tab: initialTab, onClose }: { tab?: string; onC
           {app.status.hasPassword && <p className="hint">Forgetting the password means your notes can't be recovered from the storage; there is no reset.</p>}
         </div>
       )}
-      {tab === 'data' && (
+      {!blocked && tab === 'data' && (
         <div style={{ maxWidth: 520 }}>
           {app.folder && (
             <div className="field vault-folder">

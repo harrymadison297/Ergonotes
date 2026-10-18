@@ -18,3 +18,4 @@ dist/
 
 # the packaged VS Code extension
 apps/vscode/*.vsix
+dist-demo/
