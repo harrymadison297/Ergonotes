@@ -249,7 +249,7 @@ export function RecordPlayer({ paths, label, insertAfter }: RecordPlayerProps) {
           <summary>Transcript <span className="hint">{blocks.length} minute{blocks.length === 1 ? '' : 's'}</span></summary>
           {editing !== null ? (
             <div>
-              <textarea className="input" rows={14} value={editing} onChange={e => setEditing(e.target.value)} aria-label="Transcript text" spellCheck />
+              <textarea className="input" rows={14} value={editing} onChange={e => setEditing(e.target.value)} aria-label="Transcript text" spellCheck={false} />
               <p className="hint">Each <code>[m:ss]</code> line is a time mark: change the words, keep the marks.</p>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn primary" onClick={() => void saveTranscript()}><Check size={15} /> Save</button>

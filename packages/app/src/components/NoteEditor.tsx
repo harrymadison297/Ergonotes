@@ -178,7 +178,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
       }),
       Markdown.configure({ html: false, tightLists: true, bulletListMarker: '-', linkify: true, breaks: false, transformPastedText: true }),
     ],
-    editorProps: { attributes: { class: 'prose', 'aria-label': 'Note body', spellcheck: 'true' } },
+    editorProps: { attributes: { class: 'prose', 'aria-label': 'Note body', spellcheck: 'false' } },
     onUpdate: ({ editor: e }) => {
       if (loadedFor.current?.id !== idRef.current) return;
       dirty.current = true;
