@@ -7,6 +7,8 @@ mkdir -p "$ROOT/dist/release"
 RUN="docker run --rm --user $(id -u):$(id -g) -e HOME=/work/temp/home -v $ROOT:/work -w /work/apps/desktop ergonotes-builder"
 mkdir -p "$ROOT/temp/home"
 $RUN sh -c 'cd /work && npm install --no-audit --no-fund >/dev/null && npm -w @ergonotes/app run build >/dev/null'
+# an installer of an earlier version left in a bundle folder would match the globs below: start each from nothing
+rm -f "$ROOT"/apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe "$ROOT"/apps/desktop/src-tauri/target/release/bundle/deb/*.deb "$ROOT"/apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
 $RUN npx @tauri-apps/cli build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
 cp "$ROOT"/apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe "$ROOT/dist/release/Ergonotes-windows-x64-setup.exe"
 # Windows portable: the executable the installer carries, in a zip. It needs the WebView2 runtime (part of Windows 11).
