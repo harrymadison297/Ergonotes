@@ -225,6 +225,18 @@ describe('providers', () => {
     await expect(collect(streamChat(cfg(), { model: 'chat', messages: [] }, { fetchImpl: reject }))).rejects.toThrow(/rejected the API key/);
     await expect(collect(streamChat(cfg({ keys: {} }), { model: 'chat', messages: [] }))).rejects.toThrow(/Add an API key to/);
   });
+
+  it('unwraps an answer nested as JSON text', async () => {
+    const nested = (async () => new Response(JSON.stringify({ error: { message: JSON.stringify({ error: { message: 'audio input is not supported' } }) } }), { status: 500 })) as unknown as typeof fetch;
+    const conn = { id: 'o', name: 'Ollama', type: 'custom' as const, url: 'http://10.0.0.2:11434' };
+    await expect(listModels(conn, { fetchImpl: nested })).rejects.toThrow('audio input is not supported');
+  });
+
+  it('does not blame the key when a self-hosted server answers 403', async () => {
+    const forbidden = (async () => new Response(null, { status: 403 })) as unknown as typeof fetch;
+    const conn = { id: 'o', name: 'Ollama', type: 'custom' as const, url: 'http://10.0.0.2:11434' };
+    await expect(listModels(conn, { fetchImpl: forbidden })).rejects.toThrow(/OLLAMA_ORIGINS/);
+  });
 });
 
 describe('agent', () => {

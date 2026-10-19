@@ -17,7 +17,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-http = "2"
+# unsafe-headers: lets a request leave out the Origin the plugin would add (a self-hosted AI server may refuse it)
+tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 percent-encoding = "2"

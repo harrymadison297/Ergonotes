@@ -40,6 +40,11 @@ export async function* sseData(res: Response): AsyncGenerator<string> {
 /** The provider's own explanation: OpenRouter hides the useful part (which upstream, why) under `metadata.raw`. */
 function explain(j: { error?: { message?: string; metadata?: { raw?: unknown } } | string; message?: string }): string | null {
   if (typeof j.error === 'string') return j.error;
+  // a gateway (Ollama in front of llama.cpp) can wrap the real answer as JSON text inside `message`
+  const wrapped = j.error?.message;
+  if (typeof wrapped === 'string' && wrapped.startsWith('{')) {
+    try { const w = JSON.parse(wrapped) as { error?: { message?: string } | string }; const m = typeof w.error === 'string' ? w.error : w.error?.message; if (m) return m; } catch { /* plain text */ }
+  }
   const raw = j.error?.metadata?.raw;
   if (typeof raw === 'string' && raw.trim()) {
     try {
@@ -52,10 +57,20 @@ function explain(j: { error?: { message?: string; metadata?: { raw?: unknown } }
   return j.error?.message ?? j.message ?? null;
 }
 
-async function failure(res: Response): Promise<AiError> {
+/**
+ * A server of the person's own (Ollama…) checks where a request comes from and refuses an app origin it does not know
+ * (`http://tauri.localhost` on Windows and Android). The desktop HTTP plugin adds that Origin itself; an empty one asks it
+ * to leave the header out. A browser ignores the header, so this changes nothing there.
+ */
+const NO_ORIGIN = { origin: '' };
+
+async function failure(res: Response, custom = false): Promise<AiError> {
   let msg = `The AI provider answered ${res.status}`;
   try { msg = explain((await res.json()) as Parameters<typeof explain>[0]) ?? msg; } catch { /* keep the status text */ }
-  if (res.status === 401 || res.status === 403) msg = `The provider rejected the API key (${msg})`;
+  // A server of the person's own (Ollama, LM Studio…) usually has no key: a 403 there is the server refusing where
+  // the request comes from (Ollama's OLLAMA_ORIGINS), not a wrong key.
+  if (custom && res.status === 403) msg = `The server refused this app's request (403). If it is Ollama, start it with OLLAMA_ORIGINS=* (or add http://tauri.localhost) and restart it. (${msg})`;
+  else if (res.status === 401 || res.status === 403) msg = `The provider rejected the API key (${msg})`;
   else if (res.status === 429) msg = `Rate limited: ${msg}`;
   return new AiError(msg, res.status);
 }
@@ -165,10 +180,10 @@ async function* openAiStyle(cfg: AiConfig, req: AiRequest, o: StreamOptions): As
   if (req.tools?.length) body.tools = req.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
   const res = await post(url, {
     method: 'POST', signal: o.signal,
-    headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}), ...(custom ? {} : { 'x-title': 'Ergonotes' }) },
+    headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}), ...(custom ? NO_ORIGIN : { 'x-title': 'Ergonotes' }) },
     body: JSON.stringify(body),
   }, o);
-  if (!res.ok) throw await failure(res);
+  if (!res.ok) throw await failure(res, custom);
   const calls = new Map<number, { id: string; name: string; args: string }>();
   const split = new ThinkSplitter();
   for await (const data of sseData(res)) {
@@ -349,6 +364,7 @@ export async function listModels(conn: AiConnection, o: Pick<StreamOptions, 'fet
   if (conn.type === 'custom') {
     if (!conn.url) throw new AiError(`Add the address of “${conn.name}” first.`);
     url = `${apiBase(conn.url)}/models`;
+    Object.assign(headers, NO_ORIGIN);
     if (key) headers.authorization = `Bearer ${key}`;
   } else if (conn.type === 'anthropic') {
     if (!key) throw new AiError(`Add an API key to “${conn.name}” first.`);
@@ -361,7 +377,7 @@ export async function listModels(conn: AiConnection, o: Pick<StreamOptions, 'fet
     if (key) headers.authorization = `Bearer ${key}`;
   }
   const res = await post(url, { method: 'GET', headers, signal: o.signal }, o);
-  if (!res.ok) throw await failure(res);
+  if (!res.ok) throw await failure(res, conn.type === 'custom');
   const j = (await res.json()) as {
     data?: { id?: string; name?: string; display_name?: string; context_length?: number; pricing?: { prompt?: string; completion?: string }; supported_parameters?: string[] }[];
     models?: { name?: string; model?: string }[];
@@ -409,12 +425,12 @@ export async function transcribeTimed(cfg: AiConfig, file: AudioFile, o: StreamO
     form.append('response_format', format);
     return post(`${apiBase(t.conn.url)}/audio/transcriptions`, {
       method: 'POST', body: form, signal: o.signal,
-      headers: t.conn.key ? { authorization: `Bearer ${t.conn.key}` } : {},
+      headers: { ...(t.conn.type === 'custom' ? NO_ORIGIN : {}), ...(t.conn.key ? { authorization: `Bearer ${t.conn.key}` } : {}) },
     }, o);
   };
   let res = await ask(timed ? 'verbose_json' : 'json');
   if (timed && (res.status === 400 || res.status === 422)) res = await ask('json');
-  if (!res.ok) throw await failure(res);
+  if (!res.ok) throw await failure(res, t.conn.type === 'custom');
   const j = await res.json().catch(() => null) as { text?: unknown; segments?: { start?: unknown; end?: unknown; text?: unknown }[] } | null;
   if (!j || typeof j.text !== 'string') throw new AiError('The server answered, but not with a transcript. Is this an OpenAI-style transcription model?');
   const segments = Array.isArray(j.segments)
