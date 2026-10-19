@@ -162,7 +162,7 @@ export async function handleRpc(vault: McpVault, msg: Json, opts: McpOptions = {
       return reply({
         protocolVersion: version,
         capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false }, prompts: { listChanged: false } },
-        serverInfo: { name: 'ergonotes', title: 'Ergonotes', version: opts.version ?? '1.0.4' },
+        serverInfo: { name: 'ergonotes', title: 'Ergonotes', version: opts.version ?? '1.0.5' },
         instructions: ERGONOTES_INSTRUCTIONS,
       });
     }

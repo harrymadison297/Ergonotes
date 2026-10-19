@@ -1,6 +1,6 @@
 [package]
 name = "ergonotes"
-version = "1.0.4"
+version = "1.0.5"
 description = "Offline-first notes that sync through storage you own"
 authors = ["Ergonotes"]
 license = "Apache-2.0"
