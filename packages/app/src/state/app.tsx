@@ -66,7 +66,8 @@ export type DialogState =
   | { kind: 'rename'; id: string }
   | { kind: 'renameTag'; tag: string }
   | { kind: 'import' }
-  | { kind: 'file'; id: string };
+  | { kind: 'file'; id: string }
+  | { kind: 'web'; url: string };
 
 const Ctx = createContext<AppCtx | null>(null);
 export const useApp = (): AppCtx => {

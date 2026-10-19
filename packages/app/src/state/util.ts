@@ -45,6 +45,20 @@ export function isoDay(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** A web address a person may be sent to: http(s) only (a note is a file other people write too). */
+export const isWebUrl = (u: string): boolean => /^https?:\/\/[^\s/$.?#][^\s]*$/i.test(u);
+
+/** Open an address in the system's browser. The installed desktop app has none to hand a link to, so its shell is asked. */
+export async function openInBrowser(url: string): Promise<void> {
+  if (!isWebUrl(url)) return;
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window && !window.ErgoVault) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('open_url', { url });
+    return;
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 /** Save a Blob as a file through a temporary link. */
 /**
  * Keep a file the person asked for. A browser saves it through a temporary link. The installed desktop app has no download

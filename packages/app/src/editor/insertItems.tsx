@@ -2,7 +2,7 @@
 import type { ReactNode } from 'react';
 import type { Editor } from '@tiptap/core';
 import {
-  AudioLines, Calendar, CalendarClock, CalendarDays, CheckCircle2, CheckSquare, Clock, Code, FilePlus2, FileText, FunctionSquare, Hash, Heading1, Heading2, Heading3,
+  AudioLines, Bell, Calendar, CalendarClock, CalendarDays, CheckCircle2, CheckSquare, Clock, Code, FilePlus2, FileText, Flag, FunctionSquare, Hash, Heading1, Heading2, Heading3,
   ImageIcon, Link2, List, ListOrdered, ListTree, Mic, MicVocal, Minus, Network, Paperclip, Pencil, Quote, Scissors, Sigma, StickyNote, Table2, ToggleLeft,
 } from 'lucide-react';
 import { canShareScreen } from '../record/run';
@@ -18,7 +18,10 @@ export interface InsertCtx {
   eventDialog(): void;
   dateDialog(): void;
   linkedNoteDialog(): void;
+  /** start a link: its Markdown is put into the note to be filled in (no dialog) */
   link(): void;
+  /** set an `@due(...)`, `@remind(...)` or `@flag` on the task holding the cursor (the line becomes a task first) */
+  taskToken(kind: 'due' | 'remind' | 'flag'): void;
   record(kind: 'recording' | 'meeting' | 'dictate'): void;
   transcribeDialog(): void;
   /** open the contents of the note (computed from its headings) */
@@ -58,7 +61,10 @@ export const INSERT_ITEMS: InsertItem[] = [
   { id: 'link-note', group: 'Essentials', label: 'Link to note', icon: <FileText size={S} />, keywords: 'wiki backlink [[', hint: '[[', run: c => c.editor.chain().focus().insertContent('[[').run() },
   { id: 'tag', group: 'Essentials', label: 'Tag', icon: <Hash size={S} />, keywords: 'hashtag label inline tag', run: c => c.focusTags() },
   { id: 'date', group: 'Essentials', label: 'Date mention', icon: <Calendar size={S} />, keywords: 'day mention', hint: '@date', run: c => c.dateDialog() },
-  { id: 'link', group: 'Essentials', label: 'Link', icon: <Link2 size={S} />, keywords: 'url web address', run: c => c.link() },
+  { id: 'link', group: 'Essentials', label: 'Link', icon: <Link2 size={S} />, keywords: 'url web address http markdown [](', hint: '[text](url)', run: c => c.link() },
+  { id: 'due', group: 'Essentials', label: 'Due date', icon: <CalendarDays size={S} />, keywords: '@due deadline task by when', hint: '@due', run: c => c.taskToken('due') },
+  { id: 'remind', group: 'Essentials', label: 'Reminder', icon: <Bell size={S} />, keywords: '@remind alarm notify task', hint: '@remind', run: c => c.taskToken('remind') },
+  { id: 'flag', group: 'Essentials', label: 'Flag task', icon: <Flag size={S} />, keywords: '@flag important priority star task', hint: '@flag', run: c => c.taskToken('flag') },
   { id: 'toc', group: 'Essentials', label: 'Contents', icon: <ListTree size={S} />, keywords: 'table of contents outline toc headings', run: c => c.contents() },
   { id: 'table', group: 'Essentials', label: 'Table', icon: <Table2 size={S} />, run: c => c.editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
   { id: 'divider', group: 'Essentials', label: 'Divider', icon: <Minus size={S} />, keywords: 'rule line separator', hint: '---', run: c => c.editor.chain().focus().setHorizontalRule().run() },
@@ -105,7 +111,7 @@ export function matchInsert(items: InsertItem[], q: string): InsertItem[] {
   const t = q.trim().toLowerCase();
   if (!t) return items;
   const words = t.split(/\s+/);
-  const rank = (i: InsertItem) => { const l = i.label.toLowerCase(); return l.startsWith(t) ? 0 : l.includes(t) ? 1 : 2; };
+  const rank = (i: InsertItem) => { const l = i.label.toLowerCase(); return l === t ? -1 : l.startsWith(t) ? 0 : l.includes(t) ? 1 : 2; };
   return items.filter(i => { const hay = `${i.label} ${i.keywords ?? ''} ${i.hint ?? ''}`.toLowerCase(); return words.every(w => hay.includes(w)); }).sort((a, b) => rank(a) - rank(b));
 }
 

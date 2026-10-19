@@ -112,6 +112,10 @@ _Avoid_: Label, category, keyword
 A standard Markdown link to another note's file, `[Title](path/Note.md)`; `[[Title]]` written by other tools is read too. Renaming or moving a note rewrites the links that point at it. The reverse view of a Link is a **Backlink**.
 _Avoid_: Reference, relation, mention
 
+**Web viewer**:
+The window that shows a web address written in a Note (a page or a PDF) inside the app, opened by clicking the link, with a button to open it in the browser instead. A page that forbids being shown inside another app stays empty there. A link to a Note or an Attachment of the Vault is not shown in it.
+_Avoid_: Browser, preview (a preview is of an Attachment)
+
 **Template**:
 A Note marked as a Template that seeds new Notes with content, default Folder and default Tags.
 _Avoid_: Boilerplate, snippet

@@ -337,6 +337,39 @@ fn reveal(_p: &Path) -> Result<(), String> {
 }
 
 
+/// Open a web or mail address in the system's browser: the webview has no browser of its own to hand a link to.
+/// Only these schemes are passed on, so a note cannot make the app start a program.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let lower = url.to_ascii_lowercase();
+    let ok = (lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")) && !url.chars().any(|c| c.is_control() || c == ' ');
+    if !ok {
+        return Err("Only web and mail addresses can be opened".into());
+    }
+    open_address(&url)
+}
+
+#[cfg(target_os = "windows")]
+fn open_address(url: &str) -> Result<(), String> {
+    // not `cmd /c start`: that would read an `&` in the address as a second command
+    std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", url]).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn open_address(url: &str) -> Result<(), String> {
+    std::process::Command::new("open").arg(url).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+fn open_address(url: &str) -> Result<(), String> {
+    std::process::Command::new("xdg-open").arg(url).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "android")]
+fn open_address(_url: &str) -> Result<(), String> {
+    Err("Opening the browser is not available on Android".into())
+}
+
 // ---------------------------------------------------------------- "Open with": files outside the vault
 // The person picked these files themselves (Explorer's Open with, a double click), so unlike the vault commands
 // these take a full path. Nothing is added to them: no id, no frontmatter; they are read and written as they are.
@@ -613,6 +646,7 @@ pub fn run() {
             vault_mkdir,
             vault_stat,
             vault_reveal,
+            open_url,
             device_meta_load,
             device_meta_save,
             open_with_take,

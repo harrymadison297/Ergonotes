@@ -17,6 +17,7 @@ import { HabitsView } from '../views/Habits';
 import { NotesView, TrashView } from '../views/Notes';
 import { TasksView } from '../views/Tasks';
 import { FilePreviewDialog } from './FilePreview';
+import { WebViewer } from './WebViewer';
 import { ExternalView } from '../views/External';
 import { SearchPalette } from './SearchPalette';
 import { ConflictDialog, HistoryDialog, ImportDialog, MoveDialog, NameDialog, SettingsDialog, TemplatesDialog } from './Dialogs';
@@ -72,6 +73,7 @@ function DialogHost() {
     case 'history': return <HistoryDialog id={d.id} onClose={close} />;
     case 'import': return <ImportDialog onClose={close} />;
     case 'file': return <FilePreviewDialog id={d.id} onClose={close} />;
+    case 'web': return <WebViewer url={d.url} onClose={close} />;
     case 'newFolder': return (
       <NameDialog title="New folder" cta="Create" onClose={close}
         onSubmit={async v => { await app.run(app.api.createFolder({ title: v, parent: d.parent })); await app.refresh(); }} />

@@ -13,9 +13,10 @@ import {
 } from 'lucide-react';
 import { mergeText, preserveBlocks, recordLinkMarkdown, toB64, type NoteDoc } from '@ergonotes/core';
 import { useApp } from '../state/app';
-import { classNames, debounce, download, downloadBlob, isoDay } from '../state/util';
+import { classNames, debounce, download, downloadBlob, isoDay, isWebUrl } from '../state/util';
 import { currentTaskTokens, ExcalidrawBlock, GhostText, InlineDecorations, LinkSuggest, MarkdownBulletList, MentionSuggest, MarkdownTaskList, setTaskToken, SingleParagraphCell, SingleParagraphHeader, SlashCommands, slashItems, StoredImage, TableKeys, TitledLink, TrailingParagraph } from '../editor/extensions';
 import { RawBlock, RawInline, Wikilink } from '../editor/raw';
+import { MarkdownInput, startMarkdownLink } from '../editor/markdownInput';
 import { AudioClip, CodeWithDiagrams, DateMention, InlineCheckbox, MathBlock, MathInline, PageBreak, Toggle } from '../editor/blocks';
 import { linkTo, setNoteDir, vaultPathsOf } from '../state/noteCtx';
 import { habitChip } from '../state/habits';
@@ -38,6 +39,8 @@ import { ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, clampZoom, setPrefs, usePrefs, usePrefsN
 import { askConfirm } from '../state/confirm';
 
 type SaveState = 'saved' | 'saving' | 'error';
+
+const markdownOf = (e: Editor) => (e.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown();
 
 
 /** A task to bring into view when the note opens: its place among the note's tasks, and its words (to find it again if the note changed). */
@@ -97,7 +100,15 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
   ghostRef.current = { on: app.ai.suggest && app.ai.suggestReady && !app.byId.get(id)?.private, delay: app.ai.suggestDelay, transport: app.aiTransport };
   const [ghostState, setGhostState] = useState<{ busy: boolean; error: string | null; empty: boolean }>({ busy: false, error: null, empty: false });
   const outlineRef = useRef<{ headings: { text: string; level: number }[]; active: number; goto(i: number): void } | null>(null);
-  const saveBody = useMemo(() => debounce((nid: string, md: string, seq: number) => {
+  const editorRef = useRef<Editor | null>(null);
+  // counted a moment after the typing stops: reading the whole note's text on every key is work the footer does not need
+  const [words, setWords] = useState(0);
+  const countWords = useMemo(() => debounce(() => { const e = editorRef.current; if (e) setWords(e.getText().trim().split(/\s+/).filter(Boolean).length); }, 300), []);
+  // The Markdown is made when the save runs, not on every key: writing a long note out costs more than the key itself.
+  const saveBody = useMemo(() => debounce((nid: string, seq: number) => {
+    const e = editorRef.current;
+    if (!e) return;
+    const md = markdownOf(e);
     setSaveState('saving');
     const body = preserveBlocks(rawRef.current, normRef.current, md);
     rawRef.current = body;
@@ -129,7 +140,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
       MarkdownTaskList, TaskItem.extend({ content: 'paragraph taskList?' }).configure({ nested: true }),
       Table.configure({ resizable: false }), TableRow, SingleParagraphHeader, SingleParagraphCell, TableKeys,
       StoredImage.configure({ inline: true }),
-      Wikilink, ExcalidrawBlock, InlineDecorations,
+      Wikilink, ExcalidrawBlock, InlineDecorations, MarkdownInput,
       GhostText.configure({
         enabled: () => ghostRef.current.on,
         delay: () => ghostRef.current.delay,
@@ -148,7 +159,16 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
         },
       }),
       LinkSuggest.configure({ api }),
-      MentionSuggest.configure({ api, habits: () => habitsRef.current }),
+      MentionSuggest.configure({
+        api, habits: () => habitsRef.current,
+        tokens: () => [
+          { word: 'due', hint: 'Due date', run: () => ctxRef.current?.taskToken('due') },
+          { word: 'remind', hint: 'Reminder', run: () => ctxRef.current?.taskToken('remind') },
+          { word: 'flag', hint: 'Flag task', run: () => ctxRef.current?.taskToken('flag') },
+          { word: 'date', hint: 'Date mention', run: () => ctxRef.current?.dateDialog() },
+          { word: 'event', hint: 'Event', run: () => ctxRef.current?.eventDialog() },
+        ],
+      }),
       SlashCommands.configure({
         items: () => slashItems(() => offeredItems().map(i => ({
           id: i.id, label: i.label, hint: i.hint, keywords: i.keywords,
@@ -165,22 +185,24 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
       setSaveState('saving');
       editSeq.current++;
       if (paused.current) return;
-      saveBody(idRef.current, (e.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown(), editSeq.current);
+      saveBody(idRef.current, editSeq.current);
+      countWords();
       force(n => n + 1);
     },
     onSelectionUpdate: () => force(n => n + 1),
   }, []);
 
+  editorRef.current = editor;
   const idRef = useRef(id);
   idRef.current = id;
 
-  const markdownOf = (e: Editor) => (e.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown();
   /** put a body into the editor and remember both what the file says and what the editor makes of it */
   function loadBody(body: string) {
     if (!editor) return;
     editor.commands.setContent(body, false);
     rawRef.current = body;
     normRef.current = markdownOf(editor);
+    countWords();
   }
   /** the body to save: the editor's text, with every block nobody edited exactly as the file has it */
   const currentBody = (e: Editor) => preserveBlocks(rawRef.current, normRef.current, markdownOf(e));
@@ -247,7 +269,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
         docRef.current = d;
         loadBody(r.text);
         editSeq.current++;
-        saveBody(id, markdownOf(editor), editSeq.current);
+        saveBody(id, editSeq.current);
       } else {
         saveBody.cancel();
         paused.current = true;
@@ -401,7 +423,8 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
       if (!a) return;
       const href = a.getAttribute('href') ?? '';
       if (href.startsWith('ergo-file:')) { e.preventDefault(); app.setDialog({ kind: 'file', id: href.slice('ergo-file:'.length) }); return; }
-      if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(href)) return; // a web address
+      if (isWebUrl(href)) { e.preventDefault(); app.setDialog({ kind: 'web', url: href }); return; } // a web page or PDF: read it here
+      if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(href)) return; // mail, a section of this page...
       e.preventDefault();
       const habitId = (a as HTMLElement).dataset.habitId;
       if (habitId) { app.go({ name: 'habits', habit: habitId }); return; }
@@ -450,6 +473,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
   const headings: { pos: number; level: number; text: string }[] = [];
   editor.state.doc.descendants((node, pos) => {
     if (node.type.name === 'heading' && node.textContent.trim()) headings.push({ pos, level: Number(node.attrs.level) || 1, text: node.textContent });
+    return !node.isTextblock; // the text of a paragraph holds no heading: do not walk it
   });
   const trackHeading = () => {
     const box = scrollRef.current;
@@ -472,7 +496,6 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
   const tocOpen = prefs.aside && prefs.asideTab === 'toc';
   const tokens = currentTaskTokens(editor);
   const path = doc.path;
-  const words = editor.getText().trim().split(/\s+/).filter(Boolean).length;
 
   const exportEntries = (): MenuEntry[] => [
     { label: 'Markdown (.md)', icon: <FileText size={16} />, onClick: async () => { await flushNow(); const r = await app.run(api.exportNote(id, 'md')); if (r) download(r.filename, r.mime, r.content); } },
@@ -530,7 +553,13 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
     eventDialog: () => setInsertDialog('event'),
     dateDialog: () => setInsertDialog('date'),
     linkedNoteDialog: () => setInsertDialog('linked'),
-    link: () => setLink(),
+    link: () => startMarkdownLink(editor),
+    taskToken: kind => {
+      // a due date, a reminder or a flag belongs to a task: a plain line becomes one first
+      if (!currentTaskTokens(editor).inTask) editor.chain().focus().toggleTaskList().run();
+      if (kind === 'flag') setTaskToken(editor, 'flag', '1');
+      else setDateDialog(kind);
+    },
     record: kind => setRecorder(kind),
     transcribeDialog: () => setTranscribing(true),
     contents: () => setPrefs({ aside: true, asideTab: 'toc' }),
@@ -606,14 +635,6 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
     } catch { /* the Scratchpad has told the person */ }
   };
 
-  const setLink = () => {
-    const prev = editor.getAttributes('link').href as string | undefined;
-    const url = window.prompt('Link address', prev ?? 'https://');
-    if (url === null) return;
-    if (url === '') editor.chain().focus().extendMarkRange('link').unsetLink().run();
-    else editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
-  };
-
   return (
     <div className={classNames('editor', scratch && 'scratch')} onKeyDown={scratch ? e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); void sendScratch(); } } : undefined}>
       {isTrashed && (
@@ -626,7 +647,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
       {external && (
         <div className="banner" role="alert">
           <GitMerge size={16} /><span className="grow">This note was changed on another device while you were editing, in the same place.</span>
-          <button className="btn" onClick={() => { loadedFor.current = { id, updated: external.updated }; loadedBody.current = external.body; paused.current = false; setExternal(null); editSeq.current++; const md = (editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown(); saveBody(id, md, editSeq.current); }}>Keep my edits</button>
+          <button className="btn" onClick={() => { loadedFor.current = { id, updated: external.updated }; loadedBody.current = external.body; paused.current = false; setExternal(null); editSeq.current++; saveBody(id, editSeq.current); }}>Keep my edits</button>
           <button className="btn" onClick={() => { loadedFor.current = { id, updated: external.updated }; loadedBody.current = external.body; loadBody(external.body); dirty.current = false; paused.current = false; setExternal(null); setSaveState('saved'); }}>Use theirs</button>
         </div>
       )}
@@ -692,7 +713,7 @@ export function NoteEditor({ id, onBack, readOnly, focusTask, outside, scratch }
         <TB locked={locked} label="Italic" on={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic size={18} /></TB>
         <TB locked={locked} label="Strikethrough" on={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough size={18} /></TB>
         <TB locked={locked} label="Inline code" on={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()}><Code size={18} /></TB>
-        <TB locked={locked} label="Link" on={editor.isActive('link')} onClick={setLink}><Link2 size={18} /></TB>
+        <TB locked={locked} label="Link: writes [text](address) for you to fill in" on={editor.isActive('link')} onClick={() => startMarkdownLink(editor)}><Link2 size={18} /></TB>
         <span className="tb-sep" />
         <TB locked={locked} label="Bulleted list" on={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()}><List size={18} /></TB>
         <TB locked={locked} label="Numbered list" on={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()}><ListOrdered size={18} /></TB>

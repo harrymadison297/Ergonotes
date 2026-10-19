@@ -178,16 +178,18 @@ export const TitledLink = Link.extend({
   },
 });
 
-export interface MentionItem extends PopupItem { path: string }
+export interface MentionItem extends PopupItem { path: string; run?: () => void }
+/** The words that `@` also starts: `@due`, `@remind`, `@flag`, `@date`, `@event`. Picking one asks for what it needs. */
+export interface AtToken { word: string; hint: string; run: () => void }
 /**
  * `@` + a few letters: pick a Habit (first) or a note. What is written is the same standard Markdown link as `[[` makes, so a
  * mention is also a Backlink; a link to a Habit is drawn as a chip with its streak. `@due(`, `@event(` and the like find nothing.
  */
-export const MentionSuggest = Extension.create<{ api: VaultApi | null; habits: () => { id: string; title: string; filePath: string; archived: boolean }[] }>({
+export const MentionSuggest = Extension.create<{ api: VaultApi | null; habits: () => { id: string; title: string; filePath: string; archived: boolean }[]; tokens: () => AtToken[] }>({
   name: 'mentionSuggest',
-  addOptions() { return { api: null, habits: () => [] }; },
+  addOptions() { return { api: null, habits: () => [], tokens: () => [] }; },
   addProseMirrorPlugins() {
-    const { api, habits } = this.options;
+    const { api, habits, tokens } = this.options;
     return [Suggestion<MentionItem>({
       editor: this.editor,
       pluginKey: new PluginKey('mentionSuggest'),
@@ -198,11 +200,14 @@ export const MentionSuggest = Extension.create<{ api: VaultApi | null; habits: (
         if (/[()]/.test(query)) return [];
         const hs: MentionItem[] = habits().filter(h => !h.archived && (!q || h.title.toLowerCase().includes(q)))
           .map(h => ({ id: h.id, label: h.title, hint: 'Habit', path: h.filePath }));
-        if (!q || !api) return hs.slice(0, 8);
+        // a word typed after "@" that starts one of the task words offers it first (`@du` → Due date)
+        const ts: MentionItem[] = q ? tokens().filter(t => t.word.startsWith(q)).map(t => ({ id: `@${t.word}`, label: `@${t.word}`, hint: t.hint, path: '', run: t.run })) : [];
+        if (!q || !api) return [...ts, ...hs].slice(0, 8);
         const notes = (await api.linkTargets(query)).filter(n => !hs.some(h => h.id === n.id)).map(n => ({ id: n.id, label: n.title, hint: 'Note', path: n.path }));
-        return [...hs, ...notes].slice(0, 8);
+        return [...ts, ...hs, ...notes].slice(0, 8);
       },
       command: ({ editor, range, props }) => {
+        if (props.run) { editor.chain().focus().deleteRange(range).run(); props.run(); return; }
         editor.chain().focus().insertContentAt(range, [{ type: 'text', text: props.label, marks: [{ type: 'link', attrs: { href: linkTo(props.path), ...(props.hint === 'Habit' ? { title: HABIT_LINK_TITLE } : {}) } }] }, { type: 'text', text: ' ' }]).run();
       },
       render: popupRenderer<MentionItem>({ hideEmpty: true }),
@@ -230,14 +235,15 @@ export const SlashCommands = Extension.create<{ items: () => SlashItem[] }>({
         const words = query.toLowerCase().split(/\s+/).filter(Boolean);
         const q = words.join(' ');
         // a name that starts with what was typed first, then one that contains it, then a match on the extra words
-        const rank = (i: SlashItem) => { const l = i.label.toLowerCase(); return l.startsWith(q) ? 0 : l.includes(q) ? 1 : 2; };
+        const rank = (i: SlashItem) => { const l = i.label.toLowerCase(); return l === q ? -1 : l.startsWith(q) ? 0 : l.includes(q) ? 1 : 2; };
         return getItems().filter(i => !i.off && words.every(w => `${i.label} ${i.keywords ?? ''}`.toLowerCase().includes(w))).sort((a, b) => rank(a) - rank(b)).slice(0, 14);
       },
       command: ({ editor, range, props }) => {
         editor.chain().focus().deleteRange(range).run();
         props.run(editor);
       },
-      render: popupRenderer<SlashItem>(),
+      // a "/" that is only a slash (a path, "and/or") shows nothing instead of a "No matches" box
+      render: popupRenderer<SlashItem>({ hideEmpty: true }),
     })];
   },
 });
