@@ -2,6 +2,7 @@ import { FsPersist, listModels, MemFs, streamChat, transcribeAudio, transcribeTi
 import { IdbPersist } from '@ergonotes/core/browser';
 import { tauriFolder, type VaultFolder } from './tauriFs';
 import { DEMO } from '../demo/flag';
+import { readChoice, transcribeLocal } from './localWhisper';
 
 export interface Backend {
   api: VaultApi;
@@ -130,8 +131,15 @@ class LocalBackend implements Backend {
     this.vault = vault;
     this.folder = folder;
     this.aiTransport = (req, signal) => streamChat(vault.aiConfig(), req, { fetchImpl, signal });
-    this.aiTranscribe = (file, signal) => transcribeAudio(vault.aiConfig(), file, { fetchImpl, signal });
-    this.aiTranscribeTimed = (file, signal) => transcribeTimed(vault.aiConfig(), file, { fetchImpl, signal });
+    // this device may write speech out itself (desktop): then no server is asked
+    this.aiTranscribeTimed = (file, signal) => {
+      const own = readChoice();
+      return own.model ? transcribeLocal(file, { model: own.model, language: own.language, signal }) : transcribeTimed(vault.aiConfig(), file, { fetchImpl, signal });
+    };
+    this.aiTranscribe = async (file, signal) => {
+      const own = readChoice();
+      return own.model ? (await transcribeLocal(file, { model: own.model, language: own.language, signal })).text : transcribeAudio(vault.aiConfig(), file, { fetchImpl, signal });
+    };
     this.aiModels = async connection => {
       const conn = vault.aiConfig().connections.find(c => c.id === connection);
       if (!conn) throw new Error('That connection does not exist.');

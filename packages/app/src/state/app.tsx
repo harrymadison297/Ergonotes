@@ -1,10 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { AiSettings, AiTransport, AudioFile, HabitInfo, ModelInfo, TimedTranscript, ItemSummary, Settings, TaskEntry, VaultApi, VaultStatus } from '@ergonotes/core';
 import type { Backend } from '../backend';
 import { debounce, isoDay } from './util';
 import { useRoute, type Route } from './router';
 import { setRecordHost } from '../record/host';
 import { setApiRef } from './appRef';
+import { onChoice, readChoice } from '../backend/localWhisper';
 
 export interface Toast { id: number; msg: string; kind: 'info' | 'error'; action?: { label: string; run: () => void }; key?: string }
 
@@ -106,7 +107,10 @@ export function AppProvider({ backend, status: initial, children }: { backend: B
   const [tags, setTags] = useState<{ tag: string; count: number }[]>([]);
   const [conflicts, setConflicts] = useState<{ id: string; title: string; heads: number }[]>([]);
   const [settings, setSettings] = useState<Settings>(EMPTY_SETTINGS);
-  const [ai, setAi] = useState<AiSettings>(EMPTY_AI);
+  const [aiSaved, setAi] = useState<AiSettings>(EMPTY_AI);
+  // speech-to-text on this computer is a choice of this device (not synced): with it, speech-to-text works with no server
+  const localSpeech = useSyncExternalStore(onChoice, () => readChoice().model);
+  const ai = useMemo(() => (localSpeech ? { ...aiSaved, speechReady: true } : aiSaved), [aiSaved, localSpeech]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [route, go] = useRoute();

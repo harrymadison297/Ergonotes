@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Bot, Check, Copy, FileDown, FileUp, Link2, Plus, History as HistoryIcon, Loader2, LogOut, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { applyHunks, canPlaceInto, completeText, PROVIDER_LABEL, THINKING_LEVELS, ERGONOTES_SKILL_MD, joinDoc, lineDiff, splitDoc, type AiConnectionInfo, type AiProvider, type ThinkingLevel, type ConflictDetail, type HeadInfo, type StoreConfig, type VersionInfo } from '@ergonotes/core';
 import { useApp } from '../state/app';
 import { classNames, download, relTime } from '../state/util';
 import { Dialog, IconBtn } from './ui';
 import { ModelPicker } from './ModelPicker';
+import { LocalSpeechSettings, useLocalModels } from './LocalSpeechSettings';
+import { onChoice, readChoice, writeChoice } from '../backend/localWhisper';
 import { KeyboardSettings } from './KeyboardSettings';
 import { setPrefs, usePrefs } from '../state/prefs';
 import { setWantsToJoin } from '../state/firstRun';
@@ -449,6 +451,18 @@ const TYPE_HELP: Record<AiProvider, string> = {
   custom: 'Ollama, LM Studio, vLLM or any server that speaks the OpenAI chat API.',
 };
 
+/** One second of 16 kHz mono silence as a WAV file, base64. */
+function silentWav(): string {
+  const n = 16000, b = new Uint8Array(44 + n * 2), v = new DataView(b.buffer);
+  const tag = (o: number, t: string) => { for (let i = 0; i < 4; i++) b[o + i] = t.charCodeAt(i); };
+  tag(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); tag(8, 'WAVE'); tag(12, 'fmt '); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 16000, true); v.setUint32(28, 32000, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); tag(36, 'data'); v.setUint32(40, n * 2, true);
+  let bin = '';
+  for (const x of b) bin += String.fromCharCode(x);
+  return btoa(bin);
+}
+
 interface ConnForm { id: string; isNew: boolean; type: AiProvider; name: string; key: string; url: string }
 
 function AiSettings() {
@@ -459,6 +473,13 @@ function AiSettings() {
   const [checks, setChecks] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [speechMsg, setSpeechMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [speechBusy, setSpeechBusy] = useState(false);
+  const { models: localList, reload: reloadLocal } = useLocalModels();
+  const localChoice = JSON.parse(useSyncExternalStore(onChoice, () => JSON.stringify(readChoice()))) as ReturnType<typeof readChoice>;
+  // which way the person is looking at: on this computer, or a server (starts where the choice is)
+  const [pickedTab, setSpeechTab] = useState<'local' | 'server' | null>(null);
+  const speechTab = localList && localList.length > 0 ? pickedTab ?? (localChoice.model ? 'local' : 'server') : 'server';
 
   const save = async (patch: Parameters<typeof app.api.setAiSettings>[0]) => {
     const r = await app.run(app.api.setAiSettings(patch));
@@ -472,6 +493,15 @@ function AiSettings() {
       setMsg({ ok: true, text: text.trim() ? `Connected. The model answered: “${text.trim().slice(0, 60)}”` : 'Connected.' });
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) }); }
     setBusy(false);
+  };
+  /** A second of silence goes to the speech server: any answer but an error shows that the connection and the model work. */
+  const testSpeech = async () => {
+    setSpeechBusy(true); setSpeechMsg(null);
+    try {
+      const text = await app.aiTranscribe({ name: 'test.wav', mime: 'audio/wav', data: silentWav() });
+      setSpeechMsg({ ok: true, text: text.trim() ? `Connected. It heard: “${text.trim().slice(0, 60)}”` : 'Connected. The server transcribed a second of silence.' });
+    } catch (e) { setSpeechMsg({ ok: false, text: e instanceof Error ? e.message : String(e) }); }
+    setSpeechBusy(false);
   };
   const checkConn = async (id: string) => {
     setChecks(c => ({ ...c, [id]: 'Checking…' }));
@@ -593,24 +623,33 @@ function AiSettings() {
           {ai.visionModel.connection && <> <button type="button" className="btn" style={{ marginLeft: 4 }} onClick={() => void save({ visionModel: null })}>Use the chat model</button></>}
         </span>
       </div>
-      <div className="field"><label htmlFor="ai-speech-conn">Speech-to-text</label>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <select id="ai-speech-conn" className="input" style={{ flex: '1 1 200px', width: 'auto' }} aria-label="Speech-to-text server"
-            value={ai.speechModel.connection}
-            onChange={e => void save({ speechModel: e.target.value ? { connection: e.target.value, model: '' } : null })}>
-            <option value="">Off</option>
-            {ai.connections.filter(c => c.type === 'custom').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          {ai.speechModel.connection && (
-            <input className="input" style={{ flex: '1 1 160px', width: 'auto' }} aria-label="Speech-to-text model" placeholder="whisper-1" defaultValue={ai.speechModel.model}
-              key={ai.speechModel.connection + ai.speechModel.model}
-              onBlur={e => { if (e.target.value.trim() !== ai.speechModel.model) void save({ speechModel: { connection: ai.speechModel.connection, model: e.target.value } }); }} />
-          )}
+      <div className="field"><label htmlFor="ai-speech">Speech-to-text (Whisper)</label>
+        {localList && localList.length > 0 && (
+          <div className="seg" role="group" aria-label="Where speech is turned into text" style={{ marginBottom: 8, alignSelf: 'flex-start' }}>
+            <button type="button" aria-pressed={speechTab === 'local'} onClick={() => { setSpeechTab('local'); setSpeechMsg(null); }}>On this computer</button>
+            <button type="button" aria-pressed={speechTab === 'server'} onClick={() => { setSpeechTab('server'); setSpeechMsg(null); writeChoice({ model: '', language: readChoice().language }); }}>A server</button>
+          </div>
+        )}
+        {speechTab === 'local' && localList
+          ? <LocalSpeechSettings models={localList} reload={reloadLocal} onError={text => setSpeechMsg({ ok: false, text })} />
+          : <ModelPicker id="ai-speech" label="Speech-to-text model" value={ai.speechModel} connections={ai.connections.filter(c => c.type === 'custom')}
+            onPick={ref => { setSpeechMsg(null); void save({ speechModel: ref }); }} />}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+          <button className="btn" disabled={!ai.speechReady || speechBusy} onClick={() => void testSpeech()}>{speechBusy ? <Loader2 size={16} className="spin" /> : <Check size={16} />} Test speech-to-text</button>
+          {speechTab === 'server' && ai.speechModel.connection && <button className="btn" onClick={() => { setSpeechMsg(null); void save({ speechModel: null }); }}>Turn off</button>}
+          {speechMsg && <span role="status" className={speechMsg.ok ? undefined : 'error-text'}>{speechMsg.text}</span>}
         </div>
         <span className="hint">
-          {ai.connections.some(c => c.type === 'custom')
-            ? 'Turns recordings and audio files into text, and powers voice dictation. Pick a server with an OpenAI-style /audio/transcriptions endpoint (OpenAI, Groq, a local Whisper server). Notes marked private are never transcribed.'
-            : 'Add a Custom server connection above first: OpenAI, Groq or a local Whisper server. OpenRouter and Anthropic cannot transcribe audio.'}
+          {speechTab === 'local'
+            ? <>Runs on this computer with Whisper: the audio never leaves it. {localChoice.model ? `In use: ${localList?.find(m => m.id === localChoice.model)?.label ?? localChoice.model}. ` : 'Download a model to start. '}
+              Small is the smallest that reads Vietnamese well; the larger ones are more accurate and take longer. Turns recordings and audio files into text, and powers voice dictation.</>
+            : <>
+              {ai.speechReady
+                ? <>On: “{ai.speechModel.model}” on {ai.connections.find(c => c.id === ai.speechModel.connection)?.name}. </>
+                : ai.speechModel.connection ? 'Choose the speech model above. ' : 'Off. '}
+              Turns recordings and audio files into text, and powers voice dictation. It needs a Custom server connection with an OpenAI-style <code>/audio/transcriptions</code> endpoint (OpenAI, Groq, a local Whisper server such as faster-whisper-server or whisper.cpp). A server that only has chat models, like a plain Ollama, will answer that the model does not support audio. OpenRouter and Anthropic cannot transcribe. Notes marked private are never transcribed.
+              {!ai.connections.some(c => c.type === 'custom') && ' Add a Custom server connection above first.'}
+            </>}
         </span>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>

@@ -13,9 +13,11 @@ cp "$ROOT"/apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/n
 PORT="$ROOT/temp/portable"
 rm -rf "$PORT" && mkdir -p "$PORT"
 cp "$ROOT/apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/ergonotes.exe" "$PORT/Ergonotes.exe"
+# the speech engine's C++ runtime (the installer puts the same files beside the exe, via tauri.windows.conf.json)
+cp "$ROOT"/apps/desktop/src-tauri/vcruntime/*.dll "$PORT/"
 printf 'Ergonotes, portable.\r\n\r\nRun Ergonotes.exe from any folder; nothing is installed. Your notes are Markdown files in Documents\\Ergonotes.\r\nIt needs the Microsoft Edge WebView2 runtime, which Windows 11 includes and Windows 10 gets from https://developer.microsoft.com/microsoft-edge/webview2/\r\n' > "$PORT/README.txt"
 rm -f "$ROOT/dist/release/Ergonotes-windows-x64-portable.zip"
-$RUN sh -c 'cd /work/temp/portable && zip -q -9 /work/dist/release/Ergonotes-windows-x64-portable.zip Ergonotes.exe README.txt'
+$RUN sh -c 'cd /work/temp/portable && zip -q -9 /work/dist/release/Ergonotes-windows-x64-portable.zip Ergonotes.exe *.dll README.txt'
 $RUN npx @tauri-apps/cli build --bundles deb
 cp "$ROOT"/apps/desktop/src-tauri/target/release/bundle/deb/*.deb "$ROOT/dist/release/Ergonotes-linux-amd64.deb"
 # Linux AppImage (portable): the tools it is made with run without FUSE in the container

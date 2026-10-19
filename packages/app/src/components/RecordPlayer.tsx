@@ -8,6 +8,7 @@ import { useRecorder } from '../record/recorder';
 import { proposeFrameCuts, recordAudio, transcribeRecord, type FrameProposal } from '../record/tools';
 import { classNames } from '../state/util';
 import { askConfirm } from '../state/confirm';
+import { watchProgress } from '../backend/localWhisper';
 
 /** The folder of the record being made right now by this app, or ''. */
 function useRecorderDir(): string {
@@ -139,10 +140,14 @@ export function RecordPlayer({ paths, label, insertAfter }: RecordPlayerProps) {
     if (!host || !sttOk) return;
     if (info.transcript && !(await askConfirm('Write the transcript again? The one that is there, with any changes you made, is replaced.', { ok: 'Write it again' }))) return;
     setErr(''); setBusy('Writing it out…');
+    // a model on this computer reports how far it is in each window: a long one takes minutes
+    let step = 'Writing it out…';
+    const stopWatching = await watchProgress(pct => setBusy(`${step} ${pct}%`));
     try {
-      await transcribeRecord({ api, dir: info.path, transcribe: host.transcribe, onStatus: setBusy });
+      await transcribeRecord({ api, dir: info.path, transcribe: host.transcribe, onStatus: s => { step = s; setBusy(s); } });
       notifyRecord(info.path);
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    stopWatching();
     setBusy('');
   };
   const doSummary = async () => {

@@ -455,7 +455,7 @@ check('and brings them back', (await rpc('listRecords')).length === nRec);
 // ---- settings
 await page.getByRole('button', { name: 'Settings' }).first().click();
 await page.getByRole('tab', { name: 'AI' }).click();
-check('Settings → AI has a speech-to-text server and model', (await page.getByLabel('Speech-to-text server').inputValue()) === 'w' && (await page.getByLabel('Speech-to-text model').inputValue()) === 'whisper-1');
+check('Settings → AI has a speech-to-text server and model', /whisper-1/.test(await page.locator('#ai-speech').innerText()) && (await page.getByRole('button', { name: 'Test speech-to-text' }).isEnabled()));
 check('and a model that looks at pictures', (await page.getByText('Model that looks at pictures').count()) === 1);
 
 check('no console errors', errors.filter(e => !/Failed to load resource|status of 400/.test(e)).length === 0, errors.slice(0, 3).join(' | '));

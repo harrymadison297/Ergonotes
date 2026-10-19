@@ -1,0 +1,10 @@
+# whisper.cpp is built by cmake inside the whisper-rs-sys crate. Left alone it optimises for the machine that builds it
+# ("native": an installer made on a new CPU would crash on an older one) or, when cross-compiling for Windows, for no vector
+# instructions at all (several times slower). So: a fixed, portable level, AVX2 + FMA + F16C (Intel Haswell, 2013, and AMD
+# Excavator, 2015, or newer). `src/whisper.rs` checks for these at run time and offers no local speech without them.
+[env]
+GGML_NATIVE = "OFF"
+GGML_AVX = "ON"
+GGML_AVX2 = "ON"
+GGML_FMA = "ON"
+GGML_F16C = "ON"

@@ -12,6 +12,11 @@ use std::{
 
 mod mcp;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod whisper;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[path = "whisper_stub.rs"]
+mod whisper;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod shell;
 
 use serde::Serialize;
@@ -574,6 +579,7 @@ pub fn run() {
         });
     builder
         .manage(VaultRoot::default())
+        .manage(whisper::WhisperState::default())
         .manage(OpenQueue(Mutex::new(openable_args(&std::env::args().skip(1).collect::<Vec<_>>()))))
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
@@ -627,6 +633,12 @@ pub fn run() {
             mcp::mcp_ready,
             desktop_autostart_get,
             desktop_autostart_set,
+            whisper::whisper_models,
+            whisper::whisper_download,
+            whisper::whisper_cancel_download,
+            whisper::whisper_delete,
+            whisper::whisper_transcribe,
+            whisper::whisper_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Ergonotes");

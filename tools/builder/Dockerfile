@@ -24,3 +24,15 @@ RUN cd /tmp && curl -fsSL -o nsis.zip "https://sourceforge.net/projects/nsis/fil
  && unzip -p nsis.zip nsis-3.11/Include/Win/RestartManager.nsh > /usr/share/nsis/Include/Win/RestartManager.nsh \
  && rm nsis.zip && test -s /usr/share/nsis/Include/Win/RestartManager.nsh
 WORKDIR /work
+
+# whisper.cpp (speech-to-text on the desktop) is built from source by the whisper-rs crate: cmake and ninja (the Windows cross build), and libclang for its bindings.
+RUN apt-get update && apt-get install -y --no-install-recommends cmake ninja-build libclang-dev && rm -rf /var/lib/apt/lists/*
+
+# The Windows build compiles whisper.cpp (C++) against Microsoft's STL, which needs Clang 19 or newer; Debian's is 14.
+# Only the tools of the Windows cross build are pointed at it (/usr/local/bin comes first in PATH).
+RUN curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o /usr/share/keyrings/llvm.gpg \
+ && echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] https://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-20 main" > /etc/apt/sources.list.d/llvm20.list \
+ && apt-get update && apt-get install -y --no-install-recommends clang-20 lld-20 llvm-20 libclang-20-dev \
+ && ln -sf /usr/bin/clang-20 /usr/local/bin/clang-cl \
+ && for t in clang clang++ lld-link ld.lld llvm-lib llvm-ar llvm-rc llvm-ranlib; do ln -sf "$(command -v $t-20 2>/dev/null || echo /usr/lib/llvm-20/bin/$t)" /usr/local/bin/$t; done \
+ && rm -rf /var/lib/apt/lists/* && clang-cl --version | head -1
