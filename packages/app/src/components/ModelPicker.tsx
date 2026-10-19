@@ -71,7 +71,7 @@ export function ModelPicker({ id, label, value, connections, needsTools, variant
   const [q, setQ] = useState('');
   const [freeOnly, setFreeOnly] = useState(false);
   const [conn, setConn] = useState(value.connection);
-  const [pos, setPos] = useState<{ left: number; top: number; width: number; maxH: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; width: number; maxH: number } | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
@@ -99,7 +99,9 @@ export function ModelPicker({ id, label, value, connections, needsTools, variant
       const up = below < 300 && above > below;
       const maxH = Math.max(220, Math.min(460, up ? above : below));
       const width = Math.max(r.width, 360);
-      setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)), top: up ? r.top - maxH - 4 : r.bottom + 4, width, maxH });
+      // opening upwards, the panel hangs from the field (`bottom`): a short list must not float away from it
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+      setPos(up ? { left, bottom: window.innerHeight - r.top + 4, width, maxH } : { left, top: r.bottom + 4, width, maxH });
     };
     place();
     setTimeout(() => field.current?.focus(), 0);
@@ -140,7 +142,7 @@ export function ModelPicker({ id, label, value, connections, needsTools, variant
         </button>
       )}
       {open && pos && (
-        <div ref={panel} className="model-panel" role="dialog" aria-label={`Choose the ${label.toLowerCase()}`} style={{ left: pos.left, top: pos.top, width: pos.width, maxHeight: pos.maxH }}>
+        <div ref={panel} className="model-panel" role="dialog" aria-label={`Choose the ${label.toLowerCase()}`} style={{ left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, maxHeight: pos.maxH }}>
           {connections.length > 1 && (
             <div className="model-conn">
               <label htmlFor={`${id ?? 'mp'}-conn`}>Connection</label>
