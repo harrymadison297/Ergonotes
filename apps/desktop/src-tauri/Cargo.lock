@@ -1093,7 +1093,7 @@ dependencies = [
 
 [[package]]
 name = "ergonotes"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "percent-encoding",
  "rand 0.8.8",

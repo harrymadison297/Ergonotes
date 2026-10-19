@@ -7,7 +7,7 @@
       "name": "ergonotes",
       "source": "./plugins/ergonotes",
       "description": "Work on your Ergonotes notes from Claude Code: local MCP endpoint, and skills for writing, capturing, planning, tagging, drawing and keeping the vault tidy.",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "category": "productivity",
       "keywords": ["notes", "markdown", "mcp", "excalidraw"]
     }
