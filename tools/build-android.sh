@@ -14,7 +14,7 @@ docker run --rm --user "$(id -u):$(id -g)" -e HOME=/work/temp/home -e _JAVA_OPTI
     cd apps/desktop
     [ -f src-tauri/icons/icon.png ] || npx @tauri-apps/cli icon src-tauri/icon-source.svg -o src-tauri/icons
     [ -d src-tauri/gen/android ] || npx @tauri-apps/cli android init --ci
-    npx @tauri-apps/cli android build --apk --target aarch64 x86_64
+    npx @tauri-apps/cli android build --apk --target aarch64 --target x86_64
     APK=\$(find src-tauri/gen/android/app/build/outputs/apk -name '*release-unsigned.apk' | head -1)
     BT=/opt/android-sdk/build-tools/34.0.0
     [ -f $KS ] || keytool -genkeypair -v -keystore $KS -storepass $PASS -keypass $PASS -alias $ALIAS -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Ergonotes dev'
